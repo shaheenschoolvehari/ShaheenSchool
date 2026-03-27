@@ -68,7 +68,7 @@ export default function ExpenseListPage() {
 
     const fetchCategories = async () => {
         try {
-            const response = await fetch('http://localhost:5000/expense-categories/active');
+            const response = await fetch('https://shmool.onrender.com/expense-categories/active');
             const data = await response.json();
             setCategories(data);
         } catch (err) {
@@ -88,7 +88,7 @@ export default function ExpenseListPage() {
                 if (value) params.append(key, value);
             });
 
-            const response = await fetch(`http://localhost:5000/expenses?${params}`);
+            const response = await fetch(`https://shmool.onrender.com/expenses?${params}`);
             const data = await response.json();
             
             setExpenses(data.expenses);
@@ -111,7 +111,7 @@ export default function ExpenseListPage() {
                 const value = filters[key as keyof Filters];
                 if (value) params.append(key, value);
             });
-            const response = await fetch(`http://localhost:5000/expenses/stats/summary?${params}`);
+            const response = await fetch(`https://shmool.onrender.com/expenses/stats/summary?${params}`);
             const data = await response.json();
             setSummary(data);
         } catch (err) {
@@ -128,7 +128,7 @@ export default function ExpenseListPage() {
         if (!confirm('Are you sure you want to delete this expense?')) return;
 
         try {
-            const response = await fetch(`http://localhost:5000/expenses/${id}`, {
+            const response = await fetch(`https://shmool.onrender.com/expenses/${id}`, {
                 method: 'DELETE'
             });
 

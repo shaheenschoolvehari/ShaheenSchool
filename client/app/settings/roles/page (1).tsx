@@ -36,7 +36,7 @@ export default function RolesPage() {
 
     const fetchRoles = async () => {
         try {
-            const res = await fetch('http://localhost:5000/roles');
+            const res = await fetch('https://shmool.onrender.com/roles');
             const data = await res.json();
             setRoles(data);
             setLoading(false);
@@ -73,7 +73,7 @@ export default function RolesPage() {
     const handleDelete = async (id: number) => {
         if (!confirm("Are you sure? This cannot be undone.")) return;
          try {
-            const res = await fetch(`http://localhost:5000/roles/${id}`, { method: 'DELETE' });
+            const res = await fetch(`https://shmool.onrender.com/roles/${id}`, { method: 'DELETE' });
             if (res.ok) fetchRoles();
             else alert(await res.json());
         } catch (err) { console.error(err); }
@@ -81,7 +81,7 @@ export default function RolesPage() {
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
-        const url = formData.id === 0 ? 'http://localhost:5000/roles' : `http://localhost:5000/roles/${formData.id}`;
+        const url = formData.id === 0 ? 'https://shmool.onrender.com/roles' : `https://shmool.onrender.com/roles/${formData.id}`;
         const method = formData.id === 0 ? 'POST' : 'PUT';
         
         try {

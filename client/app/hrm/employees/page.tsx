@@ -65,9 +65,9 @@ export default function EmployeesPage() {
     const fetchData = async () => {
         try {
             const [empRes, deptRes, roleRes] = await Promise.all([
-                fetch('http://localhost:5000/hrm/employees'),
-                fetch('http://localhost:5000/hrm/departments'),
-                fetch('http://localhost:5000/roles') // Assuming this exists from previous modules
+                fetch('https://shmool.onrender.com/hrm/employees'),
+                fetch('https://shmool.onrender.com/hrm/departments'),
+                fetch('https://shmool.onrender.com/roles') // Assuming this exists from previous modules
             ]);
             
             if (empRes.ok) setEmployees(await empRes.json());
@@ -138,8 +138,8 @@ export default function EmployeesPage() {
         
         const payload = { ...formData, create_system_user: isSysUser };
         const url = modalMode === 'create' 
-            ? 'http://localhost:5000/hrm/employees' 
-            : `http://localhost:5000/hrm/employees/${selectedId}`;
+            ? 'https://shmool.onrender.com/hrm/employees' 
+            : `https://shmool.onrender.com/hrm/employees/${selectedId}`;
         
         const method = modalMode === 'create' ? 'POST' : 'PUT';
 
@@ -165,7 +165,7 @@ export default function EmployeesPage() {
     const handleDelete = async (id: number) => {
         if (!confirm('Are you sure you want to delete this employee?')) return;
         try {
-            await fetch(`http://localhost:5000/hrm/employees/${id}`, { method: 'DELETE' });
+            await fetch(`https://shmool.onrender.com/hrm/employees/${id}`, { method: 'DELETE' });
             fetchData();
         } catch (err) { alert('Failed to delete'); }
     };

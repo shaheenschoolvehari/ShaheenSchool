@@ -44,7 +44,7 @@ export default function SystemConfigPage() {
 
     const fetchSettings = async () => {
         try {
-            const res = await fetch('http://localhost:5000/system');
+            const res = await fetch('https://shmool.onrender.com/system');
             const data = await res.json();
             setSettings(data);
             
@@ -63,14 +63,14 @@ export default function SystemConfigPage() {
 
     const fetchStats = async () => {
         try {
-            const res = await fetch('http://localhost:5000/system/db-stats');
+            const res = await fetch('https://shmool.onrender.com/system/db-stats');
             if(res.ok) setStats(await res.json());
         } catch (err) { console.error(err); }
     };
 
     const fetchBackups = async () => {
         try {
-            const res = await fetch('http://localhost:5000/system/backups');
+            const res = await fetch('https://shmool.onrender.com/system/backups');
             if (res.ok) {
                 const data = await res.json();
                 setBackups(data);
@@ -82,7 +82,7 @@ export default function SystemConfigPage() {
         e.preventDefault();
         setSaving(true);
         try {
-             const res = await fetch('http://localhost:5000/system', {
+             const res = await fetch('https://shmool.onrender.com/system', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(formData)
@@ -106,7 +106,7 @@ export default function SystemConfigPage() {
     const handleCreateBackup = async () => {
         setCreatingBackup(true);
         try {
-            const res = await fetch('http://localhost:5000/system/backups/create', { method: 'POST' });
+            const res = await fetch('https://shmool.onrender.com/system/backups/create', { method: 'POST' });
             const data = await res.json();
             if (res.ok) {
                 alert(data.message);
@@ -124,7 +124,7 @@ export default function SystemConfigPage() {
     const handleDeleteBackup = async (filename: string) => {
         if(!confirm(`Are you sure you want to delete ${filename}?`)) return;
         try {
-            const res = await fetch(`http://localhost:5000/system/backups/${filename}`, { method: 'DELETE' });
+            const res = await fetch(`https://shmool.onrender.com/system/backups/${filename}`, { method: 'DELETE' });
             if (res.ok) {
                 fetchBackups();
             }
@@ -132,7 +132,7 @@ export default function SystemConfigPage() {
     };
     
     const handleDownloadBackup = (filename: string) => {
-        window.location.href = `http://localhost:5000/system/backups/download/${filename}`;
+        window.location.href = `https://shmool.onrender.com/system/backups/download/${filename}`;
     };
 
     const handleRestoreBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -149,7 +149,7 @@ export default function SystemConfigPage() {
         formData.append('backup_file', file);
 
         try {
-            const res = await fetch('http://localhost:5000/system/backups/restore', {
+            const res = await fetch('https://shmool.onrender.com/system/backups/restore', {
                 method: 'POST',
                 body: formData
             });

@@ -33,7 +33,7 @@ type SheetResponse = {
     students: StudentMarkRow[];
 };
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://shmool.onrender.com';
 
 export default function ExaminationMarksPage() {
     const { user, hasPermission } = useAuth();

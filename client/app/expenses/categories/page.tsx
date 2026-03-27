@@ -30,7 +30,7 @@ export default function ExpenseCategoriesPage() {
 
     const fetchCategories = async () => {
         try {
-            const response = await fetch('http://localhost:5000/expense-categories');
+            const response = await fetch('https://shmool.onrender.com/expense-categories');
             const data = await response.json();
             setCategories(data);
             setLoading(false);
@@ -46,8 +46,8 @@ export default function ExpenseCategoriesPage() {
 
         try {
             const url = editMode
-                ? `http://localhost:5000/expense-categories/${currentCategory.category_id}`
-                : 'http://localhost:5000/expense-categories';
+                ? `https://shmool.onrender.com/expense-categories/${currentCategory.category_id}`
+                : 'https://shmool.onrender.com/expense-categories';
             
             const method = editMode ? 'PUT' : 'POST';
             
@@ -85,7 +85,7 @@ export default function ExpenseCategoriesPage() {
         if (!confirm('Are you sure you want to delete this category?')) return;
 
         try {
-            const response = await fetch(`http://localhost:5000/expense-categories/${id}`, {
+            const response = await fetch(`https://shmool.onrender.com/expense-categories/${id}`, {
                 method: 'DELETE'
             });
 

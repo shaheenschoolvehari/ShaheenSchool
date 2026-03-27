@@ -22,7 +22,7 @@ export default function ClassSettings() {
 
     const fetchClasses = async () => {
         try {
-            const res = await fetch('http://localhost:5000/academic');
+            const res = await fetch('https://shmool.onrender.com/academic');
             if (res.ok) {
                 const data = await res.json();
                 setClasses(data);
@@ -34,7 +34,7 @@ export default function ClassSettings() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         
-        const url = editMode ? `http://localhost:5000/academic/${selectedId}` : 'http://localhost:5000/academic';
+        const url = editMode ? `https://shmool.onrender.com/academic/${selectedId}` : 'https://shmool.onrender.com/academic';
         const method = editMode ? 'PUT' : 'POST';
 
         const toastId = toast.loading(editMode ? "Updating class..." : "Creating class...");
@@ -73,7 +73,7 @@ export default function ClassSettings() {
         const toastId = toast.loading("Deleting class...");
 
         try {
-            const res = await fetch(`http://localhost:5000/academic/${id}`, { method: 'DELETE' });
+            const res = await fetch(`https://shmool.onrender.com/academic/${id}`, { method: 'DELETE' });
             if (res.ok) {
                 fetchClasses();
                 toast.update(toastId, { render: "Class deleted successfully", type: "success", isLoading: false, autoClose: 3000 });

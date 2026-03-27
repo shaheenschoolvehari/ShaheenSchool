@@ -30,7 +30,7 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
         setAttLoading(true);
         try {
             const month = m || attMonth; const year = y || attYear;
-            const res = await fetch(`http://localhost:5000/attendance/students/${params.id}/history?month=${month}&year=${year}`);
+            const res = await fetch(`https://shmool.onrender.com/attendance/students/${params.id}/history?month=${month}&year=${year}`);
             if (res.ok) { const data = await res.json(); setAttRecords(data.records || []); setAttStats(data.stats || {}); }
         } catch {}
         setAttLoading(false);
@@ -39,7 +39,7 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
     const fetchAcademics = async () => {
         setAcadLoading(true);
         try {
-            const res = await fetch(`http://localhost:5000/exams/student-academics/${params.id}`);
+            const res = await fetch(`https://shmool.onrender.com/exams/student-academics/${params.id}`);
             if (res.ok) { const data = await res.json(); setAcad(data); }
         } catch {}
         setAcadLoading(false);
@@ -65,7 +65,7 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
     useEffect(() => {
         const fetchStudent = async () => {
             try {
-                const res = await fetch(`http://localhost:5000/students/${params.id}`);
+                const res = await fetch(`https://shmool.onrender.com/students/${params.id}`);
                 if (res.ok) {
                     const data = await res.json();
                     setStudent(data.rows ? data.rows[0] : (Array.isArray(data) ? data[0] : data));
@@ -81,7 +81,7 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
         const fetchSiblings = async () => {
             setLoadingSiblings(true);
             try {
-                const res = await fetch(`http://localhost:5000/students/${params.id}/siblings`);
+                const res = await fetch(`https://shmool.onrender.com/students/${params.id}/siblings`);
                 if (res.ok) {
                     const data = await res.json();
                     setSiblings(data);
@@ -102,7 +102,7 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
     const fetchAdmissionFee = async () => {
         setLoadingFees(true);
         try {
-            const res = await fetch(`http://localhost:5000/fee-slips/admission-fees/student/${params.id}`);
+            const res = await fetch(`https://shmool.onrender.com/fee-slips/admission-fees/student/${params.id}`);
             if (res.ok) {
                 const data = await res.json();
                 setAdmissionFee(data.ledger);
@@ -117,7 +117,7 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
         if (!admissionFee) return;
         setPayingFee(true); setPayError(''); setPaySuccess('');
         try {
-            const res = await fetch(`http://localhost:5000/fee-slips/admission-fees/${admissionFee.ledger_id}/pay`, {
+            const res = await fetch(`https://shmool.onrender.com/fee-slips/admission-fees/${admissionFee.ledger_id}/pay`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ amount_paid: payAmt, payment_method: payMethod, reference_no: payRef, payment_date: payDate })
@@ -134,7 +134,7 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
         if(!confirm(`Are you sure you want to change status to ${student.status === 'Active' ? 'Inactive' : 'Active'}?`)) return;
         try {
             const newStatus = student.status === 'Active' ? 'Inactive' : 'Active';
-            const res = await fetch(`http://localhost:5000/students/${params.id}/status`, {
+            const res = await fetch(`https://shmool.onrender.com/students/${params.id}/status`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status: newStatus })
@@ -154,7 +154,7 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
     const handleGenerateCredentials = async () => {
         if(!confirm("Generate System Login Credentials for this student?")) return;
         try {
-            const res = await fetch(`http://localhost:5000/students/${params.id}/generate-credentials`, { method: 'PATCH' });
+            const res = await fetch(`https://shmool.onrender.com/students/${params.id}/generate-credentials`, { method: 'PATCH' });
             const data = await res.json();
             if(res.ok) {
                 toast.success(`Credentials Created! Username: ${data.username}`);
@@ -167,7 +167,7 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
 
     const handleChangePassword = async (password: string) => {
         try {
-            const res = await fetch(`http://localhost:5000/students/${params.id}/change-password`, {
+            const res = await fetch(`https://shmool.onrender.com/students/${params.id}/change-password`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ password })
@@ -248,7 +248,7 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                         <div className="d-flex align-items-end gap-4" style={{ marginBottom: '-60px' }}>
                             <div className="position-relative">
                                 <img 
-                                    src={student.image_url ? `http://localhost:5000/${student.image_url}` : "https://via.placeholder.com/150"} 
+                                    src={student.image_url ? `https://shmool.onrender.com/${student.image_url}` : "https://via.placeholder.com/150"} 
                                     className="rounded-circle border border-4 border-white shadow-lg bg-white"
                                     style={{ width: '160px', height: '160px', objectFit: 'cover' }}
                                 />
@@ -903,7 +903,7 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                                                                                     <div className="me-3">
                                                                                         {sibling.image_url ? (
                                                                                             <img 
-                                                                                                src={`http://localhost:5000/${sibling.image_url}`} 
+                                                                                                src={`https://shmool.onrender.com/${sibling.image_url}`} 
                                                                                                 alt={sibling.first_name}
                                                                                                 className="rounded-circle border border-2"
                                                                                                 style={{ 
@@ -1341,7 +1341,7 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                                                         <div className="card-body text-center p-4">
                                                             <i className="bi bi-file-earmark-pdf fs-1 text-danger mb-3"></i>
                                                             <h6 className="text-truncate">Document {i+1}</h6>
-                                                            <a href={`http://localhost:5000/${doc}`} target="_blank" className="btn btn-sm btn-outline-primary mt-2">View</a>
+                                                            <a href={`https://shmool.onrender.com/${doc}`} target="_blank" className="btn btn-sm btn-outline-primary mt-2">View</a>
                                                         </div>
                                                     </div>
                                                 </div>

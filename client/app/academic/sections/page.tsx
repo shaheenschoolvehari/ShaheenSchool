@@ -40,14 +40,14 @@ export default function SectionSettings() {
 
     const fetchClasses = async () => {
         try {
-            const res = await fetch('http://localhost:5000/academic');
+            const res = await fetch('https://shmool.onrender.com/academic');
             if (res.ok) setClasses(await res.json());
         } catch(e) { console.error(e); }
     };
 
     const fetchSections = async () => {
         try {
-            const res = await fetch('http://localhost:5000/academic/sections');
+            const res = await fetch('https://shmool.onrender.com/academic/sections');
             if (res.ok) setSections(await res.json());
         } catch(e) { console.error(e); }
     };
@@ -55,7 +55,7 @@ export default function SectionSettings() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        const url = editMode ? `http://localhost:5000/academic/sections/${selectedId}` : 'http://localhost:5000/academic/sections';
+        const url = editMode ? `https://shmool.onrender.com/academic/sections/${selectedId}` : 'https://shmool.onrender.com/academic/sections';
         const method = editMode ? 'PUT' : 'POST';
 
         const toastId = toast.loading("Processing...");
@@ -95,7 +95,7 @@ export default function SectionSettings() {
         
         const toastId = toast.loading("Deleting...");
         try {
-            const res = await fetch(`http://localhost:5000/academic/sections/${id}`, { method: 'DELETE' });
+            const res = await fetch(`https://shmool.onrender.com/academic/sections/${id}`, { method: 'DELETE' });
             if (res.ok) {
                 fetchSections();
                 toast.update(toastId, { render: "Section deleted successfully", type: "success", isLoading: false, autoClose: 3000 });

@@ -63,7 +63,7 @@ export default function FeePlansPage() {
 
     const fetchPlans = async () => {
         try {
-            const r = await fetch('http://localhost:5000/fee-plans');
+            const r = await fetch('https://shmool.onrender.com/fee-plans');
             const data = await r.json();
             setPlans(Array.isArray(data) ? data : []);
         } catch { } finally { setLoading(false); }
@@ -71,14 +71,14 @@ export default function FeePlansPage() {
 
     const fetchHeads = async () => {
         try {
-            const r = await fetch('http://localhost:5000/fee-heads/active');
+            const r = await fetch('https://shmool.onrender.com/fee-heads/active');
             setAllHeads(await r.json());
         } catch { }
     };
 
     const fetchClasses = async () => {
         try {
-            const r = await fetch('http://localhost:5000/academic');
+            const r = await fetch('https://shmool.onrender.com/academic');
             setClasses(await r.json());
         } catch { }
     };
@@ -137,7 +137,7 @@ export default function FeePlansPage() {
             return;
         }
         try {
-            const url = editMode ? `http://localhost:5000/fee-plans/${editId}` : 'http://localhost:5000/fee-plans';
+            const url = editMode ? `https://shmool.onrender.com/fee-plans/${editId}` : 'https://shmool.onrender.com/fee-plans';
             const method = editMode ? 'PUT' : 'POST';
             const res = await fetch(url, {
                 method, headers: { 'Content-Type': 'application/json' },
@@ -154,7 +154,7 @@ export default function FeePlansPage() {
 
     const handleDelete = async (id: number) => {
         if (!confirm('Delete this fee plan?')) return;
-        await fetch(`http://localhost:5000/fee-plans/${id}`, { method: 'DELETE' });
+        await fetch(`https://shmool.onrender.com/fee-plans/${id}`, { method: 'DELETE' });
         fetchPlans();
     };
 

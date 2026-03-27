@@ -180,7 +180,7 @@ export default function TeacherAssign() {
                 if (isSelected && !wasSelected) {
                     // ADD
                     apiCalls.push(
-                        fetch(`http://localhost:5000/academic/teachers/${employeeId}/subjects`, {
+                        fetch(`https://shmool.onrender.com/academic/teachers/${employeeId}/subjects`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ subject_id: subId })
@@ -191,7 +191,7 @@ export default function TeacherAssign() {
                     const assignId = initialSubjectMap[subId];
                     if (assignId) {
                         apiCalls.push(
-                            fetch(`http://localhost:5000/academic/teachers/${employeeId}/subjects/${assignId}`, {
+                            fetch(`https://shmool.onrender.com/academic/teachers/${employeeId}/subjects/${assignId}`, {
                                 method: 'DELETE'
                             })
                         );
@@ -217,7 +217,7 @@ export default function TeacherAssign() {
 
                 // POST (Upsert)
                 apiCalls.push(
-                    fetch(`http://localhost:5000/academic/teachers/${employeeId}/classes`, {
+                    fetch(`https://shmool.onrender.com/academic/teachers/${employeeId}/classes`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ 
@@ -237,7 +237,7 @@ export default function TeacherAssign() {
                     if (!activeSectionsMap.has(secId)) {
                         // Section is no longer active (no subjects, not CT) -> Remove it
                          apiCalls.push(
-                            fetch(`http://localhost:5000/academic/teachers/${employeeId}/classes/${cls.assignment_id}`, {
+                            fetch(`https://shmool.onrender.com/academic/teachers/${employeeId}/classes/${cls.assignment_id}`, {
                                 method: 'DELETE'
                             })
                         );

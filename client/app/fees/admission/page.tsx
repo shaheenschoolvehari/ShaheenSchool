@@ -67,7 +67,7 @@ export default function AdmissionFeePage() {
         setLoading(true);
         try {
             const q = filterStatus ? `?status=${filterStatus}` : '';
-            const r = await fetch(`http://localhost:5000/fee-slips/admission-fees${q}`);
+            const r = await fetch(`https://shmool.onrender.com/fee-slips/admission-fees${q}`);
             const data = await r.json();
             setLedgers(data.ledgers || []);
             setStats(data.stats || null);
@@ -91,7 +91,7 @@ export default function AdmissionFeePage() {
         if (!selectedLedger) return;
         setPaying(true); setPayError(''); setPaySuccess('');
         try {
-            const res = await fetch(`http://localhost:5000/fee-slips/admission-fees/${selectedLedger.ledger_id}/pay`, {
+            const res = await fetch(`https://shmool.onrender.com/fee-slips/admission-fees/${selectedLedger.ledger_id}/pay`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payForm)

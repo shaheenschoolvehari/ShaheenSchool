@@ -35,8 +35,8 @@ export default function UsersPage() {
     const fetchData = async () => {
         try {
             const [uRes, rRes] = await Promise.all([
-                fetch('http://localhost:5000/users'),
-                fetch('http://localhost:5000/roles')
+                fetch('https://shmool.onrender.com/users'),
+                fetch('https://shmool.onrender.com/roles')
             ]);
             const uData = await uRes.json();
             const rData = await rRes.json();
@@ -59,14 +59,14 @@ export default function UsersPage() {
     const handleDelete = async (id: number) => {
         if (!confirm("Are you sure you want to delete this user?")) return;
         try {
-            await fetch(`http://localhost:5000/users/${id}`, { method: 'DELETE' });
+            await fetch(`https://shmool.onrender.com/users/${id}`, { method: 'DELETE' });
             fetchData();
         } catch (err) { console.error(err); }
     };
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
-        const url = formData.id === 0 ? 'http://localhost:5000/users' : `http://localhost:5000/users/${formData.id}`;
+        const url = formData.id === 0 ? 'https://shmool.onrender.com/users' : `https://shmool.onrender.com/users/${formData.id}`;
         const method = formData.id === 0 ? 'POST' : 'PUT';
         
         try {

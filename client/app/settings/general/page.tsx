@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 
-const API = 'http://localhost:5000';
+const API = 'https://shmool.onrender.com';
 
 export default function GeneralSettings() {
     const [settings, setSettings] = useState({

@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 
-const API = 'http://localhost:5000';
+const API = 'https://shmool.onrender.com';
 
 interface FamilyOPB {
     family_id: string;

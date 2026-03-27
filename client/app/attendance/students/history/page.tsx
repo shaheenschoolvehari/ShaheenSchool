@@ -40,7 +40,7 @@ export default function StudentAttendanceHistoryPage() {
     const monthNames= ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
     useEffect(()=>{
-        fetch('http://localhost:5000/academic').then(r=>r.json()).then(setClasses).catch(()=>{});
+        fetch('https://shmool.onrender.com/academic').then(r=>r.json()).then(setClasses).catch(()=>{});
     },[]);
 
     const showToast = (type:'success'|'danger',msg:string)=>{
@@ -51,7 +51,7 @@ export default function StudentAttendanceHistoryPage() {
         if(!classId||!month||!year) return;
         setLoading(true);
         try {
-            const res = await fetch(`http://localhost:5000/attendance/students/history?class_id=${classId}&month=${month}&year=${year}`);
+            const res = await fetch(`https://shmool.onrender.com/attendance/students/history?class_id=${classId}&month=${month}&year=${year}`);
             const d = await res.json();
             if(d.students) setData(d); else showToast('danger','Failed to load history');
         } catch { showToast('danger','Server error'); }

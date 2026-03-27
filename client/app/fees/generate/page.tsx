@@ -31,7 +31,7 @@ interface Slip {
 interface Stats { total_students: number; total_amount: number; paid_amount: number; paid_count: number; unpaid_count: number; partial_count: number; }
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-const API = 'http://localhost:5000';
+const API = 'https://shmool.onrender.com';
 
 export default function FeeGeneratePage() {
     const router = useRouter();
@@ -65,18 +65,18 @@ export default function FeeGeneratePage() {
     useEffect(() => { fetchClasses(); fetchHeads(); }, []);
 
     const fetchClasses = async () => {
-        try { const r = await fetch('http://localhost:5000/academic'); setClasses(await r.json()); } catch { }
+        try { const r = await fetch('https://shmool.onrender.com/academic'); setClasses(await r.json()); } catch { }
     };
 
     const fetchHeads = async () => {
-        try { const r = await fetch('http://localhost:5000/fee-heads/active'); setAllHeads(await r.json()); } catch { }
+        try { const r = await fetch('https://shmool.onrender.com/fee-heads/active'); setAllHeads(await r.json()); } catch { }
     };
 
     const fetchPlanForClass = async (class_id: string) => {
         if (!class_id) { setPlanInfo(null); return; }
         setLoadingPlan(true);
         try {
-            const r = await fetch('http://localhost:5000/fee-plans');
+            const r = await fetch('https://shmool.onrender.com/fee-plans');
             const plans: PlanInfo[] = await r.json();
             const active = plans.find(p => p.is_active && (p as any).class_id?.toString() === class_id);
             setPlanInfo(active || null);
@@ -98,7 +98,7 @@ export default function FeeGeneratePage() {
         if (!selectedClass || !viewMonth || !selectedYear) { setSlips([]); setStats(null); return; }
         setLoadingSlips(true);
         try {
-            const r = await fetch(`http://localhost:5000/fee-slips?class_id=${selectedClass}&month=${viewMonth}&year=${selectedYear}`);
+            const r = await fetch(`https://shmool.onrender.com/fee-slips?class_id=${selectedClass}&month=${viewMonth}&year=${selectedYear}`);
             const data = await r.json();
             setSlips(data.slips || []);
             setStats(data.stats || null);
@@ -136,7 +136,7 @@ export default function FeeGeneratePage() {
         const sortedMonths = [...selectedMonths].sort((a, b) => parseInt(a) - parseInt(b));
         try {
             // Send ONE request with all selected months — server creates a single combined slip
-            const res = await fetch('http://localhost:5000/fee-slips/generate', {
+            const res = await fetch('https://shmool.onrender.com/fee-slips/generate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

@@ -24,8 +24,8 @@ export default function StudentReportPage() {
     const printRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        fetch('http://localhost:5000/academic/classes').then(r => r.json()).then(setClasses).catch(console.error);
-        fetch('http://localhost:5000/academic/sections').then(r => r.json()).then(setSections).catch(console.error);
+        fetch('https://shmool.onrender.com/academic/classes').then(r => r.json()).then(setClasses).catch(console.error);
+        fetch('https://shmool.onrender.com/academic/sections').then(r => r.json()).then(setSections).catch(console.error);
     }, []);
 
     useEffect(() => {
@@ -40,7 +40,7 @@ export default function StudentReportPage() {
             const params = new URLSearchParams();
             if (classId) params.append('class_id', classId);
             if (sectionId) params.append('section_id', sectionId);
-            const res = await fetch(`http://localhost:5000/reports/students?${params}`);
+            const res = await fetch(`https://shmool.onrender.com/reports/students?${params}`);
             if (!res.ok) throw new Error((await res.json()).error || 'Failed');
             const data = await res.json();
             setStudents(data.students);

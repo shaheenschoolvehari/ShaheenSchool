@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 
-const API = 'http://localhost:5000';
+const API = 'https://shmool.onrender.com';
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 interface SlipRow {

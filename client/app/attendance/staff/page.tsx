@@ -31,7 +31,7 @@ export default function StaffAttendancePage() {
     const { hasPermission } = useAuth();
 
     useEffect(()=>{
-        fetch('http://localhost:5000/hrm/departments').then(r=>r.json()).then(setDepartments).catch(()=>{});
+        fetch('https://shmool.onrender.com/hrm/departments').then(r=>r.json()).then(setDepartments).catch(()=>{});
     },[]);
 
     const showToast = (type:'success'|'danger',msg:string)=>{ setToast({type,msg}); setTimeout(()=>setToast(null),4000); };
@@ -40,7 +40,7 @@ export default function StaffAttendancePage() {
         if(!date) return;
         setLoading(true);
         try {
-            const url = `http://localhost:5000/attendance/staff/daily?date=${date}${deptId?`&department_id=${deptId}`:''}`;
+            const url = `https://shmool.onrender.com/attendance/staff/daily?date=${date}${deptId?`&department_id=${deptId}`:''}`;
             const res = await fetch(url);
             const data = await res.json();
             if(!Array.isArray(data)){ showToast('danger','Failed to load staff'); return; }
@@ -82,7 +82,7 @@ export default function StaffAttendancePage() {
         try {
             // Save ALL staff regardless of lock status
             const records = staff.map(e=>({ employee_id:e.employee_id, status:statuses[e.employee_id]||'Present' }));
-            const res = await fetch('http://localhost:5000/attendance/staff/daily',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({date,records}) });
+            const res = await fetch('https://shmool.onrender.com/attendance/staff/daily',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({date,records}) });
             const d = await res.json();
             if(res.ok){
                 // Lock all rows after save
