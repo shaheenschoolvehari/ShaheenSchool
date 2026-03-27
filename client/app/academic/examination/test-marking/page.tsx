@@ -28,7 +28,7 @@ type SheetData = {
     students: StudentMarkRow[];
 };
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'https://shmool.onrender.com';
+const API = 'https://shmool.onrender.com';
 
 export default function TestMarkingPage() {
     const { user } = useAuth();
@@ -651,3 +651,5 @@ export default function TestMarkingPage() {
         </div>
     );
 }
+
+
