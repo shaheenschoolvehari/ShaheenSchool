@@ -7,7 +7,7 @@ import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { useAuth } from '@/contexts/AuthContext';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5000';
+const API = 'https://shmool.onrender.com';
 
 type SubItem  = { label: string; href: string };
 type NavGroup = { key: string; label: string; icon: string; href: string; permission?: string; subs?: SubItem[] };

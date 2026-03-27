@@ -26,7 +26,7 @@ type StudentItem = {
     selected?: boolean;
 };
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5000';
+const API = 'https://shmool.onrender.com';
 
 export default function ExamCollectionPage() {
     const { user } = useAuth();
