@@ -306,7 +306,7 @@ export default function TeacherAssign() {
                         <div className="spinner-border text-primary" style={{ width: '3rem', height: '3rem' }} role="status">
                             <span className="visually-hidden">Loading...</span>
                         </div>
-                        <div className="mt-3 text-muted">Connecting to Server (127.0.0.1)...</div>
+                        <div className="mt-3 text-muted">Connecting to Server (shmool.onrender.com)...</div>
                     </div>
                 ) : error ? (
                     <div className="col-12 text-center py-5">
