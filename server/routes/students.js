@@ -154,6 +154,309 @@ router.get('/:id/siblings', async (req, res) => {
     }
 });
 
+// ==========================================
+// PHASE 2 & 3: FAMILY MANAGEMENT ENDPOINTS
+// ==========================================
+
+// Get Potential Duplicate Families (Phase 2)
+router.get('/families/potential-duplicates', async (req, res) => {
+    try {
+        const query = `
+            WITH family_details AS (
+                SELECT 
+                    family_id,
+                    ARRAY_AGG(student_id ORDER BY created_at) as student_ids,
+                    ARRAY_AGG(first_name || ' ' || last_name ORDER BY created_at) as student_names,
+                    ARRAY_AGG(admission_no ORDER BY created_at) as admission_nos,
+                    ARRAY_AGG(class_name ORDER BY created_at) as classes,
+                    MAX(father_name) as father_name,
+                    MAX(father_phone) as father_phone,
+                    MAX(father_cnic) as father_cnic,
+                    MAX(permanent_address) as address,
+                    COUNT(*) as family_size
+                FROM students s
+                LEFT JOIN classes c ON s.class_id = c.class_id
+                WHERE s.family_id IS NOT NULL
+                GROUP BY family_id
+            )
+            SELECT 
+                f1.family_id as family1_id,
+                f1.student_ids as family1_student_ids,
+                f1.student_names as family1_students,
+                f1.admission_nos as family1_admission_nos,
+                f1.classes as family1_classes,
+                f1.father_name as father1_name,
+                f1.father_phone as father1_phone,
+                f1.father_cnic as father1_cnic,
+                f1.address as address1,
+                f1.family_size as family1_size,
+                
+                f2.family_id as family2_id,
+                f2.student_ids as family2_student_ids,
+                f2.student_names as family2_students,
+                f2.admission_nos as family2_admission_nos,
+                f2.classes as family2_classes,
+                f2.father_name as father2_name,
+                f2.father_phone as father2_phone,
+                f2.father_cnic as father2_cnic,
+                f2.address as address2,
+                f2.family_size as family2_size,
+                
+                CASE
+                    WHEN LOWER(f1.father_name) = LOWER(f2.father_name) 
+                         AND f1.father_phone = f2.father_phone THEN 95
+                    WHEN LOWER(f1.father_name) = LOWER(f2.father_name)
+                         AND RIGHT(f1.father_phone, 7) = RIGHT(f2.father_phone, 7) THEN 85
+                    WHEN f1.father_phone = f2.father_phone THEN 75
+                    ELSE 60
+                END as match_score
+                
+            FROM family_details f1
+            JOIN family_details f2 ON f1.family_id < f2.family_id
+            WHERE (
+                (LOWER(f1.father_name) = LOWER(f2.father_name) 
+                 AND (f1.father_phone = f2.father_phone 
+                      OR RIGHT(f1.father_phone, 7) = RIGHT(f2.father_phone, 7)))
+                OR f1.father_phone = f2.father_phone
+            )
+            AND f1.family_id != f2.family_id
+            ORDER BY match_score DESC, f1.family_id
+            LIMIT 50
+        `;
+
+        const result = await pool.query(query);
+        res.json(result.rows);
+
+    } catch (err) {
+        console.error('Duplicate detection error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Merge Two Families (Phase 2)
+router.post('/families/merge', async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const { primaryFamilyId, secondaryFamilyId, relationType } = req.body;
+
+        if (!primaryFamilyId || !secondaryFamilyId || !relationType) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+
+        await client.query('BEGIN');
+
+        // Get all students from both families
+        const family1 = await client.query(
+            'SELECT student_id FROM students WHERE family_id = $1',
+            [primaryFamilyId]
+        );
+        const family2 = await client.query(
+            'SELECT student_id FROM students WHERE family_id = $1',
+            [secondaryFamilyId]
+        );
+
+        if (family2.rows.length === 0) {
+            throw new Error('Secondary family not found');
+        }
+
+        // Update all secondary family students to primary family
+        await client.query(
+            `UPDATE students 
+             SET family_id = $1, 
+                 sibling_relation = $2
+             WHERE family_id = $3`,
+            [primaryFamilyId, relationType, secondaryFamilyId]
+        );
+
+        // Create sibling relationships between all students
+        const allStudents = [...family1.rows, ...family2.rows];
+        
+        for (let i = 0; i < allStudents.length; i++) {
+            for (let j = i + 1; j < allStudents.length; j++) {
+                await client.query(
+                    `INSERT INTO student_siblings (student_id, sibling_id, relation_type)
+                     VALUES ($1, $2, $3), ($2, $1, $3)
+                     ON CONFLICT (student_id, sibling_id) 
+                     DO UPDATE SET relation_type = $3`,
+                    [allStudents[i].student_id, allStudents[j].student_id, relationType]
+                );
+            }
+        }
+
+        await client.query('COMMIT');
+        
+        res.json({ 
+            success: true, 
+            message: `Merged ${family2.rows.length} students into ${primaryFamilyId}`,
+            mergedFamily: primaryFamilyId,
+            movedStudents: family2.rows.length
+        });
+
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Merge error:', err);
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+// Search Students for Manual Linking (Phase 3)
+router.get('/families/search-for-link', async (req, res) => {
+    try {
+        const { query } = req.query;
+        
+        if (!query || query.length < 2) {
+            return res.json([]);
+        }
+
+        const result = await pool.query(`
+            SELECT 
+                s.student_id,
+                s.admission_no,
+                s.first_name,
+                s.last_name,
+                s.father_name,
+                s.family_id,
+                c.class_name,
+                sec.section_name,
+                s.image_url
+            FROM students s
+            LEFT JOIN classes c ON s.class_id = c.class_id
+            LEFT JOIN sections sec ON s.section_id = sec.section_id
+            WHERE LOWER(s.first_name || ' ' || s.last_name) LIKE LOWER($1)
+               OR s.admission_no LIKE $1
+               OR LOWER(s.father_name) LIKE LOWER($1)
+            ORDER BY s.first_name
+            LIMIT 20
+        `, [`%${query}%`]);
+
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Search error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Manual Link Between Two Students (Phase 3)
+router.post('/families/manual-link', async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const { student1_id, student2_id, relation_type } = req.body;
+
+        if (!student1_id || !student2_id || !relation_type) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+
+        if (student1_id === student2_id) {
+            return res.status(400).json({ error: 'Cannot link a student to themselves' });
+        }
+
+        await client.query('BEGIN');
+
+        // Get both students' info
+        const students = await client.query(
+            `SELECT student_id, family_id, first_name, last_name 
+             FROM students 
+             WHERE student_id IN ($1, $2)`,
+            [student1_id, student2_id]
+        );
+
+        if (students.rows.length !== 2) {
+            throw new Error('One or both students not found');
+        }
+
+        const [s1, s2] = students.rows;
+
+        // If already in same family, just create/update relationship
+        if (s1.family_id === s2.family_id) {
+            await client.query(
+                `INSERT INTO student_siblings (student_id, sibling_id, relation_type)
+                 VALUES ($1, $2, $3), ($2, $1, $3)
+                 ON CONFLICT (student_id, sibling_id) 
+                 DO UPDATE SET relation_type = $3`,
+                [student1_id, student2_id, relation_type]
+            );
+
+            await client.query('COMMIT');
+            return res.json({ 
+                success: true, 
+                message: 'Sibling relationship created',
+                action: 'relationship_only'
+            });
+        }
+
+        // Different families - Merge them
+        const primaryFamilyId = s1.family_id < s2.family_id ? s1.family_id : s2.family_id;
+        const secondaryFamilyId = s1.family_id < s2.family_id ? s2.family_id : s1.family_id;
+
+        // Get all students from secondary family
+        const secondaryFamilyStudents = await client.query(
+            'SELECT student_id FROM students WHERE family_id = $1',
+            [secondaryFamilyId]
+        );
+
+        // Move all secondary family members to primary family
+        await client.query(
+            `UPDATE students 
+             SET family_id = $1,
+                 sibling_relation = $2
+             WHERE family_id = $3`,
+            [primaryFamilyId, relation_type, secondaryFamilyId]
+        );
+
+        // Get all students now in primary family
+        const allFamilyStudents = await client.query(
+            'SELECT student_id FROM students WHERE family_id = $1',
+            [primaryFamilyId]
+        );
+
+        // Create sibling relationships for all combinations
+        const studentIds = allFamilyStudents.rows.map(r => r.student_id);
+        
+        for (let i = 0; i < studentIds.length; i++) {
+            for (let j = i + 1; j < studentIds.length; j++) {
+                let pairRelation = relation_type;
+                
+                // For the specific pair being linked, use specified relation
+                if ((studentIds[i] === student1_id && studentIds[j] === student2_id) ||
+                    (studentIds[i] === student2_id && studentIds[j] === student1_id)) {
+                    pairRelation = relation_type;
+                } else {
+                    // For others, default to cousin when merging different families
+                    pairRelation = 'cousin';
+                }
+
+                await client.query(
+                    `INSERT INTO student_siblings (student_id, sibling_id, relation_type)
+                     VALUES ($1, $2, $3), ($2, $1, $3)
+                     ON CONFLICT (student_id, sibling_id) 
+                     DO UPDATE SET relation_type = $3`,
+                    [studentIds[i], studentIds[j], pairRelation]
+                );
+            }
+        }
+
+        await client.query('COMMIT');
+
+        res.json({ 
+            success: true, 
+            message: `Linked ${s2.first_name} to ${s1.first_name}'s family as ${relation_type}`,
+            primaryFamily: primaryFamilyId,
+            movedStudents: secondaryFamilyStudents.rows.length,
+            action: 'family_merged'
+        });
+
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Manual link error:', err);
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+
 // GET /students/families/:family_id — get family info including family_fee and members
 router.get('/families/:family_id', async (req, res) => {
     try {
@@ -706,308 +1009,6 @@ router.post('/bulk', async (req, res) => {
         await client.query('ROLLBACK');
         console.error(err);
         res.status(500).json({ error: "Server Error during bulk import" });
-    } finally {
-        client.release();
-    }
-});
-
-// ==========================================
-// PHASE 2 & 3: FAMILY MANAGEMENT ENDPOINTS
-// ==========================================
-
-// Get Potential Duplicate Families (Phase 2)
-router.get('/families/potential-duplicates', async (req, res) => {
-    try {
-        const query = `
-            WITH family_details AS (
-                SELECT 
-                    family_id,
-                    ARRAY_AGG(student_id ORDER BY created_at) as student_ids,
-                    ARRAY_AGG(first_name || ' ' || last_name ORDER BY created_at) as student_names,
-                    ARRAY_AGG(admission_no ORDER BY created_at) as admission_nos,
-                    ARRAY_AGG(class_name ORDER BY created_at) as classes,
-                    MAX(father_name) as father_name,
-                    MAX(father_phone) as father_phone,
-                    MAX(father_cnic) as father_cnic,
-                    MAX(permanent_address) as address,
-                    COUNT(*) as family_size
-                FROM students s
-                LEFT JOIN classes c ON s.class_id = c.class_id
-                WHERE s.family_id IS NOT NULL
-                GROUP BY family_id
-            )
-            SELECT 
-                f1.family_id as family1_id,
-                f1.student_ids as family1_student_ids,
-                f1.student_names as family1_students,
-                f1.admission_nos as family1_admission_nos,
-                f1.classes as family1_classes,
-                f1.father_name as father1_name,
-                f1.father_phone as father1_phone,
-                f1.father_cnic as father1_cnic,
-                f1.address as address1,
-                f1.family_size as family1_size,
-                
-                f2.family_id as family2_id,
-                f2.student_ids as family2_student_ids,
-                f2.student_names as family2_students,
-                f2.admission_nos as family2_admission_nos,
-                f2.classes as family2_classes,
-                f2.father_name as father2_name,
-                f2.father_phone as father2_phone,
-                f2.father_cnic as father2_cnic,
-                f2.address as address2,
-                f2.family_size as family2_size,
-                
-                CASE
-                    WHEN LOWER(f1.father_name) = LOWER(f2.father_name) 
-                         AND f1.father_phone = f2.father_phone THEN 95
-                    WHEN LOWER(f1.father_name) = LOWER(f2.father_name)
-                         AND RIGHT(f1.father_phone, 7) = RIGHT(f2.father_phone, 7) THEN 85
-                    WHEN f1.father_phone = f2.father_phone THEN 75
-                    ELSE 60
-                END as match_score
-                
-            FROM family_details f1
-            JOIN family_details f2 ON f1.family_id < f2.family_id
-            WHERE (
-                (LOWER(f1.father_name) = LOWER(f2.father_name) 
-                 AND (f1.father_phone = f2.father_phone 
-                      OR RIGHT(f1.father_phone, 7) = RIGHT(f2.father_phone, 7)))
-                OR f1.father_phone = f2.father_phone
-            )
-            AND f1.family_id != f2.family_id
-            ORDER BY match_score DESC, f1.family_id
-            LIMIT 50
-        `;
-
-        const result = await pool.query(query);
-        res.json(result.rows);
-
-    } catch (err) {
-        console.error('Duplicate detection error:', err);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Merge Two Families (Phase 2)
-router.post('/families/merge', async (req, res) => {
-    const client = await pool.connect();
-    try {
-        const { primaryFamilyId, secondaryFamilyId, relationType } = req.body;
-
-        if (!primaryFamilyId || !secondaryFamilyId || !relationType) {
-            return res.status(400).json({ error: 'Missing required fields' });
-        }
-
-        await client.query('BEGIN');
-
-        // Get all students from both families
-        const family1 = await client.query(
-            'SELECT student_id FROM students WHERE family_id = $1',
-            [primaryFamilyId]
-        );
-        const family2 = await client.query(
-            'SELECT student_id FROM students WHERE family_id = $1',
-            [secondaryFamilyId]
-        );
-
-        if (family2.rows.length === 0) {
-            throw new Error('Secondary family not found');
-        }
-
-        // Update all secondary family students to primary family
-        await client.query(
-            `UPDATE students 
-             SET family_id = $1, 
-                 sibling_relation = $2
-             WHERE family_id = $3`,
-            [primaryFamilyId, relationType, secondaryFamilyId]
-        );
-
-        // Create sibling relationships between all students
-        const allStudents = [...family1.rows, ...family2.rows];
-        
-        for (let i = 0; i < allStudents.length; i++) {
-            for (let j = i + 1; j < allStudents.length; j++) {
-                await client.query(
-                    `INSERT INTO student_siblings (student_id, sibling_id, relation_type)
-                     VALUES ($1, $2, $3), ($2, $1, $3)
-                     ON CONFLICT (student_id, sibling_id) 
-                     DO UPDATE SET relation_type = $3`,
-                    [allStudents[i].student_id, allStudents[j].student_id, relationType]
-                );
-            }
-        }
-
-        await client.query('COMMIT');
-        
-        res.json({ 
-            success: true, 
-            message: `Merged ${family2.rows.length} students into ${primaryFamilyId}`,
-            mergedFamily: primaryFamilyId,
-            movedStudents: family2.rows.length
-        });
-
-    } catch (err) {
-        await client.query('ROLLBACK');
-        console.error('Merge error:', err);
-        res.status(500).json({ error: err.message });
-    } finally {
-        client.release();
-    }
-});
-
-// Search Students for Manual Linking (Phase 3)
-router.get('/families/search-for-link', async (req, res) => {
-    try {
-        const { query } = req.query;
-        
-        if (!query || query.length < 2) {
-            return res.json([]);
-        }
-
-        const result = await pool.query(`
-            SELECT 
-                s.student_id,
-                s.admission_no,
-                s.first_name,
-                s.last_name,
-                s.father_name,
-                s.family_id,
-                c.class_name,
-                sec.section_name,
-                s.image_url
-            FROM students s
-            LEFT JOIN classes c ON s.class_id = c.class_id
-            LEFT JOIN sections sec ON s.section_id = sec.section_id
-            WHERE LOWER(s.first_name || ' ' || s.last_name) LIKE LOWER($1)
-               OR s.admission_no LIKE $1
-               OR LOWER(s.father_name) LIKE LOWER($1)
-            ORDER BY s.first_name
-            LIMIT 20
-        `, [`%${query}%`]);
-
-        res.json(result.rows);
-    } catch (err) {
-        console.error('Search error:', err);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Manual Link Between Two Students (Phase 3)
-router.post('/families/manual-link', async (req, res) => {
-    const client = await pool.connect();
-    try {
-        const { student1_id, student2_id, relation_type } = req.body;
-
-        if (!student1_id || !student2_id || !relation_type) {
-            return res.status(400).json({ error: 'Missing required fields' });
-        }
-
-        if (student1_id === student2_id) {
-            return res.status(400).json({ error: 'Cannot link a student to themselves' });
-        }
-
-        await client.query('BEGIN');
-
-        // Get both students' info
-        const students = await client.query(
-            `SELECT student_id, family_id, first_name, last_name 
-             FROM students 
-             WHERE student_id IN ($1, $2)`,
-            [student1_id, student2_id]
-        );
-
-        if (students.rows.length !== 2) {
-            throw new Error('One or both students not found');
-        }
-
-        const [s1, s2] = students.rows;
-
-        // If already in same family, just create/update relationship
-        if (s1.family_id === s2.family_id) {
-            await client.query(
-                `INSERT INTO student_siblings (student_id, sibling_id, relation_type)
-                 VALUES ($1, $2, $3), ($2, $1, $3)
-                 ON CONFLICT (student_id, sibling_id) 
-                 DO UPDATE SET relation_type = $3`,
-                [student1_id, student2_id, relation_type]
-            );
-
-            await client.query('COMMIT');
-            return res.json({ 
-                success: true, 
-                message: 'Sibling relationship created',
-                action: 'relationship_only'
-            });
-        }
-
-        // Different families - Merge them
-        const primaryFamilyId = s1.family_id < s2.family_id ? s1.family_id : s2.family_id;
-        const secondaryFamilyId = s1.family_id < s2.family_id ? s2.family_id : s1.family_id;
-
-        // Get all students from secondary family
-        const secondaryFamilyStudents = await client.query(
-            'SELECT student_id FROM students WHERE family_id = $1',
-            [secondaryFamilyId]
-        );
-
-        // Move all secondary family members to primary family
-        await client.query(
-            `UPDATE students 
-             SET family_id = $1,
-                 sibling_relation = $2
-             WHERE family_id = $3`,
-            [primaryFamilyId, relation_type, secondaryFamilyId]
-        );
-
-        // Get all students now in primary family
-        const allFamilyStudents = await client.query(
-            'SELECT student_id FROM students WHERE family_id = $1',
-            [primaryFamilyId]
-        );
-
-        // Create sibling relationships for all combinations
-        const studentIds = allFamilyStudents.rows.map(r => r.student_id);
-        
-        for (let i = 0; i < studentIds.length; i++) {
-            for (let j = i + 1; j < studentIds.length; j++) {
-                let pairRelation = relation_type;
-                
-                // For the specific pair being linked, use specified relation
-                if ((studentIds[i] === student1_id && studentIds[j] === student2_id) ||
-                    (studentIds[i] === student2_id && studentIds[j] === student1_id)) {
-                    pairRelation = relation_type;
-                } else {
-                    // For others, default to cousin when merging different families
-                    pairRelation = 'cousin';
-                }
-
-                await client.query(
-                    `INSERT INTO student_siblings (student_id, sibling_id, relation_type)
-                     VALUES ($1, $2, $3), ($2, $1, $3)
-                     ON CONFLICT (student_id, sibling_id) 
-                     DO UPDATE SET relation_type = $3`,
-                    [studentIds[i], studentIds[j], pairRelation]
-                );
-            }
-        }
-
-        await client.query('COMMIT');
-
-        res.json({ 
-            success: true, 
-            message: `Linked ${s2.first_name} to ${s1.first_name}'s family as ${relation_type}`,
-            primaryFamily: primaryFamilyId,
-            movedStudents: secondaryFamilyStudents.rows.length,
-            action: 'family_merged'
-        });
-
-    } catch (err) {
-        await client.query('ROLLBACK');
-        console.error('Manual link error:', err);
-        res.status(500).json({ error: err.message });
     } finally {
         client.release();
     }
