@@ -780,7 +780,8 @@ router.post('/', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'documen
     } catch (err) {
         await client.query('ROLLBACK');
         if (err.code === '23505') {
-            return res.status(400).json({ error: "System generated a duplicate Admission No or Username. Please try again." });
+            console.log("UNIQUE CONSTRAINT VIOLATION:", err.detail);
+            return res.status(400).json({ error: "System generated a duplicate Admission No or Username (" + err.detail + "). Please try again." });
         }
         console.error(err.message);
         res.status(500).json({ error: "Server Error: " + err.message });
