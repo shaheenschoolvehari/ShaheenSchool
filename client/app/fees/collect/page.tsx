@@ -17,7 +17,7 @@ interface SlipRow {
     is_family_slip: boolean;
     total_amount: number;
     paid_amount: number;
-    status: 'paid' | 'partial' | 'unpaid';
+    status: 'paid' | 'partial' | 'unpaid' | 'satteled' | 'satteled';
     due_date: string | null;
     issue_date: string | null;
     month: number;
@@ -46,6 +46,7 @@ function fmtDate(d: string | null) {
 function StatusBadge({ status }: { status: string }) {
     const map: Record<string, { bg: string; label: string }> = {
         paid: { bg: '#198754', label: 'Paid' },
+        satteled: { bg: '#0dcaf0', label: 'Satteled' },
         partial: { bg: '#fd7e14', label: 'Partial' },
         unpaid: { bg: '#dc3545', label: 'Unpaid' },
     };
@@ -297,10 +298,10 @@ export default function CollectFeePage() {
             setStats(prev => prev ? {
                 ...prev,
                 paid_amount: (prev.paid_amount || 0) + receivingSnap,
-                paid_count: d.slip.status === 'paid' ? (prev.paid_count + 1) : prev.paid_count,
+                paid_count: ['paid', 'satteled'].includes(d.slip.status) ? (prev.paid_count + 1) : prev.paid_count,
                 unpaid_count: d.slip.status !== 'unpaid' && activeSlip?.status === 'unpaid' ? prev.unpaid_count - 1 : prev.unpaid_count,
                 partial_count: d.slip.status === 'partial' ? (activeSlip?.status === 'unpaid' ? prev.partial_count + 1 : prev.partial_count) :
-                               d.slip.status === 'paid' && activeSlip?.status === 'partial' ? prev.partial_count - 1 : prev.partial_count
+                               ['paid', 'satteled'].includes(d.slip.status) && (activeSlip?.status === 'partial') ? prev.partial_count - 1 : prev.partial_count
             } : null);
             setActiveSlip(prev => prev ? { ...prev, paid_amount: d.slip.paid_amount, status: d.slip.status } : null);
             setPayAmount('');
@@ -342,7 +343,7 @@ export default function CollectFeePage() {
             latest_paid: SlipRow | null;  // most recent slip with paid_amount > 0 (for Reverse)
             has_payments: boolean;     // any slip in this group has been paid at least partially
             balance: number;           // balance from latest_unpaid only
-            slips: SlipRow[]; status: 'paid' | 'partial' | 'unpaid';
+            slips: SlipRow[]; status: 'paid' | 'partial' | 'unpaid' | 'satteled' | 'satteled';
         }>();
         filtered.forEach(slip => {
             const key = (slip.is_family_slip && slip.family_id) ? `fam_${slip.family_id}` : `stu_${slip.student_id}`;
@@ -661,7 +662,7 @@ export default function CollectFeePage() {
                                                         <StatusBadge status={g.status} />
                                                     </td>
                                                     <td className="px-2 text-center">
-                        {g.status === 'paid' ? (
+                        {['paid', 'satteled'].includes(g.status) ? (
                                                             <button className="btn btn-sm" style={{ fontSize: '0.72rem', backgroundColor: '#e8f5e9', color: '#198754', border: '1px solid #c3e6cb', borderRadius: 6 }}
                                                                 onClick={() => openPayModal(g.latest_paid || g.latest_slip)}>
                                                                 <i className="bi bi-eye me-1"></i>History
@@ -719,8 +720,8 @@ export default function CollectFeePage() {
                                             return (
                                                 <button key={slip.slip_id}
                                                     className="btn text-start d-flex align-items-center justify-content-between"
-                                                    style={{ border: '1.5px solid', borderColor: slip.status === 'paid' ? '#c3e6cb' : slip.status === 'partial' ? '#ffd27a' : '#f5c2c7',
-                                                        borderRadius: 10, backgroundColor: slip.status === 'paid' ? '#f0fff4' : slip.status === 'partial' ? '#fffbf0' : '#fff5f5',
+                                                    style={{ border: '1.5px solid', borderColor: ['paid', 'satteled'].includes(slip.status) ? '#c3e6cb' : slip.status === 'partial' ? '#ffd27a' : '#f5c2c7',
+                                                        borderRadius: 10, backgroundColor: ['paid', 'satteled'].includes(slip.status) ? '#f0fff4' : slip.status === 'partial' ? '#fffbf0' : '#fff5f5',
                                                         padding: '10px 14px' }}
                                                     onClick={() => { setSlipPickerGroup(null); openPayModal(slip); }}>
                                                     <div>
@@ -765,7 +766,7 @@ export default function CollectFeePage() {
                                     <div className="text-white">
                                         <h5 className="modal-title fw-bold mb-1">
                                             <i className="bi bi-cash-coin me-2"></i>
-                                            {activeSlip.status === 'paid' ? 'Payment History' : 'Collect Fee Payment'}
+                                            {['paid', 'satteled'].includes(activeSlip.status) ? 'Payment History' : 'Collect Fee Payment'}
                                         </h5>
                                         <div style={{ fontSize: '0.82rem', opacity: 0.85 }}>
                                             {activeSlip.is_family_slip ? (
@@ -946,7 +947,7 @@ export default function CollectFeePage() {
                                         </div>
                                     )}
 
-                                    {activeSlip.status === 'paid' && (
+                                    {['paid', 'satteled'].includes(activeSlip.status) && (
                                         <div className="text-center py-2">
                                             <div className="rounded p-3" style={{ backgroundColor: '#e8f5e9', border: '1px solid #c3e6cb' }}>
                                                 <i className="bi bi-patch-check-fill text-success d-block mb-1" style={{ fontSize: 28 }}></i>
