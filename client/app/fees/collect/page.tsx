@@ -81,7 +81,7 @@ export default function CollectFeePage() {
     // Slip Picker Modal (when a student has multiple months)
     const [slipPickerGroup, setSlipPickerGroup] = useState<{ first_name: string; last_name: string; slips: SlipRow[] } | null>(null);
 
-    const [payAmount, setPayAmount] = useState('');
+    const [headPayVals, setHeadPayVals] = useState<Record<string, string>>({});
     const [payMethod, setPayMethod] = useState('cash');
     const [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0]);
     const [receivedBy, setReceivedBy] = useState('');
@@ -146,8 +146,18 @@ export default function CollectFeePage() {
 
     const openPayModal = async (slip: SlipRow) => {
         setActiveSlip(slip);
-        const balance = parseFloat(slip.total_amount as any) - parseFloat(slip.paid_amount as any);
-        setPayAmount(balance > 0 ? balance.toString() : '');
+        const initialHeads: Record<string, string> = {};
+        if (slip.line_items && slip.line_items.length > 0) {
+            slip.line_items.forEach((item: any) => {
+                const headId = item.fee_category_id ? `cat_${item.fee_category_id}` : item.item_name;
+                const rem = parseFloat(item.amount as any || 0) - parseFloat(item.paid_amount as any || 0);
+                initialHeads[headId] = rem > 0 ? rem.toString() : '';
+            });
+        } else {
+            const balance = parseFloat(slip.total_amount as any) - parseFloat(slip.paid_amount as any);
+            initialHeads['fallback'] = balance > 0 ? balance.toString() : '';
+        }
+        setHeadPayVals(initialHeads);
         setPayMethod('cash'); setPayDate(new Date().toISOString().split('T')[0]);
         setReceivedBy(''); setRefNo(''); setNotes('');
         setPayMsg(null); setPayModal(true);
@@ -276,17 +286,18 @@ export default function CollectFeePage() {
         finally { setDeletingPaymentId(null); }
     };
 
-    const handlePay = async (shouldPrint = false) => {        if (!payAmount || parseFloat(payAmount) <= 0) { setPayMsg({ type: 'danger', text: 'Enter a valid amount.' }); return; }
+    const handlePay = async (shouldPrint = false) => {        
+        const receivingSnap = Object.values(headPayVals).reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
+        if (receivingSnap <= 0) { setPayMsg({ type: 'danger', text: 'Enter a valid amount.' }); return; }
         // Snapshot before state changes (needed for receipt after async updates)
         const prevPaidSnap = parseFloat(activeSlip!.paid_amount as any);
-        const receivingSnap = parseFloat(payAmount);
         const slipSnap = { ...activeSlip! };
         const payDateSnap = payDate;
         setPaying(true); setPayMsg(null);
         try {
             const r = await fetch(`${API}/fee-slips/${activeSlip!.slip_id}/pay`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ amount_paid: receivingSnap, payment_method: payMethod, payment_date: payDateSnap, received_by: receivedBy, reference_no: refNo, notes })
+                body: JSON.stringify({ amount_paid: receivingSnap, head_breakdown: headPayVals, payment_method: payMethod, payment_date: payDateSnap, received_by: receivedBy, reference_no: refNo, notes })
             });
             const d = await r.json();
             if (!r.ok) throw new Error(d.error);
@@ -305,7 +316,7 @@ export default function CollectFeePage() {
                                ['paid', 'satteled'].includes(d.slip.status) && (activeSlip?.status === 'partial') ? prev.partial_count - 1 : prev.partial_count
             } : null);
             setActiveSlip(prev => prev ? { ...prev, paid_amount: d.slip.paid_amount, status: d.slip.status } : null);
-            setPayAmount('');
+            setHeadPayVals({});
             // Open receipt in new window after successful payment
             if (shouldPrint) openReceiptWindow(slipSnap, receivingSnap, payDateSnap, prevPaidSnap);
             // Re-fetch all slips silently — waterfall may have updated older slips in DB
@@ -886,15 +897,51 @@ export default function CollectFeePage() {
                                                     {payMsg.text}
                                                 </div>
                                             )}
-                                            <div className="row g-2">
-                                                <div className="col-md-4">
-                                                    <label className="form-label small fw-bold text-muted mb-1">Amount <span className="text-danger">*</span></label>
-                                                    <div className="input-group input-group-sm">
-                                                        <span className="input-group-text bg-white small">PKR</span>
-                                                        <input type="number" className="form-control form-control-sm" placeholder="0"
-                                                            value={payAmount} onChange={e => setPayAmount(e.target.value)} min="1" />
-                                                    </div>
-                                                </div>
+                                              <div className="row g-2 mt-2">
+                                                  <div className="col-12 w-100 mb-2">
+                                                      <label className="form-label small fw-bold text-muted mb-2">Amount Breakdown <span className="text-danger">*</span></label>
+                                                      <div className="d-flex flex-column gap-2 p-2 bg-light border rounded" style={{ maxHeight: '220px', overflowY: 'auto' }}>
+                                                          {(!activeSlip.line_items || activeSlip.line_items.length === 0) ? (
+                                                              <div className="d-flex justify-content-between align-items-center bg-white p-2 rounded border shadow-sm">
+                                                                  <span className="small fw-bold text-dark">Total Balance</span>
+                                                                  <div className="input-group input-group-sm w-auto" style={{maxWidth: '120px'}}>
+                                                                      <span className="input-group-text bg-white small">PKR</span>
+                                                                      <input type="number" className="form-control form-control-sm text-end" placeholder="0"
+                                                                          value={headPayVals['fallback'] || ''} onChange={e => setHeadPayVals({...headPayVals, fallback: e.target.value})} min="0" />
+                                                                  </div>
+                                                              </div>
+                                                          ) : (
+                                                              activeSlip.line_items.map((item: any, idx: number) => {
+                                                                  const headId = item.fee_category_id ? `cat_${item.fee_category_id}` : item.item_name;
+                                                                  const amtB = parseFloat(item.amount || 0);
+                                                                  const paid = parseFloat(item.paid_amount || 0);
+                                                                  const rem = (amtB - paid).toFixed(2);
+                                                                  return (
+                                                                      <div key={idx} className="d-flex justify-content-between align-items-center bg-white p-2 rounded border shadow-sm">
+                                                                          <div className="d-flex flex-column" style={{width: '55%'}}>
+                                                                              <span className="text-dark fw-bold" style={{ fontSize: '0.85rem' }}>{item.item_name || 'Previous Balance'}</span>
+                                                                              <span className="text-muted" style={{ fontSize: '0.7rem' }}>Billed: {amtB.toLocaleString('en-PK')} {paid > 0 ? ` • Paid: ${paid.toLocaleString('en-PK')}` : ''}</span>
+                                                                          </div>
+                                                                          <div className="d-flex align-items-center gap-2 justify-content-end" style={{width: '45%'}}>
+                                                                              {amtB > 0 && <span className="text-danger fw-bold" style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>Bal: {rem}</span>}
+                                                                              <div className="input-group input-group-sm w-auto" style={{ maxWidth: '100px' }}>
+                                                                                  <input type="number" className="form-control form-control-sm text-end" placeholder="0"
+                                                                                      value={headPayVals[headId] || ''} onChange={e => setHeadPayVals({...headPayVals, [headId]: e.target.value})}
+                                                                                      disabled={parseFloat(rem) <= 0 && paid > 0} min="0" />
+                                                                              </div>
+                                                                          </div>
+                                                                      </div>
+                                                                  );
+                                                              })
+                                                          )}
+                                                      </div>
+                                                      <div className="d-flex justify-content-between fw-bold text-dark mt-2 mb-1 px-1 small">
+                                                          <span>Grand Total:</span>
+                                                          <span>PKR {Object.values(headPayVals).reduce((sum, v) => sum + (parseFloat(v) || 0), 0).toLocaleString('en-PK')}</span>
+                                                      </div>
+                                                  </div>
+                                              </div>
+                                              <div className="row g-2 mt-0">
                                                 <div className="col-md-4">
                                                     <label className="form-label small fw-bold text-muted mb-1">Payment Method</label>
                                                     <select className="form-select form-select-sm" value={payMethod} onChange={e => setPayMethod(e.target.value)}>
@@ -927,10 +974,10 @@ export default function CollectFeePage() {
                                                 <div className="col-12 mt-1">
                                                     <div className="d-flex gap-2">
                                                         <button className="btn fw-bold" style={{ flex: 1, backgroundColor: '#e8f5f5', color: 'var(--primary-teal)', border: '1.5px solid var(--primary-teal)', borderRadius: 8 }}
-                                                            disabled={paying || !payAmount || parseFloat(payAmount) <= 0}
+                                                            disabled={paying || Object.values(headPayVals).reduce((sum, v) => sum + (parseFloat(v) || 0), 0) <= 0}
                                                             onClick={() => openReceiptWindow(
                                                                 activeSlip!,
-                                                                parseFloat(payAmount) || 0,
+                                                                Object.values(headPayVals).reduce((sum, v) => sum + (parseFloat(v) || 0), 0),
                                                                 payDate,
                                                                 parseFloat(activeSlip!.paid_amount as any)
                                                             )}>
