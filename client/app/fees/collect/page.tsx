@@ -149,7 +149,7 @@ export default function CollectFeePage() {
         const initialHeads: Record<string, string> = {};
         if (slip.line_items && slip.line_items.length > 0) {
             slip.line_items.forEach((item: any) => {
-                const headId = item.fee_category_id ? `cat_${item.fee_category_id}` : item.item_name;
+                const headId = item.fee_category_id ? `cat_${item.fee_category_id}` : item.head_name;
                 const rem = parseFloat(item.amount as any || 0) - parseFloat(item.paid_amount as any || 0);
                 initialHeads[headId] = rem > 0 ? rem.toString() : '';
             });
@@ -912,14 +912,14 @@ export default function CollectFeePage() {
                                                               </div>
                                                           ) : (
                                                               activeSlip.line_items.map((item: any, idx: number) => {
-                                                                  const headId = item.fee_category_id ? `cat_${item.fee_category_id}` : item.item_name;
+                                                                  const headId = item.fee_category_id ? `cat_${item.fee_category_id}` : item.head_name;
                                                                   const amtB = parseFloat(item.amount || 0);
                                                                   const paid = parseFloat(item.paid_amount || 0);
                                                                   const rem = (amtB - paid).toFixed(2);
                                                                   return (
                                                                       <div key={idx} className="d-flex justify-content-between align-items-center bg-white p-2 rounded border shadow-sm">
                                                                           <div className="d-flex flex-column" style={{width: '55%'}}>
-                                                                              <span className="text-dark fw-bold" style={{ fontSize: '0.85rem' }}>{item.item_name || 'Previous Balance'}</span>
+                                                                              <span className="text-dark fw-bold" style={{ fontSize: '0.85rem' }}>{item.head_name || 'Previous Balance'}</span>
                                                                               <span className="text-muted" style={{ fontSize: '0.7rem' }}>Billed: {amtB.toLocaleString('en-PK')} {paid > 0 ? ` • Paid: ${paid.toLocaleString('en-PK')}` : ''}</span>
                                                                           </div>
                                                                           <div className="d-flex align-items-center gap-2 justify-content-end" style={{width: '45%'}}>
