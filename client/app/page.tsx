@@ -31,6 +31,6 @@ export default function Dashboard() {
     return <AccountantDashboard userName={name} />;
   }
 
-  if (role.includes('student')) { return <StudentDashboard user={user} />; }
+  if (role.includes('student')) { return <StudentDashboard key={`dashboard-${user.id}`} user={user} />; }
   return <GenericDashboard userName={name} role={user.role_name || 'Staff'} />;
 }
