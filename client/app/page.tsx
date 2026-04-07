@@ -1,8 +1,9 @@
-'use client';
+﻿'use client';
 import { useAuth } from '@/contexts/AuthContext';
 import AdminDashboard      from '@/components/dashboards/AdminDashboard';
 import TeacherDashboard    from '@/components/dashboards/TeacherDashboard';
 import AccountantDashboard from '@/components/dashboards/AccountantDashboard';
+import StudentDashboard from '@/components/dashboards/StudentDashboard';
 import GenericDashboard    from '@/components/dashboards/GenericDashboard';
 import { DashLoading }     from '@/components/dashboards/shared';
 
@@ -30,5 +31,6 @@ export default function Dashboard() {
     return <AccountantDashboard userName={name} />;
   }
 
+  if (role.includes('student')) { return <StudentDashboard user={user} />; }
   return <GenericDashboard userName={name} role={user.role_name || 'Staff'} />;
 }

@@ -121,7 +121,7 @@ export default function CollectFeePage() {
             const r = await fetch(`${API}/fee-slips?${params.toString()}`);
             const data = await r.json();
             if (!r.ok) throw new Error(data.error);
-            setSlips((data.slips || []).map((s: any) => s.category === 'Trusted' ? { ...s, status: 'satteled' } : s));
+            setSlips((data.slips || []).map((s: any) => s.category && s.category.trim().toLowerCase() === 'trusted' ? { ...s, status: 'satteled' } : s));
             setStats(data.stats || null);
             setLoaded(true);
         } catch (e: any) { setMessage({ type: 'danger', text: e.message }); }
@@ -138,7 +138,7 @@ export default function CollectFeePage() {
             const r = await fetch(`${API}/fee-slips?${params.toString()}`);
             const data = await r.json();
             if (r.ok) {
-                setSlips((data.slips || []).map((s: any) => s.category === 'Trusted' ? { ...s, status: 'satteled' } : s));
+                setSlips((data.slips || []).map((s: any) => s.category && s.category.trim().toLowerCase() === 'trusted' ? { ...s, status: 'satteled' } : s));
                 setStats(data.stats || null);
             }
         } catch {}
