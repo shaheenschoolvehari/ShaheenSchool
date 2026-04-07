@@ -29,11 +29,12 @@ router.post('/generate', async (req, res) => {
         await client.query('BEGIN');
 
         const planResult = await client.query(
-            `SELECT fp.plan_id 
-             FROM fee_plans fp 
-             LEFT JOIN fee_plan_classes fpc ON fpc.plan_id = fp.plan_id 
-             WHERE (fp.class_id = $1 OR fpc.class_id = $1 OR fp.applies_to_all = TRUE) 
-               AND fp.is_active = TRUE 
+            `SELECT fp.plan_id
+             FROM fee_plans fp
+             LEFT JOIN fee_plan_classes fpc ON fpc.plan_id = fp.plan_id
+             WHERE (fp.class_id = $1 OR fpc.class_id = $1 OR fp.applies_to_all = TRUE)
+               AND fp.is_active = TRUE
+             ORDER BY fp.academic_year DESC, fp.plan_name ASC
              LIMIT 1`,
             [class_id]
         );
