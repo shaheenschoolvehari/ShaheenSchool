@@ -201,12 +201,22 @@ router.post('/generate', async (req, res) => {
             const primary = members[0]; // already ordered by class_id DESC
             const familyFee = parseFloat(primary.family_fee) || 0;
 
-            // Multiply family fee by number of months
-            const combinedFamilyFee = familyFee * monthsCount;
-            const familyHeadName = monthsCount > 1 ? `Family Monthly Fee (${monthLabel})` : 'Family Monthly Fee';
-            const tuitionHead = planHeads.rows.find(h => h.head_name.toLowerCase().includes('tuition'));
-            let totalAmount = combinedFamilyFee;
-            const lineItems = [{ head_id: tuitionHead?.head_id || null, head_name: familyHeadName, amount: combinedFamilyFee }];
+            // Build line items including extra heads from the fee plan
+              const lineItems = buildLineItems(familyFee);
+              
+              // Rename the tuition head to Family Monthly Fee on the voucher
+              lineItems.forEach(h => {
+                  if (h.head_name.toLowerCase().includes('tuition')) {
+                      h.head_name = monthsCount > 1 ? `Family Monthly Fee (${monthLabel})` : 'Family Monthly Fee';
+                  }
+              });
+
+              // Check if tuition was inexplicably missing from plan but family fee exists
+              if (!lineItems.some(h => h.head_name.includes('Family Monthly Fee')) && familyFee > 0) {
+                  lineItems.unshift({ head_id: null, head_name: monthsCount > 1 ? `Family Monthly Fee (${monthLabel})` : 'Family Monthly Fee', amount: familyFee * monthsCount });
+              }
+
+              let totalAmount = lineItems.reduce((s, h) => s + h.amount, 0);
 
             // ── Add Previous Balance for this family if plan has PB head ───────
             const famPB = pbPlanHead && fid && familyPBMap[fid] ? familyPBMap[fid] : 0;
@@ -988,12 +998,22 @@ router.post('/generate', async (req, res) => {
             const primary = members[0]; // already ordered by class_id DESC
             const familyFee = parseFloat(primary.family_fee) || 0;
 
-            // Multiply family fee by number of months
-            const combinedFamilyFee = familyFee * monthsCount;
-            const familyHeadName = monthsCount > 1 ? `Family Monthly Fee (${monthLabel})` : 'Family Monthly Fee';
-            const tuitionHead = planHeads.rows.find(h => h.head_name.toLowerCase().includes('tuition'));
-            let totalAmount = combinedFamilyFee;
-            const lineItems = [{ head_id: tuitionHead?.head_id || null, head_name: familyHeadName, amount: combinedFamilyFee }];
+            // Build line items including extra heads from the fee plan
+              const lineItems = buildLineItems(familyFee);
+              
+              // Rename the tuition head to Family Monthly Fee on the voucher
+              lineItems.forEach(h => {
+                  if (h.head_name.toLowerCase().includes('tuition')) {
+                      h.head_name = monthsCount > 1 ? `Family Monthly Fee (${monthLabel})` : 'Family Monthly Fee';
+                  }
+              });
+
+              // Check if tuition was inexplicably missing from plan but family fee exists
+              if (!lineItems.some(h => h.head_name.includes('Family Monthly Fee')) && familyFee > 0) {
+                  lineItems.unshift({ head_id: null, head_name: monthsCount > 1 ? `Family Monthly Fee (${monthLabel})` : 'Family Monthly Fee', amount: familyFee * monthsCount });
+              }
+
+              let totalAmount = lineItems.reduce((s, h) => s + h.amount, 0);
 
             // ── Add Previous Balance for this family if plan has PB head ───────
             const famPB = pbPlanHead && fid && familyPBMap[fid] ? familyPBMap[fid] : 0;
@@ -1775,12 +1795,22 @@ router.post('/generate', async (req, res) => {
             const primary = members[0]; // already ordered by class_id DESC
             const familyFee = parseFloat(primary.family_fee) || 0;
 
-            // Multiply family fee by number of months
-            const combinedFamilyFee = familyFee * monthsCount;
-            const familyHeadName = monthsCount > 1 ? `Family Monthly Fee (${monthLabel})` : 'Family Monthly Fee';
-            const tuitionHead = planHeads.rows.find(h => h.head_name.toLowerCase().includes('tuition'));
-            let totalAmount = combinedFamilyFee;
-            const lineItems = [{ head_id: tuitionHead?.head_id || null, head_name: familyHeadName, amount: combinedFamilyFee }];
+            // Build line items including extra heads from the fee plan
+              const lineItems = buildLineItems(familyFee);
+              
+              // Rename the tuition head to Family Monthly Fee on the voucher
+              lineItems.forEach(h => {
+                  if (h.head_name.toLowerCase().includes('tuition')) {
+                      h.head_name = monthsCount > 1 ? `Family Monthly Fee (${monthLabel})` : 'Family Monthly Fee';
+                  }
+              });
+
+              // Check if tuition was inexplicably missing from plan but family fee exists
+              if (!lineItems.some(h => h.head_name.includes('Family Monthly Fee')) && familyFee > 0) {
+                  lineItems.unshift({ head_id: null, head_name: monthsCount > 1 ? `Family Monthly Fee (${monthLabel})` : 'Family Monthly Fee', amount: familyFee * monthsCount });
+              }
+
+              let totalAmount = lineItems.reduce((s, h) => s + h.amount, 0);
 
             // ── Add Previous Balance for this family if plan has PB head ───────
             const famPB = pbPlanHead && fid && familyPBMap[fid] ? familyPBMap[fid] : 0;
