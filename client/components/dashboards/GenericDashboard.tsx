@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { API, fmt, fmtPKR, C, StatCard, Panel, DashShell, DashLoading, DashError } from './shared';
+import { API, fmt, fmtPKR, C, StatCard, Panel, DashShell, DashLoading, DashError, MaskedAmount } from './shared';
 
 type GenericData = {
   stats: { total_students:number; total_staff:number; total_classes:number; pending_fees:number; this_month_collected:number; today_collected:number };
@@ -43,7 +43,7 @@ export default function GenericDashboard({ userName, role }: { userName:string; 
         <StatCard icon="bi-people-fill"       label="Students"        value={fmt(s.total_students)}         sub="Enrolled"      accent={C.teal}   />
         <StatCard icon="bi-person-badge-fill" label="Staff"           value={fmt(s.total_staff)}            sub="Active"        accent={C.dark}   />
         <StatCard icon="bi-building"          label="Classes"         value={fmt(s.total_classes)}          sub="Total"         accent={C.purple} />
-        <StatCard icon="bi-graph-up-arrow"    label="Month Collected" value={fmtPKR(s.this_month_collected)} sub="This month"   accent={C.orange} />
+        <StatCard icon="bi-graph-up-arrow"    label="Month Collected" value={<MaskedAmount amount={s.this_month_collected} />} sub="This month"   accent={C.orange} />
       </div>
 
       {/* Navigation Grid */}

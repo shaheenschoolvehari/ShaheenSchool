@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import {
   API, MONTHS, fmt, fmtPKR, C,
-  StatCard, Panel, DashShell, DashLoading, DashError, EmptyChart, RecentPaymentsTable,
+StatCard, Panel, DashShell, DashLoading, DashError, EmptyChart, RecentPaymentsTable, MaskedAmount
 } from './shared';
 
 type AccountantData = {
@@ -22,7 +22,7 @@ const CUSTOM_TOOLTIP = ({ active, payload, label }: any) => {
   return (
     <div style={{ background:'#fff', border:'1px solid #f1f5f9', borderRadius:12, padding:'10px 16px', boxShadow:'0 8px 24px rgba(0,0,0,0.1)' }}>
       <div style={{ fontSize:12, color:'#64748b', fontWeight:600, marginBottom:4 }}>{label}</div>
-      <div style={{ fontSize:14, fontWeight:800, color:C.orange }}>{fmtPKR(payload[0]?.value ?? 0)}</div>
+      <div style={{ fontSize:14, fontWeight:800, color:C.orange }}>{<MaskedAmount amount={payload[0]?.value ?? 0} />}</div>
     </div>
   );
 };
@@ -73,16 +73,16 @@ export default function AccountantDashboard({ userName }: { userName: string }) 
     >
       {/* KPI Row */}
       <div className="dash-stat-grid" style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))', gap:14, marginBottom:20 }}>
-        <StatCard icon="bi-cash-stack"              label="Today Collected"       value={fmtPKR(s.today_collected)}   sub="Received today"    accent={C.green}  />
-        <StatCard icon="bi-graph-up-arrow"          label={curMonth + ' Collected'} value={fmtPKR(s.month_collected)} sub="This month total"  accent={C.teal}   />
-        <StatCard icon="bi-exclamation-circle-fill" label="Pending Fees"          value={fmtPKR(s.pending_fees)}      sub="Unpaid + partial"  accent={C.red}    />
+        <StatCard icon="bi-cash-stack"              label="Today Collected"       value={<MaskedAmount amount={s.today_collected} />}   sub="Received today"    accent={C.green}  />
+        <StatCard icon="bi-graph-up-arrow"          label={curMonth + ' Collected'} value={<MaskedAmount amount={s.month_collected} />} sub="This month total"  accent={C.teal}   />
+        <StatCard icon="bi-exclamation-circle-fill" label="Pending Fees"          value={<MaskedAmount amount={s.pending_fees} />}      sub="Unpaid + partial"  accent={C.red}    />
         <StatCard icon="bi-people-fill"             label="Total Students"        value={fmt(s.total_students)}       sub="Enrolled"          accent={C.orange} />
       </div>
 
       {/* Daily chart + Recent Payments */}
       <div className="dash-side-grid dash-side-grid-right" style={{ display:'grid', gridTemplateColumns:'1fr 420px', gap:14, marginBottom:20, alignItems:'start' }}>
         <Panel title="Daily Collection â€” Last 14 Days" icon="bi-graph-up-arrow"
-          action={<span style={{ fontSize:12, color:'#94a3b8', fontWeight:600 }}>{fmtPKR(s.month_collected)} this month</span>}>
+          action={<span style={{ fontSize:12, color:'#94a3b8', fontWeight:600 }}>{<MaskedAmount amount={s.month_collected} />} this month</span>}>
           {data!.daily_chart.length === 0 ? <EmptyChart /> : (
             <ResponsiveContainer width="100%" height={260}>
               <AreaChart data={data!.daily_chart.slice(-14)} margin={{top:8,right:16,left:8,bottom:0}}>

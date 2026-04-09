@@ -1,4 +1,5 @@
-import React from 'react';
+'use client';
+import React, { useState } from 'react';
 
 // Constants
 export const API    = 'https://shmool.onrender.com';
@@ -11,6 +12,21 @@ export function fmt(n: number) {
 }
 export function fmtPKR(n: number) {
   return 'Rs ' + Number(n).toLocaleString('en-PK', { maximumFractionDigits: 0 });
+}
+
+export function MaskedAmount({ amount }: { amount: number | string }) {
+  const [show, setShow] = useState(false);
+  const numericAmount = typeof amount === 'string' ? parseFloat(amount.replace(/[^0-9.-]+/g,"")) : amount;
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      <span>{show ? fmtPKR(numericAmount) : 'Rs *****'}</span>
+      <i 
+        className={show ? "bi bi-eye-slash" : "bi bi-eye"} 
+        style={{ cursor: 'pointer', color: '#94a3b8', fontSize: '0.85em' }}
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShow(!show); }}
+      />
+    </div>
+  );
 }
 
 export const C = {
@@ -29,8 +45,8 @@ export const C = {
 export function StatCard({
   icon, label, value, sub, accent,
 }: {
-  icon: string; label: string; value: string;
-  sub?: string; color?: string; accent: string;
+  icon: string; label: string; value: React.ReactNode;
+  sub?: React.ReactNode; color?: string; accent: string;
 }) {
   return (
     <div style={{
@@ -286,7 +302,7 @@ export function RecentPaymentsTable({ rows }: { rows: any[] }) {
               <td style={{ padding:'11px 14px', color:'#475569' }}>{p.class_name||'â€”'}</td>
               <td style={{ padding:'11px 14px', color:'#475569' }}>{MONTHS[(p.month||1)-1]} {p.year}</td>
               <td style={{ padding:'11px 14px' }}>
-                <span style={{ fontWeight:800, color:'#16a34a' }}>{fmtPKR(parseFloat(p.amount_paid))}</span>
+                <span style={{ fontWeight:800, color:'#16a34a' }}><MaskedAmount amount={p.amount_paid} /></span>
               </td>
               <td style={{ padding:'11px 14px' }}>
                 <span style={{

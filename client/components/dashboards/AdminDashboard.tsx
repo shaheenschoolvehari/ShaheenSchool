@@ -6,7 +6,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 import {
-  API, MONTHS, fmt, fmtPKR, C,
+  API, MONTHS, fmt, fmtPKR, C, MaskedAmount,
   StatCard, Panel, DonutRing, DashShell, DashLoading, DashError, EmptyChart, RecentPaymentsTable,
 } from './shared';
 
@@ -30,7 +30,7 @@ const CUSTOM_TOOLTIP = ({ active, payload, label }: any) => {
       <div style={{ fontSize:12, color:'#64748b', fontWeight:600, marginBottom:4 }}>{label}</div>
       {payload.map((p: any) => (
         <div key={p.dataKey} style={{ fontSize:14, fontWeight:700, color:p.color }}>
-          {p.name}: {p.name==='Collected' ? fmtPKR(p.value) : p.value}
+          {p.name}: {p.name==='Collected' ? <MaskedAmount amount={p.value} /> : p.value}
         </div>
       ))}
     </div>
@@ -96,9 +96,9 @@ export default function AdminDashboard({ userName }: { userName: string }) {
         <StatCard icon="bi-people-fill"            label="Total Students"       value={fmt(s.total_students)}         sub="Active enrolled"       accent={C.teal}   />
         <StatCard icon="bi-person-badge-fill"      label="Total Staff"          value={fmt(s.total_staff)}            sub="Active employees"      accent={C.dark}   />
         <StatCard icon="bi-building"               label="Classes"              value={fmt(s.total_classes)}          sub="All sections"          accent={C.purple} />
-        <StatCard icon="bi-cash-coin"              label="Today Collected"      value={fmtPKR(s.today_collected)}     sub="Fee received today"    accent={C.green}  />
-        <StatCard icon="bi-graph-up-arrow"         label={MONTHS[new Date().getMonth()] + ' Collected'} value={fmtPKR(s.this_month_collected)} sub="This month" accent={C.orange} />
-        <StatCard icon="bi-exclamation-circle-fill" label="Pending Fees"        value={fmtPKR(s.pending_fees)}        sub="Unpaid + partial"      accent={C.red}    />
+        <StatCard icon="bi-cash-coin"              label="Today Collected"      value={<MaskedAmount amount={s.today_collected} />}     sub="Fee received today"    accent={C.green}  />
+        <StatCard icon="bi-graph-up-arrow"         label={MONTHS[new Date().getMonth()] + ' Collected'} value={<MaskedAmount amount={s.this_month_collected} />} sub="This month" accent={C.orange} />
+        <StatCard icon="bi-exclamation-circle-fill" label="Pending Fees"        value={<MaskedAmount amount={s.pending_fees} />}        sub="Unpaid + partial"      accent={C.red}    />
       </div>
 
       {/* Attendance + Payments row */}
@@ -131,7 +131,7 @@ export default function AdminDashboard({ userName }: { userName: string }) {
       {/* Fee Area Chart */}
       <div style={{ marginBottom:20 }}>
         <Panel title="Daily Fee Collection â€” Last 14 Days" icon="bi-graph-up-arrow"
-          action={<span style={{ fontSize:12, color:'#94a3b8', fontWeight:600 }}>{fmtPKR(s.this_month_collected)} this month</span>}>
+          action={<span style={{ fontSize:12, color:'#94a3b8', fontWeight:600 }}>{<MaskedAmount amount={s.this_month_collected} />} this month</span>}>
           {data!.fee_chart.length === 0 ? <EmptyChart /> : (
             <ResponsiveContainer width="100%" height={240}>
               <AreaChart data={data!.fee_chart.slice(-14)} margin={{top:8,right:16,left:8,bottom:0}}>
