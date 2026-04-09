@@ -478,26 +478,22 @@ router.get('/print-queue', async (req, res) => {
                    mfs.total_amount, mfs.paid_amount, mfs.status, mfs.due_date, mfs.issue_date,
                    mfs.is_printed, mfs.printed_at, mfs.is_family_slip,
                    s.first_name, s.last_name, s.admission_no, s.monthly_fee, s.father_name, s.family_id AS s_family_id,
-                   c.class_name, c.class_id AS c_class_id,
+                   c.class_name, c.class_id AS c_class_id, sec.section_name,
                    COALESCE(JSON_AGG(
                        JSON_BUILD_OBJECT('item_id',sli.item_id,'head_name',sli.head_name,'amount',sli.amount,'note',sli.note)
                        ORDER BY sli.item_id
                    ) FILTER (WHERE sli.item_id IS NOT NULL), '[]') AS line_items
             FROM monthly_fee_slips mfs
-            JOIN students s ON mfs.student_id = s.student_id
-            LEFT JOIN classes c ON mfs.class_id = c.class_id
+            JOIN students s ON mfs.student_id = s.student_id       
+            LEFT JOIN classes c ON mfs.class_id = c.class_id       
+            LEFT JOIN sections sec ON s.section_id = sec.section_id
             LEFT JOIN slip_line_items sli ON mfs.slip_id = sli.slip_id
             WHERE mfs.month = $1 AND mfs.year = $2
             GROUP BY mfs.slip_id, mfs.student_id, mfs.family_id, mfs.class_id,
                      mfs.total_amount, mfs.paid_amount, mfs.status, mfs.due_date, mfs.issue_date,
                      mfs.is_printed, mfs.printed_at, mfs.is_family_slip,
                      s.first_name, s.last_name, s.admission_no, s.monthly_fee, s.father_name, s.family_id,
-                     c.class_name, c.class_id
-            ORDER BY s.family_id NULLS LAST, c.class_id DESC NULLS LAST, s.first_name
-        `, [month, year]);
-
-        const allSlips = result.rows;
-
+                     c.class_name, c.class_id, sec.section_name
         // Group by family_id
         const familyMap = {};
         const soloSlips = [];
