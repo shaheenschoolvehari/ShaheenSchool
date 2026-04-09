@@ -355,7 +355,7 @@ export default function FeeGeneratePage() {
                                                 <span className="badge bg-success rounded-pill">Active</span>
                                                 <small className="fw-bold text-dark">{planInfo.plan_name}</small>
                                             </div>
-                                            {planInfo.heads.map((h, i) => (
+                                            {planInfo.heads.map((h: any, i: number) => (
                                                 <div key={i} className="d-flex justify-content-between align-items-center py-1 border-bottom">
                                                     <small className="text-muted">{h.head_name}</small>
                                                     <small className="fw-bold">
