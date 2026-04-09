@@ -49,7 +49,10 @@ export default function FeeGeneratePage() {
     const [generating, setGenerating] = useState(false);
     const [loadingSlips, setLoadingSlips] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'danger'; text: string } | null>(null);
-    const [planInfo, setPlanInfo] = useState<PlanInfo | null>(null);
+    const [planInfo, setPlanInfo] = useState<any | null>(null);
+    const [matchingPlans, setMatchingPlans] = useState<any[]>([]);
+    const [selectedPlanId, setSelectedPlanId] = useState<string>('');
+
     const [loadingPlan, setLoadingPlan] = useState(false);
     // Edit slip state
     const [showEdit, setShowEdit] = useState(false);
@@ -73,16 +76,28 @@ export default function FeeGeneratePage() {
     };
 
     const fetchPlanForClass = async (class_id: string) => {
-        if (!class_id) { setPlanInfo(null); return; }
+        if (!class_id) { setMatchingPlans([]); setPlanInfo(null); setSelectedPlanId(''); return; }
         setLoadingPlan(true);
         try {
             const r = await fetch('https://shmool.onrender.com/fee-plans');
             const plans: any[] = await r.json();
-            const active = plans.find(p => p.is_active && (p.applies_to_all || (p.classes && p.classes.some((c:any) => c.class_id.toString() === class_id))));
-            setPlanInfo(active || null);
-        } catch { setPlanInfo(null); }
+            const activePlans = plans.filter(p => p.is_active && (p.applies_to_all || (p.classes && p.classes.some((c:any) => c.class_id.toString() === class_id))));
+            setMatchingPlans(activePlans);
+            if (activePlans.length > 0) {
+                setSelectedPlanId(activePlans[0].plan_id.toString());
+                setPlanInfo(activePlans[0]);
+            } else {
+                setSelectedPlanId('');
+                setPlanInfo(null);
+            }
+        } catch { setMatchingPlans([]); setPlanInfo(null); setSelectedPlanId(''); }
         finally { setLoadingPlan(false); }
     };
+
+    useEffect(() => {
+        const plan = matchingPlans.find(p => p.plan_id.toString() === selectedPlanId);
+        setPlanInfo(plan || null);
+    }, [selectedPlanId, matchingPlans]);
 
     // viewMonth: first selected month — always defined so we can show combined slips after generation
     const sortedSelectedMonths = [...selectedMonths].sort((a, b) => parseInt(a) - parseInt(b));
@@ -145,6 +160,7 @@ export default function FeeGeneratePage() {
                     year: parseInt(selectedYear),
                     due_date: dueDate || null,
                     issue_date: issueDate || null,
+                    plan_id: selectedPlanId ? parseInt(selectedPlanId) : undefined,
                     extra_heads: extraHeads.filter(h => h.head_name && parseFloat(h.amount) > 0)
                 })
             });
@@ -311,14 +327,31 @@ export default function FeeGeneratePage() {
                             {/* Fee Plan Preview */}
                             {selectedClass && (
                                 <div className="border rounded p-3 mb-4" style={{ backgroundColor: '#f0f9ff' }}>
-                                    <h6 className="fw-bold mb-2 small" style={{ color: 'var(--primary-dark)' }}>
-                                        <i className="bi bi-clipboard-check me-2"></i>Fee Plan Preview
-                                    </h6>
+                                    <div className="d-flex justify-content-between align-items-center mb-2">
+                                        <h6 className="fw-bold mb-0 small" style={{ color: 'var(--primary-dark)' }}>
+                                            <i className="bi bi-clipboard-check me-2"></i>Fee Plan Preview
+                                        </h6>
+                                    </div>
+                                    {!loadingPlan && matchingPlans.length > 0 && (
+                                        <div className="mb-3">
+                                            <select 
+                                                className="form-select form-select-sm" 
+                                                value={selectedPlanId} 
+                                                onChange={e => setSelectedPlanId(e.target.value)}
+                                            >
+                                                {matchingPlans.map(p => (
+                                                    <option key={p.plan_id} value={p.plan_id}>
+                                                        {p.plan_name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
                                     {loadingPlan ? (
                                         <div className="text-center py-2"><div className="spinner-border spinner-border-sm text-primary"></div></div>
                                     ) : planInfo ? (
                                         <>
-                                            <div className="d-flex align-items-center gap-2 mb-2">
+                                            <div className="d-flex align-items-center gap-2 mb-2 d-none">
                                                 <span className="badge bg-success rounded-pill">Active</span>
                                                 <small className="fw-bold text-dark">{planInfo.plan_name}</small>
                                             </div>
