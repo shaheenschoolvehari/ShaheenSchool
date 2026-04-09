@@ -452,7 +452,7 @@ router.get('/attendance-details', async (req, res) => {
                         s.father_name as guardian,
                         c.class_name,
                         sec.section_name,
-                        COALESCE(s.father_phone, s.mobile_no) as phone
+                        COALESCE(s.father_phone, s.student_mobile) as phone
                  FROM student_attendance sa
                  JOIN students s ON sa.student_id = s.student_id
                  LEFT JOIN classes c ON c.class_id = s.class_id

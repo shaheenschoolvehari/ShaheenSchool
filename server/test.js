@@ -1,1 +1,0 @@
-const pool=require('./db'); pool.query('SELECT username FROM app_users WHERE username LIKE \'STU-%\'').then(r=>console.log(r.rows)).finally(()=>process.exit(0))
