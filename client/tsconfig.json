@@ -4,7 +4,6 @@
     "allowJs": true,
     "skipLibCheck": true,
     "target": "es2015",
-    "ignoreDeprecations": "6.0",
     "downlevelIteration": true,
     "strict": true,
     "noEmit": true,
