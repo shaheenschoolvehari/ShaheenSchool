@@ -106,6 +106,14 @@ router.get('/search-siblings', async (req, res) => {
             ORDER BY s.admission_date DESC
             LIMIT 20
         `, params);
+
+        res.json(result.rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ error: "Server Error" });
+    }
+});
+
 // Get siblings of a student
 router.get('/:id/siblings', async (req, res) => {
     try {
