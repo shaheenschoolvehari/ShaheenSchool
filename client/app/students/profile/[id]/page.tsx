@@ -235,17 +235,41 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
 
     if (!student) return <div className="p-5 text-center">Student not found</div>;
 
-    const InfoRow = ({ icon, label, value }: any) => (
-        <div className="d-flex align-items-center mb-3">
-            <div className="me-3 text-secondary" style={{ width: '24px' }}>
-                <i className={`bi ${icon} fs-5`}></i>
+const getWaLink = (phone: string) => {
+        if (!phone) return '#';
+        const cleaned = phone.replace(/\D/g, ''); 
+        const finalPhone = cleaned.startsWith('0') ? `92${cleaned.substring(1)}` : cleaned;
+        return `https://wa.me/${finalPhone}`;
+    };
+
+    const InfoRow = ({ icon, label, value }: any) => {
+        const isPhone = label === 'Mobile' || label === 'Phone';
+        return (
+        <div className="d-flex align-items-center justify-content-between mb-3">
+            <div className="d-flex align-items-center">
+                <div className="me-3 text-secondary" style={{ width: '24px' }}>     
+                    <i className={`bi ${icon} fs-5`}></i>
+                </div>
+                <div>
+                    <small className="text-muted d-block text-uppercase" style={{ fontSize: '0.7rem', letterSpacing: '1px' }}>{label}</small>
+                    <div className="fw-medium text-dark">{value || 'N/A'}</div>     
+                </div>
             </div>
-            <div>
-                <small className="text-muted d-block text-uppercase" style={{ fontSize: '0.7rem', letterSpacing: '1px' }}>{label}</small>
-                <div className="fw-medium text-dark">{value || 'N/A'}</div>
-            </div>
+            {isPhone && value && value.trim().length > 0 && (
+                <a href={getWaLink(value)} target="_blank" rel="noreferrer" style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    width: 44, height: 44, borderRadius: '50%', background: '#25D366', color: '#fff',
+                    textDecoration: 'none', flexShrink: 0, boxShadow:'0 4px 10px rgba(37,211,102,0.3)',
+                    transform: 'scale(1)', transition: 'all 0.2s', marginLeft: '10px'
+                }} title="Message on WhatsApp"
+                onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.08)'; e.currentTarget.style.boxShadow = '0 6px 14px rgba(37,211,102,0.4)'; }}
+                onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 10px rgba(37,211,102,0.3)'; }}>
+                    <i className="bi bi-whatsapp" style={{ fontSize: 22 }} />
+                </a>
+            )}
         </div>
-    );
+        );
+    };
 
     return (
         <div className="container-fluid p-0 bg-light min-vh-100">
