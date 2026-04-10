@@ -58,10 +58,29 @@ router.get('/search-siblings', async (req, res) => {
             return res.json([]);
         }
 
-        const searchTerm = `%${query}%`;
-        
+        // Split query by commas to allow searching by name, class, and section together (e.g. "Ali, class 2, section A")
+        const terms = query.split(',').map(t => t.trim()).filter(t => t.length > 0);
+        const params = [];
+        const conditions = [];
+
+        terms.forEach((term, idx) => {
+            const temp = `$${idx + 1}`;
+            params.push(`%${term}%`);
+            conditions.push(`(
+                s.first_name ILIKE ${temp} OR
+                s.last_name ILIKE ${temp} OR
+                s.admission_no ILIKE ${temp} OR
+                s.father_name ILIKE ${temp} OR
+                CONCAT(s.first_name, ' ', s.last_name) ILIKE ${temp} OR
+                c.class_name ILIKE ${temp} OR
+                sec.section_name ILIKE ${temp}
+            )`);
+        });
+
+        const whereLogic = conditions.length > 0 ? `AND ( ${conditions.join(' AND ')} )` : '';
+
         const result = await pool.query(`
-            SELECT 
+            SELECT
                 s.student_id,
                 s.admission_no,
                 s.first_name,
@@ -82,25 +101,11 @@ router.get('/search-siblings', async (req, res) => {
             LEFT JOIN classes c ON s.class_id = c.class_id
             LEFT JOIN sections sec ON s.section_id = sec.section_id
             LEFT JOIN families f ON f.family_id = s.family_id
-            WHERE 
-                s.status = 'Active' AND (
-                    s.first_name ILIKE $1 OR 
-                    s.last_name ILIKE $1 OR 
-                    s.admission_no ILIKE $1 OR
-                    s.father_name ILIKE $1 OR
-                    CONCAT(s.first_name, ' ', s.last_name) ILIKE $1
-                )
+            WHERE
+                s.status = 'Active' ${whereLogic}
             ORDER BY s.admission_date DESC
             LIMIT 20
-        `, [searchTerm]);
-
-        res.json(result.rows);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ error: "Server Error" });
-    }
-});
-
+        `, params);
 // Get siblings of a student
 router.get('/:id/siblings', async (req, res) => {
     try {

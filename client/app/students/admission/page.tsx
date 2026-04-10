@@ -531,7 +531,7 @@ export default function NewAdmission() {
                                                 <input 
                                                     type="text" 
                                                     className="form-control form-control-lg"
-                                                    placeholder="Search by name, admission number, or father name..."
+                                                    placeholder="Search by name, father name, class, section (e.g. Ali, Class 2, Red)..."
                                                     value={siblingSearch}
                                                     onChange={e => {
                                                         setSiblingSearch(e.target.value);
