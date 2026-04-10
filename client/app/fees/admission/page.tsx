@@ -40,6 +40,13 @@ interface PaymentForm {
     payment_date: string;
 }
 
+const API = 'https://shmool.onrender.com';
+
+interface SchoolInfo {
+    school_name: string; school_address: string;
+    phone_number: string; school_phone2: string; school_phone3: string; school_logo_url: string;
+}
+
 export default function AdmissionFeePage() {
     const router = useRouter();
     const { hasPermission } = useAuth();
@@ -61,18 +68,125 @@ export default function AdmissionFeePage() {
     const [payError, setPayError] = useState('');
     const [paySuccess, setPaySuccess] = useState('');
 
-    useEffect(() => { fetchData(); }, [filterStatus]);
+    const [school, setSchool] = useState<SchoolInfo>({ school_name: '', school_address: '', phone_number: '', school_phone2: '', school_phone3: '', school_logo_url: '' });
+
+    useEffect(() => {
+        fetchData();
+        fetch(`${API}/settings`).then(r => r.json()).then((data: any) => {
+            if (data && typeof data === 'object' && !Array.isArray(data)) {
+                setSchool({
+                    school_name: data.school_name || '',
+                    school_address: data.address || '',
+                    phone_number: data.contact_number || '',
+                    school_phone2: '', school_phone3: '',
+                    school_logo_url: data.logo_url ? `${API}${data.logo_url}` : ''
+                });
+            }
+        }).catch(() => {});
+    }, [filterStatus]);
 
     const fetchData = async () => {
         setLoading(true);
         try {
             const q = filterStatus ? `?status=${filterStatus}` : '';
-            const r = await fetch(`https://shmool.onrender.com/fee-slips/admission-fees${q}`);
+            const r = await fetch(`${API}/fee-slips/admission-fees${q}`);
             const data = await r.json();
             setLedgers(data.ledgers || []);
             setStats(data.stats || null);
         } catch { }
         finally { setLoading(false); }
+    };
+
+    const openReceiptWindow = (
+        ledger: Ledger,
+        receivingAmt: number,
+        submissionDate: string,
+        prevPaid: number,
+        paymentId?: number
+    ) => {
+        const total = parseFloat(ledger.total_amount as any);
+        const balance = Math.max(0, total - prevPaid - receivingAmt);
+        const fmtR = (n: number) => `${Number(n || 0).toLocaleString('en-PK')}/-`;
+        const fmtD = (d: string | null) => { if (!d) return '\u2014'; try { return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return d; } };
+        const zeroPad = (n: number) => String(n).padStart(8, '0');
+
+        const rows9 = [{ first_name: ledger.first_name, last_name: ledger.last_name, father_name: ledger.father_name, class_name: ledger.class_name || '' }];
+        while (rows9.length < 9) rows9.push({ first_name: '', last_name: '', father_name: '', class_name: '' });
+
+        let feeBody = `<tr><td>1</td><td>Admission Fee</td><td>${fmtR(total)}</td></tr>`;
+        let sr = 2;
+        if (prevPaid > 0) feeBody += `<tr><td>${sr++}</td><td>Previous Payment (Credit)</td><td>\u2212 ${fmtR(prevPaid)}</td></tr>`;
+        feeBody += `<tr><td>${sr++}</td><td><strong>Total Payable Amount</strong></td><td><strong>${fmtR(total)}</strong></td></tr>`;
+        feeBody += `<tr class="thick"><td>${sr++}</td><td><strong>Receiving Amount</strong></td><td><strong>${fmtR(receivingAmt)}</strong></td></tr>`;
+        feeBody += `<tr class="thick"><td>${sr++}</td><td><strong>Balance Amount</strong></td><td><strong>${fmtR(balance)}</strong></td></tr>`;
+
+        const studentBody = rows9.map(m =>
+            `<tr><td>${m.first_name || ''} ${m.last_name || ''}</td><td>${m.father_name || ''}</td><td>${m.class_name || ''}</td></tr>`
+        ).join('');
+
+        const phones = [school.phone_number, school.school_phone2, school.school_phone3].filter(Boolean).join(' ; ');
+        const logoHtml = school.school_logo_url
+            ? `<img src="${school.school_logo_url}" style="width:16mm;height:16mm;object-fit:contain;margin-right:3mm;flex-shrink:0;" />`
+            : `<div style="width:16mm;height:16mm;background-color:#007bff;margin-right:3mm;flex-shrink:0;"></div>`;
+
+        const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Admission Fee Receipt</title>
+  <style>
+    @page { size: 80mm 150mm; margin: 0; }
+    html, body { margin: 0; padding: 0; width: 80mm; height: 150mm; box-sizing: border-box; font-family: Arial, sans-serif; }
+    .voucher { width: 80mm; height: 150mm; padding: 5mm; border: 1px solid #000; border-radius: 2mm; display: flex; flex-direction: column; box-sizing: border-box; }
+    .header { display: flex; align-items: center; margin-bottom: 2mm; }
+    .school-name { font-size: 13pt; font-weight: bold; line-height: 1.2; text-transform: uppercase; }
+    .address-block { text-align: center; font-size: 9pt; margin-bottom: 1mm; line-height: 1.3; }
+    .address-block p { margin: 0; }
+    hr { border: 0; border-top: 1px solid #000; margin: 1mm 0; }
+    .voucher-title { text-align: center; font-size: 13pt; font-weight: bold; text-transform: uppercase; margin: 0.5mm 0; }
+    .info { font-size: 9pt; margin-bottom: 1mm; line-height: 1.4; }
+    .info-row { display: flex; justify-content: space-between; margin-bottom: 0.5mm; }
+    .info-row2 { margin-bottom: 0.5mm; }
+    .section-label { font-size: 10pt; font-weight: bold; margin-bottom: 0.5mm; }
+    table { width: 100%; border-collapse: collapse; font-size: 8pt; margin-bottom: 1mm; }
+    th, td { border: 1px solid #000; padding: 0.5mm 1mm; text-align: center; }
+    th { background-color: #f0f0f0; font-weight: bold; }
+    .details tbody td:nth-child(2) { text-align: left; }
+    tr.thick td { border: 2px solid #000; }
+    .students tbody tr { height: 5mm; }
+    .students tbody td:nth-child(1), .students tbody td:nth-child(2) { text-align: left; }
+    .spacer { flex-grow: 1; }
+    .thank-you { text-align: center; font-size: 10pt; font-weight: bold; margin-bottom: 1mm; }
+    .print-btn { display: block; width: 100%; margin-top: 4mm; padding: 2mm; font-size: 10pt; font-weight: bold; background: #007bff; color: #fff; border: none; border-radius: 2mm; cursor: pointer; }
+    @media print { .print-btn { display: none; } @page { size: 80mm 150mm; margin: 0; } }
+  </style>
+</head>
+<body>
+  <div class="voucher">
+    <div class="header">${logoHtml}<div class="school-name">${school.school_name || 'SCHOOL NAME'}</div></div>
+    <div class="address-block"><p>${school.school_address || ''}</p><p>${phones}</p></div>
+    <hr><div class="voucher-title">Admission Fee Receipt</div><hr>
+    <div class="info">
+      <div class="info-row">
+        <div>Voucher No: <strong><u>${paymentId ? zeroPad(paymentId) : zeroPad(ledger.ledger_id)}</u></strong></div>
+        <div>Admission No: <strong><u>${ledger.admission_no || '\u2014'}</u></strong></div>
+      </div>
+      <div class="info-row2">Fee Submission Date: <strong><u>${fmtD(submissionDate)}</u></strong></div>
+    </div>
+    <div class="section-label">Students Details</div>
+    <table class="students"><thead><tr><th>Student Name</th><th>Father Name</th><th>Class</th></tr></thead><tbody>${studentBody}</tbody></table>
+    <div class="section-label">Fee Details</div>
+    <table class="details"><thead><tr><th>Sr.#</th><th>Fee Description</th><th>Amount</th></tr></thead><tbody>${feeBody}</tbody></table>
+    <div class="thank-you">Thank You</div>
+    <div class="spacer"></div>
+  </div>
+  <button class="print-btn" onclick="window.print()">&#128438; Print Receipt</button>
+  <script>window.onload = function(){ window.print(); }<\/script>
+</body>
+</html>`;
+
+        const w = window.open('', '_blank', 'width=420,height=680,toolbar=0,menubar=0,scrollbars=1');
+        if (w) { w.document.write(html); w.document.close(); }
     };
 
     const openPayModal = (ledger: Ledger) => {
@@ -86,18 +200,23 @@ export default function AdmissionFeePage() {
         setShowPayModal(true);
     };
 
-    const handlePay = async (e: React.FormEvent) => {
+    const handlePay = async (e: React.FormEvent, shouldPrint: boolean = false) => {
         e.preventDefault();
         if (!selectedLedger) return;
         setPaying(true); setPayError(''); setPaySuccess('');
         try {
-            const res = await fetch(`https://shmool.onrender.com/fee-slips/admission-fees/${selectedLedger.ledger_id}/pay`, {
+            const res = await fetch(`${API}/fee-slips/admission-fees/${selectedLedger.ledger_id}/pay`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payForm)
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error);
+
+            if (shouldPrint) {
+                openReceiptWindow(selectedLedger, parseFloat(payForm.amount_paid), payForm.payment_date, selectedLedger.paid_amount, data.payment_id);
+            }
+
             setPaySuccess(data.message);
             setTimeout(() => { setShowPayModal(false); fetchData(); }, 1500);
         } catch (err: any) {
@@ -329,7 +448,7 @@ export default function AdmissionFeePage() {
                                     {payError && <div className="alert alert-danger py-2">{payError}</div>}
                                     {paySuccess && <div className="alert alert-success py-2"><i className="bi bi-check-circle me-2"></i>{paySuccess}</div>}
 
-                                    <form onSubmit={handlePay} className="row g-3">
+                                        <form className="row g-3">
                                         <div className="col-12">
                                             <label className="form-label fw-bold small text-muted">Amount Receiving <span className="text-danger">*</span></label>
                                             <div className="input-group">
@@ -379,10 +498,17 @@ export default function AdmissionFeePage() {
                                             <button type="button" className="btn btn-secondary-custom px-4"
                                                 onClick={() => setShowPayModal(false)}>Cancel</button>
                                             {hasPermission('fees', 'write') && (
-                                            <button type="submit" className="btn btn-primary-custom px-4"
-                                                disabled={paying}>
-                                                {paying ? <><span className="spinner-border spinner-border-sm me-2"></span>Processing...</> : <><i className="bi bi-check2 me-2"></i>Confirm Payment</>}
-                                            </button>
+                                                <div className="btn-group">
+                                                    <button type="submit" className="btn btn-primary-custom px-4"
+                                                        onClick={(e) => handlePay(e, false)}
+                                                        disabled={paying}>
+                                                        {paying ? <><span className="spinner-border spinner-border-sm me-2"></span>...</> : <><i className="bi bi-check2 me-2"></i>Confirm</>}
+                                                    </button>
+                                                    <button type="button" className="btn btn-primary px-3" style={{ borderLeft: '1px solid rgba(255,255,255,0.2)' }}
+                                                        onClick={(e) => handlePay(e, true)} disabled={paying}>
+                                                        <i className="bi bi-printer me-1"></i> Print
+                                                    </button>
+                                                </div>
                                             )}
                                         </div>
                                     </form>
