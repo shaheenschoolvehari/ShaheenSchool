@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { notify } from '@/app/utils/notify';
 
 interface Department { department_id: number; department_name: string; }
 interface StaffRow {
@@ -9,12 +10,12 @@ interface StaffRow {
     attendance_id: number | null; status: string | null;
 }
 
-const STATUS_OPTS = ['Present','Absent','Late','Leave'] as const;
+const STATUS_OPTS = ['Present','Absent','Leave'] as const;
 type StatusType = typeof STATUS_OPTS[number];
 
-const S_COLOR: Record<StatusType,string> = { Present:'#0d9e6e', Absent:'#e13232', Late:'#e6860a', Leave:'#1a6fd4' };
-const S_BG:    Record<StatusType,string> = { Present:'#e6f9f3', Absent:'#fde8e8', Late:'#fef6e4', Leave:'#e8f0fd' };
-const S_ICON:  Record<StatusType,string> = { Present:'bi-check-circle-fill', Absent:'bi-x-circle-fill', Late:'bi-clock-fill', Leave:'bi-calendar2-x-fill' };
+const S_COLOR: Record<StatusType,string> = { Present:'#0d9e6e', Absent:'#e13232', Leave:'#1a6fd4' };
+const S_BG:    Record<StatusType,string> = { Present:'#e6f9f3', Absent:'#fde8e8', Leave:'#e8f0fd' };
+const S_ICON:  Record<StatusType,string> = { Present:'bi-check-circle-fill', Absent:'bi-x-circle-fill', Leave:'bi-calendar2-x-fill' };
 
 export default function StaffAttendancePage() {
     const today = new Date().toISOString().split('T')[0];
@@ -27,14 +28,15 @@ export default function StaffAttendancePage() {
     const [allSaved,setAllSaved]       = useState(false); // after Save button clicked
     const [loading,setLoading]         = useState(false);
     const [saving,setSaving]           = useState(false);
-    const [toast,setToast]             = useState<{type:'success'|'danger';msg:string}|null>(null);
-    const { hasPermission } = useAuth();
+    const { hasPermission, user } = useAuth();
+    
+    const isAdmin = user?.role_name === 'Administrator';
+    const canEditLocked = isAdmin || hasPermission('attendance.edit_locked', 'write');
+    const canMarkAdvance = isAdmin || hasPermission('attendance.mark_advance', 'write');
 
     useEffect(()=>{
         fetch('https://shmool.onrender.com/hrm/departments').then(r=>r.json()).then(setDepartments).catch(()=>{});
     },[]);
-
-    const showToast = (type:'success'|'danger',msg:string)=>{ setToast({type,msg}); setTimeout(()=>setToast(null),4000); };
 
     const loadAttendance = useCallback(async ()=>{
         if(!date) return;
@@ -43,26 +45,38 @@ export default function StaffAttendancePage() {
             const url = `https://shmool.onrender.com/attendance/staff/daily?date=${date}${deptId?`&department_id=${deptId}`:''}`;
             const res = await fetch(url);
             const data = await res.json();
-            if(!Array.isArray(data)){ showToast('danger','Failed to load staff'); return; }
+            if(!Array.isArray(data)){ notify.error('Failed to load staff'); setLoading(false); return; }
             setStaff(data);
             const st:Record<number,StatusType>={};
             const locked = new Set<number>();
             data.forEach((e:StaffRow)=>{
                 st[e.employee_id] = (e.status as StatusType) || 'Present';
-                if(e.attendance_id !== null) locked.add(e.employee_id); // already in DB ? locked
+                if(e.attendance_id !== null) locked.add(e.employee_id); // already in DB -> locked
             });
             setStatuses(st);
             setLockedIds(locked);
             setAllSaved(data.length > 0 && data.every((e:StaffRow) => e.attendance_id !== null));
-        } catch { showToast('danger','Server error'); }
+            if (locked.size > 0 && !canEditLocked) {
+                notify.warning('Some attendance records are locked for editing.');
+            }
+        } catch { notify.error('Server error'); }
         setLoading(false);
-    },[date,deptId]);
+    },[date,deptId,canEditLocked]);
 
     // Toggle lock on a single row
     const toggleLock = (id:number) => {
+        if (!canEditLocked) {
+            notify.warning('You do not have permission to unlock attendance.');
+            return;
+        }
         setLockedIds(prev => {
             const s = new Set(prev);
-            if(s.has(id)) s.delete(id); else s.add(id);
+            if(s.has(id)) {
+                s.delete(id); 
+                setAllSaved(false);
+            } else {
+                s.add(id);
+            }
             return s;
         });
     };
@@ -88,15 +102,15 @@ export default function StaffAttendancePage() {
                 // Lock all rows after save
                 setLockedIds(new Set(staff.map(e=>e.employee_id)));
                 setAllSaved(true);
-                showToast('success',`Attendance saved for ${records.length} staff member${records.length!==1?'s':''}!`);
-            } else { showToast('danger',d.error||'Save failed'); }
-        } catch { showToast('danger','Server error'); }
+                notify.success(`Attendance saved for ${records.length} staff member${records.length!==1?'s':''}!`);
+            } else { notify.error(d.error||'Save failed'); }
+        } catch { notify.error('Server error'); }
         setSaving(false);
     };
 
     const counts = STATUS_OPTS.reduce((a,s)=>{ a[s]=staff.filter(e=>(statuses[e.employee_id]||'Present')===s).length; return a; },{} as Record<string,number>);
     const total  = staff.length;
-    const pct    = total?Math.round(((counts.Present+counts.Late)/total)*100):0;
+    const pct    = total?Math.round(((counts.Present)/total)*100):0;
     const unlockedCount = staff.filter(e=>!lockedIds.has(e.employee_id)).length;
     const fmtDate= (d:string)=>new Date(d+'T00:00:00').toLocaleDateString('en-PK',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 
@@ -148,8 +162,8 @@ export default function StaffAttendancePage() {
                                 <label className="form-label fw-semibold small text-uppercase" style={{color:'var(--primary-dark)',letterSpacing:'0.05em'}}>
                                     <i className="bi bi-calendar3 me-1" style={{color:'var(--primary-teal)'}}/>Date
                                 </label>
-                                <input type="date" className="form-control rounded-3" value={date} max={today}
-                                       onChange={e=>setDate(e.target.value)} style={{border:'1.5px solid #dee2e6',height:42}}/>
+                                <input type="date" className="form-control rounded-3" value={date} max={canMarkAdvance ? undefined : today}
+                                       onChange={e=>{setDate(e.target.value); setAllSaved(false); setLockedIds(new Set());}} style={{border:'1.5px solid #dee2e6',height:42}}/>
                             </div>
                             <div className="col-md-4">
                                 <button className="btn btn-primary-custom w-100 fw-bold rounded-3" style={{height:42}}
@@ -161,20 +175,12 @@ export default function StaffAttendancePage() {
                     </div>
                 </div>
 
-                {/* TOAST */}
-                {toast && (
-                    <div className={`alert alert-${toast.type} border-0 rounded-3 d-flex align-items-center gap-2 animate__animated animate__fadeInDown`} style={{marginBottom:20}}>
-                        <i className={`bi ${toast.type==='success'?'bi-check-circle-fill':'bi-exclamation-triangle-fill'} fs-5`}/>
-                        <span>{toast.msg}</span>
-                    </div>
-                )}
-
                 {staff.length>0 && (
                     <>
                         {/* STAT CARDS */}
                         <div className="row g-3 mb-4">
                             {STATUS_OPTS.map((s,i)=>(
-                                <div key={s} className="col-6 col-lg-3">
+                                <div key={s} className="col-12 col-md-4">
                                     <div className="card border-0 shadow-sm rounded-4 h-100 animate__animated animate__fadeInUp"
                                          style={{animationDelay:`${i*0.07}s`,borderBottom:`4px solid ${S_COLOR[s]}`}}>
                                         <div className="card-body d-flex align-items-center gap-3 p-3">
@@ -199,7 +205,7 @@ export default function StaffAttendancePage() {
                                 <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
                                     <div className="fw-semibold" style={{color:'var(--primary-dark)',fontSize:'0.88rem'}}>
                                         <i className="bi bi-bar-chart-fill me-2" style={{color:'var(--accent-orange)'}}/>
-                                        {date?fmtDate(date):''} &nbsp;�&nbsp; <span className="text-muted" style={{fontWeight:400}}>{total} staff members</span>
+                                        {date?fmtDate(date):''} &nbsp;·&nbsp; <span className="text-muted" style={{fontWeight:400}}>{total} staff members</span>
                                     </div>
                                     <span className="badge rounded-pill px-3 py-2 fw-bold"
                                           style={{background:pct>=75?'#0d9e6e':pct>=50?'#e6860a':'#e13232',fontSize:'0.85rem'}}>
@@ -245,7 +251,7 @@ export default function StaffAttendancePage() {
                                     <table className="table table-hover align-middle mb-0">
                                         <thead style={{background:'#f8f9fa'}}>
                                             <tr>
-                                                {['#','Employee','Designation','Status',''].map((h,i)=>(
+                                                {['#','Employee','Designation','Status','Lock'].map((h,i)=>(
                                                     <th key={i} className="border-0 fw-semibold" style={{color:'var(--primary-dark)',fontSize:'0.72rem',textTransform:'uppercase',letterSpacing:'0.07em',padding:'10px 16px',whiteSpace:'nowrap'}}>
                                                         {h}
                                                     </th>
@@ -257,7 +263,7 @@ export default function StaffAttendancePage() {
                                                 const cur=(statuses[e.employee_id]||'Present') as StatusType;
                                                 const isLocked = lockedIds.has(e.employee_id);
                                                 return (
-                                                    <tr key={e.employee_id} style={{borderLeft:`3px solid ${S_COLOR[cur]}`,background:isLocked?(cur==='Absent'?'#fff0f0':cur==='Late'?'#fffbe6':cur==='Leave'?'#f0f4ff':'#f0fdf8'):cur==='Absent'?'#fff8f8':cur==='Late'?'#fffdf0':cur==='Leave'?'#f5f8ff':'#fff',transition:'background 0.2s'}}>
+                                                    <tr key={e.employee_id} style={{borderLeft:`3px solid ${S_COLOR[cur]}`,background:isLocked?(cur==='Absent'?'#fff0f0':cur==='Leave'?'#f0f4ff':'#f0fdf8'):cur==='Absent'?'#fff8f8':cur==='Leave'?'#f5f8ff':'#fff',transition:'background 0.2s'}}>
                                                         <td className="ps-4 text-muted" style={{fontSize:'0.8rem',width:50}}>
                                                             <span className="badge rounded-circle text-bg-secondary" style={{width:24,height:24,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:'0.68rem'}}>{idx+1}</span>
                                                         </td>
@@ -269,11 +275,11 @@ export default function StaffAttendancePage() {
                                                                 </div>
                                                                 <div>
                                                                     <div className="fw-semibold" style={{color:'var(--primary-dark)',fontSize:'0.88rem'}}>{e.first_name} {e.last_name}</div>
-                                                                    <div className="text-muted" style={{fontSize:'0.7rem'}}>{e.designation||'�'}</div>
+                                                                    <div className="text-muted" style={{fontSize:'0.7rem'}}>{e.designation||'—'}</div>
                                                                 </div>
                                                             </div>
                                                         </td>
-                                                        <td><span className="badge text-bg-light border" style={{fontSize:'0.75rem'}}>{e.designation||'�'}</span></td>
+                                                        <td><span className="badge text-bg-light border" style={{fontSize:'0.75rem'}}>{e.designation||'—'}</span></td>
                                                         <td style={{padding:'10px 16px'}}>
                                                             {isLocked ? (
                                                                 <span className="badge rounded-pill px-3 py-2 fw-semibold d-inline-flex align-items-center gap-1"
@@ -299,9 +305,10 @@ export default function StaffAttendancePage() {
                                                         <td style={{padding:'6px 12px',width:48}}>
                                                             <button
                                                                 onClick={()=>toggleLock(e.employee_id)}
-                                                                title={isLocked?'Unlock row':'Lock row'}
+                                                                disabled={!canEditLocked}
+                                                                title={isLocked?'Unlock row (Admin Only)':'Lock row'}
                                                                 className="btn btn-sm d-flex align-items-center justify-content-center"
-                                                                style={{width:34,height:34,borderRadius:8,border:`1.5px solid ${isLocked?'#e13232':'#dee2e6'}`,background:isLocked?'#fde8e8':'#f8f9fa',color:isLocked?'#e13232':'#adb5bd',transition:'all 0.15s',padding:0}}>
+                                                                style={{width:34,height:34,borderRadius:8,border:`1.5px solid ${isLocked?'#e13232':'#dee2e6'}`,background:isLocked?'#fde8e8':'#f8f9fa',color:isLocked?'#e13232':'#adb5bd',transition:'all 0.15s',padding:0,opacity:!canEditLocked ? 0.5 : 1,cursor:!canEditLocked ? 'not-allowed' : 'pointer'}}>
                                                                 <i className={`bi ${isLocked?'bi-lock-fill':'bi-unlock'}`} style={{fontSize:'0.88rem'}}/>
                                                             </button>
                                                         </td>
@@ -331,12 +338,12 @@ export default function StaffAttendancePage() {
                                 </div>
                                 {hasPermission('attendance', 'write') && (
                                 <button className="btn fw-bold px-4 rounded-3" onClick={saveAttendance}
-                                        disabled={saving || allSaved}
-                                        style={{background: allSaved ? '#adb5bd' : 'var(--accent-orange)',color:'#fff',border:'none',boxShadow: allSaved ? 'none' : '0 4px 14px rgba(254,127,45,0.4)'}}>
+                                        disabled={saving || (allSaved && !canEditLocked)}
+                                        style={{background: (allSaved && !canEditLocked) ? '#adb5bd' : 'var(--accent-orange)',color:'#fff',border:'none',boxShadow: (allSaved && !canEditLocked) ? 'none' : '0 4px 14px rgba(254,127,45,0.4)',cursor: (allSaved && !canEditLocked) ? 'not-allowed' : 'pointer'}}>
                                     {saving
-                                        ? <><span className="spinner-border spinner-border-sm me-2"/>Saving�</>
-                                        : allSaved
-                                            ? <><i className="bi bi-check-all me-2"/>All Saved</>
+                                        ? <><span className="spinner-border spinner-border-sm me-2"/>Saving…</>
+                                        : (allSaved && !canEditLocked)
+                                            ? <><i className="bi bi-lock-fill me-2"/>Locked</>
                                             : <><i className="bi bi-cloud-check-fill me-2"/>Save Attendance ({total})</>
                                     }
                                 </button>
