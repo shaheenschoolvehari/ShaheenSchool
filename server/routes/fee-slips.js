@@ -603,7 +603,7 @@ router.get('/print-queue', async (req, res) => {
                      s.first_name, s.last_name, s.admission_no, s.monthly_fee, s.father_name, s.family_id,
                      c.class_name, c.class_id, sec.section_name
             ORDER BY s.family_id NULLS LAST, c.class_id DESC NULLS LAST, s.first_name
-        `, [month, year]);
+        `, [mArr, year]);
 
         const allSlips = result.rows;
 
