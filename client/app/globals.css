@@ -1,4 +1,4 @@
-* {
+﻿* {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
@@ -125,7 +125,7 @@ body {
 .badge-role { background-color: #e0e7ff; color: #3730a3; }
 
 /* --- Responsive Utilities --- */
-@media (max-width: 768px) {
+@media (max-width: 991px) {
   /* Stack Grids on Mobile */
   .grid-2 {
     grid-template-columns: 1fr !important;
@@ -155,7 +155,7 @@ body {
   /* Hide Sidebar helper texts if needed, handled by React state mostly but good for safety */
 }
 
-@media (min-width: 769px) {
+@media (min-width: 992px) {
   .mobile-only {
     display: none !important;
   }
@@ -422,7 +422,7 @@ body {
 .sl-topbar { display: none; }
 .sl-overlay { display: none; }
 
-@media (max-width: 768px) {
+@media (max-width: 991px) {
   .sl-topbar {
     display: flex; align-items: center; gap: 14px;
     position: fixed; top: 0; left: 0; right: 0; z-index: 40;
@@ -522,7 +522,7 @@ html, body { overflow-x: hidden; }
 }
 
 /* ══════════════════════  BREAKPOINT ≤ 768px (mobile)  ══════════════════ */
-@media (max-width: 768px) {
+@media (max-width: 991px) {
 
   /* ── sl-main extra tightening on very small screens ─────────────────── */
   .sl-main { padding: 16px 12px !important; }
@@ -748,5 +748,25 @@ html, body { overflow-x: hidden; }
     width: calc(100vw - 8px) !important;
   }
   .modal-body { padding: 12px 12px !important; }
+}
+
+/* --- Bootstrap Tabs Overrides --- */
+.nav-tabs .nav-link {
+  color: var(--text-gray-medium);
+  border: none;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s ease;
+  font-weight: 500;
+}
+.nav-tabs .nav-link:hover {
+  background-color: var(--primary-teal-hover);
+  color: var(--accent-orange) !important;
+  border-bottom: 2px solid var(--accent-orange);
+  border-radius: 6px 6px 0 0;
+}
+.nav-tabs .nav-link.active {
+  color: var(--primary-teal) !important;
+  border-bottom: 2px solid var(--primary-teal) !important;
+  background-color: transparent !important;
 }
 

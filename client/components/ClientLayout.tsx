@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
 import Link from 'next/link';
@@ -92,7 +92,7 @@ const SidebarInner = memo(function SidebarInner({ user, isLoggedIn, logout, hasP
   // Responsive
   useEffect(() => {
     const handle = () => {
-      const m = window.innerWidth <= 768;
+      const m = window.innerWidth <= 991;
       setIsMobile(m);
       setOpen(!m);
     };
