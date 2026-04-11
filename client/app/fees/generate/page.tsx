@@ -605,7 +605,7 @@ export default function FeeGeneratePage() {
                                 <div className="text-center py-5">
                                     <i className="bi bi-info-circle text-warning fs-1 d-block mb-3"></i>
                                     <h5 className="text-dark fw-bold">Combined Billing Detected!</h5>
-                                    <p className="text-muted">Aap ne iss month ki fee kisi aur month ke sath mila kar ({partialGroupLabel}) jorrii thi.<br/> Data show karne kelye kripya <strong>pura {partialGroupLabel} ek sath select karen</strong>.</p>
+                                    <p className="text-muted">This month's fee was generated combined with another month ({partialGroupLabel}).<br/> To view the data, please <strong>select the complete {partialGroupLabel} group together</strong>.</p>
                                 </div>
                             ) : loadingSlips ? (
                                 <div className="text-center py-5"><div className="spinner-border text-primary"></div></div>
