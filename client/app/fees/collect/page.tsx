@@ -69,7 +69,6 @@ export default function CollectFeePage() {
     const [slips, setSlips] = useState<SlipRow[]>([]);
     const [stats, setStats] = useState<Stats | null>(null);
     const [loading, setLoading] = useState(false);
-    |
     const [loaded, setLoaded] = useState(false);
 
     // Payment Modal
@@ -1026,6 +1025,7 @@ export default function CollectFeePage() {
         </div>
     );
 }
+
 
 
 
