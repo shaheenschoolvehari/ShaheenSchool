@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import {
   API, fmt, C,
@@ -24,6 +25,7 @@ const ATT_META: Record<string, { label:string; color:string; icon:string }> = {
 };
 
 export default function TeacherDashboard({ userId }: { userId: number }) {
+  const { hasPermission } = useAuth();
   const [data, setData]   = useState<TeacherData | null>(null);
   const [loading, setLoad] = useState(true);
   const [err, setErr]     = useState('');

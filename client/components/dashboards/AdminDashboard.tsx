@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import {
   AreaChart, Area, BarChart, Bar,
@@ -58,8 +59,7 @@ function ActionBtn({ href, icon, label, primary }: { href:string; icon:string; l
   );
 }
 
-export default function AdminDashboard({ userName }: { userName: string }) {
-  const [data, setData]     = useState<AdminData | null>(null);
+export default function AdminDashboard({ userName }: { userName: string }) {  const { hasPermission } = useAuth();  const [data, setData]     = useState<AdminData | null>(null);
   const [loading, setLoad]  = useState(true);
   const [err, setErr]       = useState('');
   const [attTab, setAttTab] = useState<'students'|'staff'>('students');
@@ -92,6 +92,7 @@ export default function AdminDashboard({ userName }: { userName: string }) {
       </>}
     >
       {/* KPI Row */}
+      {hasPermission('dash.admin_kpi', 'read') && (
       <div className="dash-stat-grid" style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))', gap:14, marginBottom:20 }}>
         <StatCard icon="bi-people-fill"            label="Total Students"       value={fmt(s.total_students)}         sub="Active enrolled"       accent={C.teal}   />
         <StatCard icon="bi-person-badge-fill"      label="Total Staff"          value={fmt(s.total_staff)}            sub="Active employees"      accent={C.dark}   />
@@ -100,11 +101,12 @@ export default function AdminDashboard({ userName }: { userName: string }) {
         <StatCard icon="bi-graph-up-arrow"         label={MONTHS[new Date().getMonth()] + ' Collected'} value={<MaskedAmount amount={s.this_month_collected} />} sub="This month" accent={C.orange} />
         <StatCard icon="bi-exclamation-circle-fill" label="Pending Fees"        value={<MaskedAmount amount={s.pending_fees} />}        sub="Unpaid + partial"      accent={C.red}    />
       </div>
+      )}
 
       {/* Attendance + Payments row */}
       <div className="dash-side-grid dash-side-grid-left" style={{ display:'grid', gridTemplateColumns:'300px 1fr', gap:14, marginBottom:20, alignItems:'start' }}>
 
-        {/* Attendance Donuts */}
+        {hasPermission('dash.admin_charts', 'read') && (
         <Panel title="Today's Attendance" icon="bi-calendar-check-fill">
           <div style={{ display:'flex', justifyContent:'space-around', padding:'12px 4px 6px' }}>
             <DonutRing present={sa.present} absent={sa.absent} late={sa.late} total={sa.total} label="Students" color={C.teal} />
@@ -116,7 +118,9 @@ export default function AdminDashboard({ userName }: { userName: string }) {
             Based on today's records
           </div>
         </Panel>
+        )}
 
+        {hasPermission('dash.admin_recent', 'read') && (
         {/* Recent Payments */}
         <Panel title="Recent Fee Payments" icon="bi-receipt" noPad
           action={
@@ -126,8 +130,10 @@ export default function AdminDashboard({ userName }: { userName: string }) {
           }>
           <RecentPaymentsTable rows={data!.recent_payments.slice(0,6)} />
         </Panel>
+        )}
       </div>
 
+      {hasPermission('dash.admin_charts', 'read') && (
       {/* Fee Area Chart */}
       <div style={{ marginBottom:20 }}>
         <Panel title="Daily Fee Collection â€” Last 14 Days" icon="bi-graph-up-arrow"

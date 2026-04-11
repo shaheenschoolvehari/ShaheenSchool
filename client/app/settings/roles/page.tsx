@@ -31,6 +31,22 @@ const PAGE_TREE: Record<string, ModuleDef> = {
             { key: 'dashboard', label: 'Dashboard', icon: 'bi-speedometer2', desc: 'Main stats, charts & overview' },
         ],
     },
+    dashboard_settings: {
+        label: 'Dashboard Settings', icon: 'bi-sliders', color: '#8b5cf6',
+        pages: [
+            { key: 'dash.admin_kpi', label: 'Admin - KPIs', icon: 'bi-bar-chart', desc: 'Top stat cards' },
+            { key: 'dash.admin_charts', label: 'Admin - Charts', icon: 'bi-graph-up', desc: 'Revenue and attendance charts' },
+            { key: 'dash.admin_recent', label: 'Admin - Recent Payments', icon: 'bi-table', desc: 'Recent transactions table' },
+            { key: 'dash.teacher_kpi', label: 'Teacher - KPIs', icon: 'bi-clipboard-data', desc: 'Teacher top stat cards' },
+            { key: 'dash.teacher_att', label: 'Teacher - Attendance', icon: 'bi-calendar-check', desc: 'Today and recent attendance' },
+            { key: 'dash.teacher_classes', label: 'Teacher - Classes', icon: 'bi-book', desc: 'Assigned classes and subjects' },
+            { key: 'dash.acc_kpi', label: 'Accountant - KPIs', icon: 'bi-wallet', desc: 'Financial summary cards' },
+            { key: 'dash.acc_charts', label: 'Accountant - Charts', icon: 'bi-graph-up-arrow', desc: 'Collection charts' },
+            { key: 'dash.student_kpi', label: 'Student - KPIs', icon: 'bi-mortarboard', desc: 'Student overview' },
+            { key: 'dash.student_att', label: 'Student - Attendance', icon: 'bi-calendar3', desc: 'Student attendance view' },
+            { key: 'dash.student_fees', label: 'Student - Fees', icon: 'bi-cash', desc: 'Student fee history view' },
+        ],
+    },
     students: {
         label: 'Students', icon: 'bi-person-graduation', color: '#0ea5e9',
         pages: [
@@ -411,7 +427,7 @@ export default function RolesPage() {
                                                         <i className="bi bi-sliders me-2" />Configure Permissions
                                                     </button>
                                                 )}
-                                                {!role.is_system_default && hasPermission('settings', 'delete') && (
+                                                {!['Administrator', 'Teacher', 'Accountant', 'Student'].includes(role.role_name) && !role.is_system_default && hasPermission('settings', 'delete') && (
                                                     <button className="btn btn-sm btn-outline-danger rounded-3" onClick={() => handleDelete(role.id)} title="Delete Role">
                                                         <i className="bi bi-trash3" />
                                                     </button>

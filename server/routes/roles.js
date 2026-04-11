@@ -84,12 +84,14 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        
+
         // Check if System Default
-        const check = await pool.query("SELECT is_system_default FROM app_roles WHERE id = $1", [id]);
+        const check = await pool.query("SELECT role_name, is_system_default FROM app_roles WHERE id = $1", [id]);
         if (check.rows.length === 0) return res.status(404).json("Role not found");
-        if (check.rows[0].is_system_default) {
-            return res.status(403).json("Cannot delete system default role");
+        
+        const rName = check.rows[0].role_name;
+        if (check.rows[0].is_system_default || ['Administrator', 'Teacher', 'Accountant', 'Student'].includes(rName)) {
+            return res.status(403).json("Cannot delete permanent system roles");
         }
 
         await pool.query("DELETE FROM app_roles WHERE id = $1", [id]);
