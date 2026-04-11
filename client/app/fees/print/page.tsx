@@ -286,7 +286,7 @@ export default function PrintSlipsPage() {
     const loadQueue = async () => {
         setLoading(true); setMessage(null); setSelected(new Set()); setVouchers([]); setCoveredStudents([]); setStats(null);
         try {
-            const url = `${API}/fee-slips?month=${month}&year=${year}${classId ? `&class_id=${classId}` : ''}`;
+            const url = `${API}/fee-slips/print-queue?month=${month}&year=${year}${classId ? `&class_id=${classId}` : ''}`;
             const r = await fetch(url);
             const data = await r.json();
             if (!r.ok) throw new Error(data.error);

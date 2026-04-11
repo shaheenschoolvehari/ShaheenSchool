@@ -506,9 +506,18 @@ router.post('/admission-fees/:ledger_id/pay', async (req, res) => {
         res.json({ message: msg, ledger: updated.rows[0], status: newStatus, payment_id: insertRes.rows[0].payment_id });
     } catch (err) { 
         await client.query('ROLLBACK'); 
-        console.error(err); 
-        res.status(500).json({ error: err.message }); 
+        console.error(err);
+        res.status(500).json({ error: err.message });
     }
+});
+
+// ============================================================
+// PRINT QUEUE — family-grouped vouchers with print tracking
+// GET /fee-slips/print-queue?month=&year=&class_id=
+// ============================================================
+router.get('/print-queue', async (req, res) => {
+    const { month, year, class_id } = req.query;
+    if (!month || !year) return res.status(400).json({ error: 'month and year required' });
     try {
         // Fetch all slips for this month/year with student + class info + line items
         const result = await pool.query(`
