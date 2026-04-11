@@ -292,16 +292,13 @@ router.get('/admission-fee', async (req, res) => {
 
         let query = `
             SELECT
-                afl.id as ledger_id,
+                afl.ledger_id as ledger_id,
                 afl.student_id,
                 afl.total_amount,
                 afl.paid_amount,
-                afl.remaining_amount,
-                COALESCE(afl.discount, 0) AS discount_percentage,
+                (afl.total_amount - afl.paid_amount - COALESCE(afl.discount_amount, 0)) AS remaining_amount,
                 COALESCE(afl.discount_amount, 0) AS discount_amount,
                 afl.status,
-                afl.last_payment_date,
-                afl.created_at,
                 s.admission_no,
                 CONCAT(s.first_name, ' ', s.last_name) AS student_name,      
                 s.admission_date,
