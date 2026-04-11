@@ -226,12 +226,18 @@ function VoucherCard({ v, idx, selected, onToggle, filterClassId }: { v: Voucher
     );
 }
 
+interface AvailableMonth {
+    value: string;
+    label: string;
+    months: number[];
+}
+
 export default function PrintSlipsPage() {
-    const [month, setMonth] = useState((new Date().getMonth() + 1).toString());
+    const [month, setMonth] = useState('');
     const [year, setYear] = useState(new Date().getFullYear().toString());
     const [classId, setClassId] = useState('');
     const [classes, setClasses] = useState<{ class_id: number; class_name: string }[]>([]);
-    const [availableMonths, setAvailableMonths] = useState<number[]>([]);
+    const [availableMonths, setAvailableMonths] = useState<AvailableMonth[]>([]);
     const [vouchers, setVouchers] = useState<Voucher[]>([]);
     const [coveredStudents, setCoveredStudents] = useState<any[]>([]);
     const [stats, setStats] = useState<{ total_vouchers: number; printed: number; pending: number; family_vouchers: number } | null>(null);
@@ -269,10 +275,14 @@ export default function PrintSlipsPage() {
             .then(data => {
                 if (data.months) {
                     setAvailableMonths(data.months);
-                    // Automatically select latest generated month if current is invalid
                     if (data.months.length > 0) {
-                        if (!data.months.includes(parseInt(month))) {
-                            setMonth(data.months[data.months.length - 1].toString());
+                        const currentM = (new Date().getMonth() + 1).toString();
+                        const isCurrentValid = data.months.some((m: AvailableMonth) => m.months.includes(parseInt(currentM)));
+                        if (!isCurrentValid) {
+                            setMonth(data.months[data.months.length - 1].value);
+                        } else {
+                            const exact = data.months.find((m: AvailableMonth) => m.months.includes(parseInt(currentM)));
+                            if(exact) setMonth(exact.value);
                         }
                     } else {
                         setMonth('');
@@ -284,6 +294,10 @@ export default function PrintSlipsPage() {
     }, [year]);
 
     const loadQueue = async () => {
+        if (!month || !year) {
+            setMessage({ type: 'danger', text: 'Please select Month and Year.' });
+            return;
+        }
         setLoading(true); setMessage(null); setSelected(new Set()); setVouchers([]); setCoveredStudents([]); setStats(null);
         try {
             const url = `${API}/fee-slips/print-queue?month=${month}&year=${year}${classId ? `&class_id=${classId}` : ''}`;
@@ -444,7 +458,7 @@ export default function PrintSlipsPage() {
                                     {availableMonths.length === 0 ? (
         <option value="">No Fees Generated</option>
     ) : (
-        availableMonths.map(m => <option key={m} value={m}>{MONTHS[m - 1]}</option>)
+        availableMonths.map(m => <option key={m.value} value={m.value}>{m.label}</option>)
     )}
                                 </select>
                             </div>
