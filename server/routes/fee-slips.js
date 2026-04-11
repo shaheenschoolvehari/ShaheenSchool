@@ -13,6 +13,20 @@ router.post('/generate', async (req, res) => {
             return res.status(400).json({ error: 'class_id, months (array), and year are required' });
 
         const monthsArray = rawMonths.map(Number).sort((a, b) => a - b); // sorted ascending
+
+        // SECURITY CHECK: Verify none of the requested months are already generated
+        const checkQuery = `
+            SELECT DISTINCT month
+            FROM monthly_fee_slips
+            WHERE class_id = $1 AND year = $2 AND month = ANY($3::int[])
+        `;
+        const checkRes = await client.query(checkQuery, [class_id, year, monthsArray]);
+        if (checkRes.rows.length > 0) {
+            client.release();
+            const conflictingMonths = checkRes.rows.map(r => r.month).join(', ');
+            return res.status(400).json({ error: `Cannot generate. The following month(s) are already generated for this class: ${conflictingMonths}. Please select only ungenerated months or undo the existing ones first.` });
+        }
+
         const firstMonth  = monthsArray[0];
         const lastMonth   = monthsArray[monthsArray.length - 1];
         const monthsCount = monthsArray.length;
@@ -303,10 +317,17 @@ router.post('/generate', async (req, res) => {
 // GET /fee-slips/available-months
 router.get('/available-months', async (req, res) => {
     try {
-        const { year } = req.query;
-        let query = 'SELECT DISTINCT month FROM monthly_fee_slips';
+        const { year, class_id } = req.query;
+        let query = 'SELECT DISTINCT month FROM monthly_fee_slips WHERE 1=1';
         let params = [];
-        if (year) { query += ' WHERE year = $1'; params.push(year); }
+        if (year) { 
+            params.push(year);
+            query += ` AND year = $${params.length}`; 
+        }
+        if (class_id) {
+            params.push(class_id);
+            query += ` AND class_id = $${params.length}`;
+        }
         query += ' ORDER BY month ASC';
         const result = await pool.query(query, params);
         res.json({ months: result.rows.map(r => parseInt(r.month, 10)) });

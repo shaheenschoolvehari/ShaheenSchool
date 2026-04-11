@@ -64,6 +64,9 @@ export default function FeeGeneratePage() {
     // Undo generation state
     const [showUndoModal, setShowUndoModal] = useState(false);
     const [undoLoading, setUndoLoading] = useState(false);
+    
+    // Tracks months that already have generated slips for this class+year
+    const [generatedMonths, setGeneratedMonths] = useState<string[]>([]);
 
     useEffect(() => { fetchClasses(); fetchHeads(); }, []);
 
@@ -109,6 +112,15 @@ export default function FeeGeneratePage() {
         );
     };
 
+    const fetchGeneratedMonths = async () => {
+        if (!selectedClass || !selectedYear) { setGeneratedMonths([]); return; }
+        try {
+            const r = await fetch(`https://shmool.onrender.com/fee-slips/available-months?year=${selectedYear}&class_id=${selectedClass}`);
+            const data = await r.json();
+            if (data.months) setGeneratedMonths(data.months.map((m: number) => m.toString()));
+        } catch { }
+    };
+
     const fetchSlips = async () => {
         if (!selectedClass || !viewMonth || !selectedYear) { setSlips([]); setStats(null); return; }
         setLoadingSlips(true);
@@ -122,8 +134,16 @@ export default function FeeGeneratePage() {
     };
 
     useEffect(() => {
-        if (selectedClass && selectedYear) fetchSlips();
+        if (selectedClass && selectedYear) {
+            fetchSlips();
+        }
     }, [selectedClass, selectedMonths, selectedYear]);
+
+    useEffect(() => {
+        if (selectedClass && selectedYear) {
+            fetchGeneratedMonths();
+        }
+    }, [selectedClass, selectedYear]);
 
     useEffect(() => {
         fetchPlanForClass(selectedClass);
@@ -173,6 +193,7 @@ export default function FeeGeneratePage() {
                 setMessage({ type: 'success', text: `✅ Generated slips for ${monthLabels}${slipNote} — ${data.generated} created, ${data.skipped} skipped.` });
             }
             fetchSlips();
+            fetchGeneratedMonths();
         } catch (err: any) {
             setMessage({ type: 'danger', text: err.message });
         } finally { setGenerating(false); }
@@ -205,6 +226,7 @@ export default function FeeGeneratePage() {
         if (!confirm('Delete this slip? This cannot be undone.')) return;
         await fetch(`${API}/fee-slips/class/${selectedClass}/month/${viewMonth}/year/${selectedYear}`, { method: 'DELETE' });
         fetchSlips();
+        fetchGeneratedMonths();
     };
 
     const handleUndo = async () => {
@@ -222,6 +244,7 @@ export default function FeeGeneratePage() {
                 text: data.message
             });
             fetchSlips();
+            fetchGeneratedMonths();
         } catch (err: any) {
             setMessage({ type: 'danger', text: err.message });
             setShowUndoModal(false);
@@ -237,6 +260,8 @@ export default function FeeGeneratePage() {
     };
 
     const className = classes.find(c => c.class_id.toString() === selectedClass)?.class_name || '';
+
+    const hasGeneratedSelected = selectedMonths.some(m => generatedMonths.includes(m));
 
     return (
         <div className="container-fluid p-4 animate__animated animate__fadeIn">
@@ -291,16 +316,18 @@ export default function FeeGeneratePage() {
                                     {MONTHS.map((m, i) => {
                                         const val = (i+1).toString();
                                         const active = selectedMonths.includes(val);
+                                        const isGenerated = generatedMonths.includes(val);
                                         return (
                                             <button key={val} type="button"
                                                 onClick={() => toggleMonth(val)}
-                                                className="btn btn-sm fw-semibold"
+                                                className="btn btn-sm "
                                                 style={{fontSize:'0.72rem',padding:'5px 2px',borderRadius:6,
                                                     background: active ? 'var(--primary-teal)' : '#f1f3f5',
-                                                    color: active ? '#fff' : '#6c757d',
+                                                    color: active ? '#fff' : (isGenerated ? '#198754' : '#6c757d'),
                                                     border: active ? '1.5px solid var(--primary-teal)' : '1.5px solid #dee2e6',
+                                                    fontWeight: isGenerated ? 'bold' : '600',
                                                     transition:'all 0.15s'}}>
-                                                {m.slice(0,3)}
+                                                {m.slice(0,3)}{isGenerated ? <i className="bi bi-check-lg ms-1"></i> : ''}
                                             </button>
                                         );
                                     })}
@@ -441,12 +468,14 @@ export default function FeeGeneratePage() {
 
                             {hasPermission('fees', 'write') && (
                             <button
-                                className="btn btn-primary-custom w-100 py-2 fw-bold shadow-sm"
+                                className={`btn w-100 py-2 fw-bold shadow-sm ${hasGeneratedSelected ? 'btn-secondary' : 'btn-primary-custom'}`}
                                 onClick={handleGenerate}
-                                disabled={generating}
+                                disabled={generating || hasGeneratedSelected}
                             >
                                 {generating ? (
                                     <><span className="spinner-border spinner-border-sm me-2"></span>Generating...</>
+                                ) : hasGeneratedSelected ? (
+                                    <><i className="bi bi-x-circle me-2"></i>Cannot Generate (Month Already Issued)</>
                                 ) : selectedMonths.length > 1 ? (
                                     <><i className="bi bi-lightning-charge me-2"></i>Generate for {selectedMonths.length} Months</>
                                 ) : (
