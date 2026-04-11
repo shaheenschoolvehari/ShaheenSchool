@@ -323,9 +323,11 @@ export default function FeeGeneratePage() {
                     </h2>
                     <p className="text-muted small mb-0">Select a class and month — regular heads auto-load from fee plan. Add extra charges if needed.</p>
                 </div>
-                <button className="btn btn-secondary-custom d-flex align-items-center gap-2 w-100 w-md-auto" onClick={() => router.push('/fees/print')}>
-                    <i className="bi bi-printer"></i> Print Slips
-                </button>
+                <div className="d-grid d-md-block">
+                    <button className="btn btn-secondary-custom d-inline-flex align-items-center justify-content-center gap-2" onClick={() => router.push('/fees/print')}>
+                        <i className="bi bi-printer"></i> Print Slips
+                    </button>
+                </div>
             </div>
 
             <div className="row g-4">
