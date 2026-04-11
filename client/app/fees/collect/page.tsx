@@ -88,8 +88,7 @@ export default function CollectFeePage() {
     const [refNo, setRefNo] = useState('');
     const [notes, setNotes] = useState('');
     const [paying, setPaying] = useState(false);
-    const [payMsg, setPayMsg] = useState<{ type: 'success' |
-    const [school, setSchool] = useState<SchoolInfo>({ school_name: '', school_address: '', phone_number: '', school_phone2: '', school_phone3: '', school_logo_url: '' });
+        const [school, setSchool] = useState<SchoolInfo>({ school_name: '', school_address: '', phone_number: '', school_phone2: '', school_phone3: '', school_logo_url: '' });
 
     useEffect(() => {
         fetch(`${API}/academic`).then(r => r.json()).then(setClasses).catch(() => {});
@@ -160,7 +159,7 @@ export default function CollectFeePage() {
         setHeadPayVals(initialHeads);
         setPayMethod('cash'); setPayDate(new Date().toISOString().split('T')[0]);
         setReceivedBy(''); setRefNo(''); setNotes('');
-        setPayMsg(null); setPayModal(true);
+        setPayModal(true);
         setLoadingHistory(true); setSlipPayments([]);
         try {
             const r = await fetch(`${API}/fee-slips/${slip.slip_id}`);
@@ -288,12 +287,12 @@ export default function CollectFeePage() {
 
     const handlePay = async (shouldPrint = false) => {        
         const receivingSnap = Object.values(headPayVals).reduce((sum, v) => sum + (parseFloat(v) || 0), 0);
-        if (receivingSnap <= 0) { setPayMsg({ type: 'danger', text: 'Enter a valid amount.' }); return; }
+        if (receivingSnap <= 0) { notify.error('Enter a valid amount.'); return; }
         // Snapshot before state changes (needed for receipt after async updates)
         const prevPaidSnap = parseFloat(activeSlip!.paid_amount as any);
         const slipSnap = { ...activeSlip! };
         const payDateSnap = payDate;
-        setPaying(true); setPayMsg(null);
+        setPaying(true); 
         try {
             const r = await fetch(`${API}/fee-slips/${activeSlip!.slip_id}/pay`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -301,7 +300,7 @@ export default function CollectFeePage() {
             });
             const d = await r.json();
             if (!r.ok) throw new Error(d.error);
-            setPayMsg({ type: 'success', text: 'Payment recorded successfully!' });
+            notify.success('Payment recorded successfully!');
             // Refresh history
             const rh = await fetch(`${API}/fee-slips/${activeSlip!.slip_id}`);
             const dh = await rh.json(); setSlipPayments(dh.payments || []);
@@ -321,7 +320,7 @@ export default function CollectFeePage() {
             if (shouldPrint) openReceiptWindow(slipSnap, receivingSnap, payDateSnap, prevPaidSnap);
             // Re-fetch all slips silently — waterfall may have updated older slips in DB
             silentReload();
-        } catch (e: any) { setPayMsg({ type: 'danger', text: e.message }); }
+        } catch (e: any) { notify.error(e.message); }
         finally { setPaying(false); }
     };
 
@@ -885,12 +884,7 @@ export default function CollectFeePage() {
                                             <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent-orange)', marginBottom: 10 }}>
                                                 <i className="bi bi-plus-circle me-1"></i>Record New Payment
                                             </div>
-                                            {payMsg && (
-                                                <div className={`alert alert-${payMsg.type} py-2 px-3 small d-flex align-items-center gap-2 mb-2`}>
-                                                    <i className={`bi ${payMsg.type === 'success' ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill'}`}></i>
-                                                    {payMsg.text}
-                                                </div>
-                                            )}
+                                            
                                               <div className="row g-2 mt-2">
                                                   <div className="col-12 w-100 mb-2">
                                                       <label className="form-label small fw-bold text-muted mb-2">Amount Breakdown <span className="text-danger">*</span></label>
@@ -1025,6 +1019,10 @@ export default function CollectFeePage() {
         </div>
     );
 }
+
+
+
+
 
 
 
