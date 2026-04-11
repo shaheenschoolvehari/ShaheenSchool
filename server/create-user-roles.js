@@ -99,6 +99,49 @@ async function createAuthTables() {
         
         console.log("Core roles secured.");
 
+        // 6. Seed Specific Core Role Permissions explicitly mapping UI toggles
+        console.log("Seeding core role permissions...");
+        const ROLE_PERMS = {
+            'Administrator': [
+                'dashboard', 'students', 'academic', 'hrm', '__exam__', 'expenses', 'fees', 'attendance', 'reports', 'settings',
+                'dash.admin_kpi', 'dash.admin_charts', 'dash.admin_recent',
+                'dash.teacher_kpi', 'dash.teacher_att', 'dash.teacher_classes',
+                'dash.acc_kpi', 'dash.acc_charts',
+                'dash.student_kpi', 'dash.student_att', 'dash.student_fees'
+            ],
+            'Teacher': [
+                'dashboard', 'dash.teacher_kpi', 'dash.teacher_att', 'dash.teacher_classes',
+                'attendance', '__exam__', 'academic', 'students'
+            ],
+            'Accountant': [
+                'dashboard', 'dash.acc_kpi', 'dash.acc_charts',
+                'fees', 'expenses', 'reports', 'students'
+            ],
+            'Student': [
+                'dashboard', 'dash.student_kpi', 'dash.student_att', 'dash.student_fees',
+                'attendance', 'fees', '__exam__'
+            ]
+        };
+
+        const rolesRes = await pool.query("SELECT id, role_name FROM app_roles");
+        const roleMap = {};
+        rolesRes.rows.forEach(r => roleMap[r.role_name] = r.id);
+
+        for (const [roleName, modules] of Object.entries(ROLE_PERMS)) {
+            const roleId = roleMap[roleName];
+            if (!roleId) continue;
+            
+            for (const mod of modules) {
+                await pool.query(`
+                    INSERT INTO role_permissions (role_id, module_name, can_read, can_write, can_delete) 
+                    VALUES ($1, $2, true, true, true)
+                    ON CONFLICT (role_id, module_name) 
+                    DO UPDATE SET can_read=true, can_write=true, can_delete=true;
+                `, [roleId, mod]);
+            }
+        }
+        console.log("Core role permissions mapped & stored.");
+
         console.log("Auth tables setup complete.");
 
     } catch (err) {
