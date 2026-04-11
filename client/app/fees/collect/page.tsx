@@ -149,7 +149,7 @@ export default function CollectFeePage() {
         const initialHeads: Record<string, string> = {};
         if (slip.line_items && slip.line_items.length > 0) {
             slip.line_items.forEach((item: any) => {
-                const headId = item.fee_category_id ? `cat_${item.fee_category_id}` : item.head_name;
+                const headId = item.item_id.toString(); // Map correctly to table row ID
                 const rem = parseFloat(item.amount as any || 0) - parseFloat(item.paid_amount as any || 0);
                 initialHeads[headId] = rem > 0 ? rem.toString() : '';
             });
@@ -912,7 +912,7 @@ export default function CollectFeePage() {
                                                               </div>
                                                           ) : (
                                                               activeSlip.line_items.map((item: any, idx: number) => {
-                                                                  const headId = item.fee_category_id ? `cat_${item.fee_category_id}` : item.head_name;
+                                                                  const headId = item.item_id ? item.item_id.toString() : item.head_name;
                                                                   const amtB = parseFloat(item.amount || 0);
                                                                   const paid = parseFloat(item.paid_amount || 0);
                                                                   const rem = (amtB - paid).toFixed(2);
