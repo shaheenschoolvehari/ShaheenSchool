@@ -25,16 +25,20 @@ export default function GenericDashboard({ userName, role }: { userName:string; 
 
   useEffect(() => {
     fetch(API + '/dashboard')
-      .then(r => r.ok ? r.json() : Promise.reject(r.statusText))
+      .then(async r => {
+        if (r.ok) return r.json();
+        const errJson = await r.json().catch(() => null);
+        return Promise.reject(errJson?.error || r.statusText || `HTTP ${r.status}`);
+      })
       .then(d => { setData(d); setLoad(false); })
       .catch(e => { setErr(String(e)); setLoad(false); });
   }, []);
 
   const today = new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   if (loading) return <DashLoading />;
-  if (err)     return <DashError msg={err} />;
+  if (err || !data) return <DashError msg={err || 'Dashboard data is missing'} />;
 
-  const s = data!.stats;
+  const s = data.stats;
   return (
     <DashShell title={'Welcome, ' + userName} greeting={role} subtitle={today}>
 

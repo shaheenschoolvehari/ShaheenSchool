@@ -36,18 +36,22 @@ export default function AccountantDashboard({ userName }: { userName: string }) 
 
   useEffect(() => {
     fetch(API + '/dashboard/accountant')
-      .then(r => r.ok ? r.json() : Promise.reject(r.statusText))
+      .then(async r => {
+        if (r.ok) return r.json();
+        const errJson = await r.json().catch(() => null);
+        return Promise.reject(errJson?.error || r.statusText || `HTTP ${r.status}`);
+      })
       .then(d => { setData(d); setLoad(false); })
       .catch(e => { setErr(String(e)); setLoad(false); });
   }, []);
 
   if (loading) return <DashLoading />;
-  if (err)     return <DashError msg={err} />;
+  if (err || !data) return <DashError msg={err || 'Dashboard data is missing'} />;
 
-  const s        = data!.stats;
+  const s        = data.stats;
   const today    = new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   const curMonth = MONTHS[new Date().getMonth()];
-  const maxAmt   = Math.max(...(data?.monthly_chart || []).map(r => r.amount), 1);
+  const maxAmt   = Math.max(...(data.monthly_chart || []).map(r => r.amount), 1);
 
   return (
     <DashShell

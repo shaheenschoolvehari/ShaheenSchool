@@ -66,18 +66,22 @@ export default function AdminDashboard({ userName }: { userName: string }) {  co
 
   useEffect(() => {
     fetch(API + '/dashboard')
-      .then(r => r.ok ? r.json() : Promise.reject(r.statusText))
+      .then(async r => {
+        if (r.ok) return r.json();
+        const errJson = await r.json().catch(() => null);
+        return Promise.reject(errJson?.error || r.statusText || `HTTP ${r.status}`);
+      })
       .then(d => { setData(d); setLoad(false); })
       .catch(e => { setErr(String(e)); setLoad(false); });
   }, []);
 
   if (loading) return <DashLoading />;
-  if (err)     return <DashError msg={err} />;
+  if (err || !data) return <DashError msg={err || 'Dashboard data is missing.'} />;
 
-  const s      = data!.stats;
-  const sa     = data!.today_student_att;
-  const ea     = data!.today_staff_att;
-  const attData= (attTab==='students' ? data!.student_att_chart : data!.staff_att_chart).slice(-14);
+  const s      = data.stats;
+  const sa     = data.today_student_att;
+  const ea     = data.today_staff_att;
+  const attData= (attTab==='students' ? data.student_att_chart : data.staff_att_chart).slice(-14);
   const today  = new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
 
   return (

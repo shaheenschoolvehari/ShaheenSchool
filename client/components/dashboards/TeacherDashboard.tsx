@@ -32,22 +32,26 @@ export default function TeacherDashboard({ userId }: { userId: number }) {
 
   useEffect(() => {
     fetch(API + '/dashboard/teacher?user_id=' + userId)
-      .then(r => r.ok ? r.json() : Promise.reject(r.statusText))
+      .then(async r => {
+        if (r.ok) return r.json();
+        const errJson = await r.json().catch(() => null);
+        return Promise.reject(errJson?.error || r.statusText || `HTTP ${r.status}`);
+      })
       .then(d => { setData(d); setLoad(false); })
       .catch(e => { setErr(String(e)); setLoad(false); });
   }, [userId]);
 
   if (loading) return <DashLoading />;
-  if (err)     return <DashError msg={err} />;
+  if (err || !data) return <DashError msg={err || 'Dashboard data is missing'} />;
 
-  const t          = data!.teacher;
-  const myAtt      = data!.my_att_today;
+  const t          = data.teacher;
+  const myAtt      = data.my_att_today;
   const attKey     = myAtt?.status ?? 'not_marked';
   const attMeta    = ATT_META[attKey] ?? ATT_META.not_marked;
-  const classes        = data!.classes        ?? [];
-  const subjects       = data!.subjects       ?? [];
-  const classAttToday  = data!.class_att_today ?? [];
-  const recentAtt      = data!.recent_att     ?? [];
+  const classes        = data.classes        ?? [];
+  const subjects       = data.subjects       ?? [];
+  const classAttToday  = data.class_att_today ?? [];
+  const recentAtt      = data.recent_att     ?? [];
   const totalStudents  = classes.reduce((a, c) => a + (c.total_students || 0), 0);
   const today          = new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   const markedToday    = classAttToday.filter(c => c.marked).length;
