@@ -49,7 +49,7 @@ export default function ImportStudents() {
                 dob: '2015-05-20',
                 cnic_bform: '12345-1234567-1',
                 class_name: 'Class 1',
-                section_name: 'Blue',
+                section_name: 'A',
                 roll_no: '101', 
                 category: 'Normal',
                 student_mobile: '03001234567',
