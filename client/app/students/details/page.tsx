@@ -20,7 +20,7 @@ type Student = {
     family_id: string;
 
     // Contact
-    mobile_no: string;
+    student_mobile: string;
     email: string;
     current_address: string;
     city: string;
@@ -92,7 +92,7 @@ function exportText(key: string, s: Student, idx: number): string {
         case 'blood_group':   return s.blood_group    ?? '';
         case 'religion':      return s.religion       ?? '';
         case 'category':      return s.category       ?? '';
-        case 'mobile_no':     return s.mobile_no      ?? '';
+        case 'mobile_no':     return s.student_mobile ?? '';
         case 'father_phone':  return s.father_phone   ?? '';
         case 'mother_phone':  return s.mother_phone   ?? '';
         case 'guardian':      return s.guardian_name  ?? '';
@@ -153,8 +153,8 @@ function renderCell(key: string, s: Student, idx: number) {
         case 'religion':      return s.religion      || '—';
         case 'category':      return s.category      || '—';
         case 'mobile_no':
-            return s.mobile_no
-                ? <span><i className="bi bi-telephone-fill text-muted me-1" style={{ fontSize: 11 }}></i>{s.mobile_no}</span>
+            return s.student_mobile
+                ? <span><i className="bi bi-telephone-fill text-muted me-1" style={{ fontSize: 11 }}></i>{s.student_mobile}</span>
                 : '—';
         case 'father_phone':  return s.father_phone  || '—';
         case 'mother_phone':  return s.mother_phone  || '—';
