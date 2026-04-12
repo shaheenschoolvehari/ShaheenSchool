@@ -1,3 +1,4 @@
+const express = require('express');
 const router = require('express').Router();
 const pool = require('../db');
 const multer = require('multer');
@@ -1058,8 +1059,9 @@ router.get('/', async (req, res) => {
             FROM students s
             LEFT JOIN classes c ON s.class_id = c.class_id
             LEFT JOIN sections sec ON s.section_id = sec.section_id
-            LEFT JOIN app_users u ON s.user_id = u.id
-        const params = [];
+            LEFT JOIN app_users u ON s.user_id = u.id 
+              WHERE 1=1`;
+          const params = [];
         let paramCount = 1;
 
         if (class_id) {

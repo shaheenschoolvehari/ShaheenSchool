@@ -1,0 +1,1 @@
+const pool = require('./db'); pool.query('SELECT column_name FROM information_schema.columns WHERE table_name = '+String.fromCharCode(39)+'students'+String.fromCharCode(39)).then(res => { console.log(res.rows.map(r => r.column_name).join(', ')); process.exit(); });
