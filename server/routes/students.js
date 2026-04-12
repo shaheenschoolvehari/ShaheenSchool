@@ -693,9 +693,9 @@ router.post('/', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'documen
 
         // Create User
         const newUser = await client.query(
-            `INSERT INTO app_users (username, password_hash, full_name, email, role_id, is_active) 
-             VALUES ($1, $2, $3, $4, $5, true) RETURNING id`,
-            [username, password_hash, `${first_name} ${last_name}`, email, role_id]
+            `INSERT INTO app_users (username, password_hash, plain_password, full_name, email, role_id, is_active)
+             VALUES ($1, $2, $3, $4, $5, $6, true) RETURNING id`,
+            [username, password_hash, 'student123', `${first_name} ${last_name}`, email, role_id]
         );
         const user_id = newUser.rows[0].id;
 
@@ -1007,6 +1007,26 @@ router.post('/bulk', async (req, res) => {
                             opening_balance = CASE WHEN $3 > 0 THEN $3 ELSE families.opening_balance END
                 `, [family_id, bulkFamilyFee, bulkOpb]);
 
+                // Handle User Profile for Bulk Import
+                const username = 'STU-' + finalAdmissionNo;
+                const salt = await bcrypt.genSalt(10);
+                const password_hash = await bcrypt.hash('student123', salt);
+                
+                let roleRes = await client.query("SELECT id FROM app_roles WHERE role_name = 'Student'");
+                let role_id = roleRes.rows.length > 0 ? roleRes.rows[0].id : null;
+                if (!role_id) {
+                     const newRole = await client.query("INSERT INTO app_roles (role_name, description) VALUES ('Student', 'Standard Access') RETURNING id");
+                     role_id = newRole.rows[0].id;
+                }
+                
+                const newUser = await client.query(
+                    "INSERT INTO app_users (username, password_hash, plain_password, full_name, email, role_id, is_active) VALUES ($1, $2, $3, $4, $5, $6, true) RETURNING id",
+                    [username, password_hash, 'student123', (s.first_name + ' ' + (s.last_name || '')).trim(), s.email || '', role_id]
+                );
+                const user_id = newUser.rows[0].id;
+                
+                await client.query("UPDATE students SET user_id = $1 WHERE student_id = $2", [user_id, newStudentId]);
+
                 results.success++;
                 results.familyStats.totalStudents++;
             } catch (err) {
@@ -1130,7 +1150,7 @@ router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const student = await pool.query(`
-            SELECT s.*, c.class_name, sec.section_name, u.username,
+            SELECT s.*, c.class_name, sec.section_name, u.username, u.plain_password as system_pwd,
                    COALESCE(f.family_fee, 0) AS family_fee,
                    COALESCE(f.opening_balance, 0) AS opening_balance,
                    COALESCE(f.opening_balance_paid, 0) AS opening_balance_paid,
@@ -1344,9 +1364,9 @@ router.patch('/:id/generate-credentials', async (req, res) => {
 
         // 4. Create User
         const newUser = await client.query(
-            `INSERT INTO app_users (username, password_hash, full_name, email, role_id, is_active) 
-             VALUES ($1, $2, $3, $4, $5, true) RETURNING id`,
-            [username, password_hash, `${student.first_name} ${student.last_name}`, student.email, role_id]
+            `INSERT INTO app_users (username, password_hash, plain_password, full_name, email, role_id, is_active)
+             VALUES ($1, $2, $3, $4, $5, $6, true) RETURNING id`,
+            [username, password_hash, 'student123', `${student.first_name} ${student.last_name}`, student.email, role_id]
         );
         const user_id = newUser.rows[0].id;
 
@@ -1389,7 +1409,7 @@ router.patch('/:id/change-password', async (req, res) => {
         const password_hash = await bcrypt.hash(password, salt);
 
         // Update User
-        await client.query("UPDATE app_users SET password_hash = $1 WHERE id = $2", [password_hash, user_id]);
+        await client.query("UPDATE app_users SET password_hash = $1, plain_password = $2 WHERE id = $3", [password_hash, password, user_id]);
 
         await client.query('COMMIT');
         res.json({ message: "Password updated successfully" });

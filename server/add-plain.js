@@ -1,0 +1,1 @@
+const pool = require('./db'); pool.query('ALTER TABLE app_users ADD COLUMN plain_password VARCHAR(255) DEFAULT \'student123\'').then(() => console.log('Added')).catch(console.error).finally(()=>pool.end());
