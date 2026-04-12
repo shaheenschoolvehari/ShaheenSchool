@@ -133,8 +133,9 @@ export default function AdminDashboard({ userName }: { userName: string }) {  co
         )}
       </div>
 
-      {/* Fee Area Chart */}
       {hasPermission('dash.admin_charts', 'read') && (
+      <>
+      {/* Fee Area Chart */}
       <div style={{ marginBottom:20 }}>
         <Panel title="Daily Fee Collection â€” Last 14 Days" icon="bi-graph-up-arrow"
           action={<span style={{ fontSize:12, color:'#94a3b8', fontWeight:600 }}>{<MaskedAmount amount={s.this_month_collected} />} this month</span>}>
@@ -160,7 +161,6 @@ export default function AdminDashboard({ userName }: { userName: string }) {  co
           )}
         </Panel>
       </div>
-      )}
 
       {/* Attendance Bar Chart */}
       <div style={{ marginBottom:20 }}>
@@ -194,6 +194,8 @@ export default function AdminDashboard({ userName }: { userName: string }) {  co
           )}
         </Panel>
       </div>
+      </>
+      )}
 
       {/* Quick Actions */}
       <Panel title="Quick Actions" icon="bi-lightning-charge-fill">
