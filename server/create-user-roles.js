@@ -118,8 +118,7 @@ async function createAuthTables() {
                 'fees', 'expenses', 'reports', 'students'
             ],
             'Student': [
-                'dashboard', 'dash.student_kpi', 'dash.student_att', 'dash.student_fees',
-                'attendance', 'fees', '__exam__'
+                'dashboard', 'dash.student_kpi', 'dash.student_att', 'dash.student_fees'
             ]
         };
 
@@ -130,11 +129,11 @@ async function createAuthTables() {
         for (const [roleName, modules] of Object.entries(ROLE_PERMS)) {
             const roleId = roleMap[roleName];
             if (!roleId) continue;
-            
-            for (const mod of modules) {
-                await pool.query(`
-                    INSERT INTO role_permissions (role_id, module_name, can_read, can_write, can_delete) 
-                    VALUES ($1, $2, true, true, true)
+
+            // In case we are updating an existing layout, wipe old non-admin permissions to prevent feature bleed.
+            if (roleName !== 'Administrator') {
+                await pool.query("DELETE FROM role_permissions WHERE role_id = $1", [roleId]);
+            }
                     ON CONFLICT (role_id, module_name) 
                     DO UPDATE SET can_read=true, can_write=true, can_delete=true;
                 `, [roleId, mod]);
