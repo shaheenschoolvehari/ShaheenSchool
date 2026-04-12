@@ -360,10 +360,10 @@ export default function StudentDetails() {
     return (
         <div className="container-fluid p-4 bg-light min-vh-100">
             {/* ── Page header ──────────────────────────────────────────────── */}
-            <div className="d-flex justify-content-between align-items-center mb-4">
+            <div className="d-flex justify-content-between align-items-center mb-4 p-4 rounded-4 shadow-sm" style={{ background: 'linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-teal) 100%)', color: 'white' }}>
                 <div>
-                    <h2 className="mb-1 fw-bold text-dark" style={{ letterSpacing: '-0.5px' }}>Student Directory</h2>
-                    <p className="text-muted mb-0">Manage and view student records</p>
+                    <h2 className="mb-1 fw-bold text-white" style={{ letterSpacing: '-0.5px' }}>Student Directory</h2>
+                    <p className="text-white-50 mb-0">Manage and view student records</p>
                 </div>
             </div>
 
@@ -371,14 +371,18 @@ export default function StudentDetails() {
             <div className="card shadow-lg border-0 rounded-4 mb-4 overflow-hidden">
                 <div className="card-header bg-white p-3 border-bottom-0">
                     <div className="d-flex justify-content-between align-items-center">
-                        <div className="d-flex align-items-center gap-2 text-primary">
+                        <div className="d-flex align-items-center gap-2" style={{ color: 'var(--primary-dark)' }}>
                             <i className="bi bi-funnel-fill"></i>
                             <span className="fw-bold text-uppercase small" style={{ letterSpacing: '1px' }}>Smart Filters</span>
                         </div>
-                        <button className={`btn btn-sm ${showAdvancedFilters ? 'btn-primary' : 'btn-outline-primary'}`}
-                            onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}>
-                            <i className="bi bi-sliders me-1"></i> Advanced
-                        </button>
+                        <button className="btn btn-sm" style={{
+                            backgroundColor: showAdvancedFilters ? 'var(--primary-teal)' : 'transparent',
+                            color: showAdvancedFilters ? 'white' : 'var(--primary-teal)',
+                            border: '1px solid var(--primary-teal)'
+                        }}
+                        onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}>
+                        <i className="bi bi-sliders me-1"></i> Advanced  
+                    </button>
                     </div>
                 </div>
                 <div className="card-body p-4 bg-light">
@@ -488,8 +492,8 @@ export default function StudentDetails() {
 
                         {/* Card header: result count + exports + column picker */}
                         <div className="card-header bg-white p-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
-                            <h5 className="mb-0 fw-bold text-primary">
-                                Results <span className="badge bg-primary bg-opacity-10 text-primary ms-2">{students.length}</span>
+                            <h5 className="mb-0 fw-bold" style={{ color: 'var(--primary-dark)' }}>
+                                Results <span className="badge ms-2" style={{ backgroundColor: 'var(--primary-teal)', color: 'white' }}>{students.length}</span>
                             </h5>
                             <div className="d-flex align-items-center gap-2 flex-wrap">
                                 {/* Export icons */}
@@ -506,7 +510,8 @@ export default function StudentDetails() {
                                 {/* Column picker */}
                                 <div className="position-relative" ref={colPickerRef}>
                                     <button
-                                        className={`btn btn-sm ${showColPicker ? 'btn-primary' : 'btn-outline-primary'}`}
+                                        className="btn btn-sm"
+                                        style={{ backgroundColor: showColPicker ? 'var(--primary-teal)' : 'white', color: showColPicker ? 'white' : 'var(--primary-teal)', border: '1px solid var(--primary-teal)' }}
                                         onClick={() => setShowColPicker(v => !v)}
                                         title="Select visible columns"
                                     >
@@ -566,9 +571,9 @@ export default function StudentDetails() {
 
                         {/* Table */}
                         <div className="card-body p-0">
-                            <div className="table-responsive">
-                                <table className="table table-hover align-middle mb-0">
-                                    <thead className="table-light text-uppercase small text-muted">
+                            <div className="table-responsive" style={{ borderTop: '1px solid #f0f0f0' }}>
+                                <table className="table table-hover table-borderless align-middle mb-0">
+                                    <thead className="text-uppercase small text-muted" style={{ backgroundColor: 'var(--primary-dark)', color: 'white' }}>
                                         <tr>
                                             {activeCols.map(col => (
                                                 <th key={col.key} className={col.key === 'sno' ? 'ps-3' : ''}
