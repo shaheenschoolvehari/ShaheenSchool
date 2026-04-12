@@ -851,9 +851,9 @@ router.post('/bulk', async (req, res) => {
         };
         
         for (const rawS of students) {
+            let s = {};
             try {
                 // Normalize incoming keys to handle Excel header variations
-                const s = {};
                 Object.keys(rawS).forEach(key => {
                     const normKey = key.trim().toLowerCase().replace(/\s+/g, '_');
                     s[normKey] = rawS[key];
@@ -1057,7 +1057,7 @@ router.post('/bulk', async (req, res) => {
             } catch (err) {
                 // If collision on generated ID (race condition), retry logic could be added here
                 results.failed++;
-                results.errors.push({ name: s.first_name, error: err.message });
+                results.errors.push({ name: s.first_name || rawS.first_name || rawS['First Name'] || 'Unknown Student', error: err.message });
             }
         }
 
