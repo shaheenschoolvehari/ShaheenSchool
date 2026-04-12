@@ -40,6 +40,8 @@ type Student = {
     status: string;
 
     image_url: string;
+    username?: string;
+    system_pwd?: string;
 };
 
 // ── Column definitions ────────────────────────────────────────────────────
@@ -47,6 +49,8 @@ const COL_DEFS: { key: string; label: string; defaultOn: boolean }[] = [
     { key: 'sno',           label: '#',              defaultOn: true  },
     { key: 'admission_no',  label: 'Admission No',   defaultOn: true  },
     { key: 'roll_no',       label: 'Roll No',        defaultOn: true  },
+    { key: 'username',      label: 'Username',       defaultOn: true  },
+    { key: 'system_pwd',    label: 'Password',       defaultOn: true  },
     { key: 'family_id',     label: 'Family ID',      defaultOn: false },
     { key: 'name',          label: 'Name',           defaultOn: true  },
     { key: 'father_name',   label: 'Father Name',    defaultOn: true  },
@@ -75,6 +79,8 @@ function exportText(key: string, s: Student, idx: number): string {
         case 'sno':           return String(idx + 1);
         case 'admission_no':  return s.admission_no   ?? '';
         case 'roll_no':       return s.roll_no        ?? '';
+        case 'username':      return s.username       ?? '';
+        case 'system_pwd':    return s.system_pwd     ?? '';
         case 'family_id':     return s.family_id      ?? '';
         case 'name':          return `${s.first_name ?? ''} ${s.last_name ?? ''}`.trim();
         case 'father_name':   return s.father_name    ?? '';
@@ -108,6 +114,10 @@ function renderCell(key: string, s: Student, idx: number) {
             return <span className="badge bg-light text-dark border fw-normal">{s.admission_no || '—'}</span>;
         case 'roll_no':
             return <span className="fw-semibold">{s.roll_no || '—'}</span>;
+        case 'username':
+            return <span className="font-monospace text-primary bg-light border px-1 rounded" style={{ fontSize: '0.8rem' }}>{s.username || '—'}</span>;
+        case 'system_pwd':
+            return <span className="font-monospace text-muted" style={{ fontSize: '0.8rem' }}>{s.system_pwd || '—'}</span>;
         case 'family_id':
             return s.family_id
                 ? <span className="badge bg-info-subtle text-info-emphasis fw-normal" style={{ fontSize: 11 }}>{s.family_id}</span>
