@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { showToast } from '@/utils/toastHelper';
 
 type User = {
     id: number;
@@ -78,10 +79,11 @@ export default function UsersPage() {
             
             if (res.status === 400) {
                  const msg = await res.json();
-                 alert(msg);
-                 return;
-            }
+                  showToast.error(msg?.error || msg || 'Operation failed');
+                  return;
+             }
 
+             showToast.success('User details saved successfully');
             setView('list');
             fetchData();
         } catch (err) { console.error(err); }

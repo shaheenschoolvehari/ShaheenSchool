@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { showToast } from '@/utils/toastHelper';
 
 type Permission = {
     module_name: string;
@@ -140,12 +141,15 @@ export default function RolesPage() {
     const [formData, setFormData] = useState<Role>({
         id: 0, role_name: '', description: '', is_system_default: false, permissions: [],
     });
-    const [toast, setToast] = useState<{ type: 'success' | 'danger'; msg: string } | null>(null);
     const { hasPermission } = useAuth();
 
-    const showToast = (type: 'success' | 'danger', msg: string) => {
-        setToast({ type, msg });
-        setTimeout(() => setToast(null), 3500);
+    // Replaced local showToast with global one.
+    const showToastMsg = (type: 'success' | 'danger', msg: string) => {
+        if (type === 'success') {
+            showToast.success(msg);
+        } else {
+            showToast.error(msg);
+        }
     };
 
     useEffect(() => { fetchRoles(); }, []);
@@ -155,7 +159,7 @@ export default function RolesPage() {
             const res  = await fetch('https://shmool.onrender.com/roles');
             const data = await res.json();
             setRoles(data);
-        } catch { showToast('danger', 'Failed to load roles'); }
+        } catch { showToastMsg('danger', 'Failed to load roles'); }
         finally  { setLoading(false); }
     };
 
@@ -197,9 +201,9 @@ export default function RolesPage() {
         if (!confirm('Are you sure? This role will be permanently deleted.')) return;
         try {
             const res = await fetch(`https://shmool.onrender.com/roles/${id}`, { method: 'DELETE' });
-            if (res.ok) { fetchRoles(); showToast('success', 'Role deleted'); }
-            else showToast('danger', 'Failed to delete role');
-        } catch { showToast('danger', 'Server error'); }
+            if (res.ok) { fetchRoles(); showToastMsg('success', 'Role deleted'); }
+            else showToastMsg('danger', 'Failed to delete role');
+        } catch { showToastMsg('danger', 'Server error'); }
     };
 
     const handleSave = async (e: React.FormEvent) => {
@@ -216,9 +220,9 @@ export default function RolesPage() {
             if (res.ok) {
                 setView('list');
                 fetchRoles();
-                showToast('success', formData.id === 0 ? 'Role created successfully' : 'Role updated successfully');
-            } else showToast('danger', 'Failed to save role');
-        } catch { showToast('danger', 'Server error'); }
+                showToastMsg('success', formData.id === 0 ? 'Role created successfully' : 'Role updated successfully');
+            } else showToastMsg('danger', 'Failed to save role');
+        } catch { showToastMsg('danger', 'Server error'); }
         finally   { setSaving(false); }
     };
 
@@ -291,14 +295,6 @@ export default function RolesPage() {
 
     return (
         <div className="container-fluid px-3 px-md-4 py-3 animate__animated animate__fadeIn">
-            {/* Toast */}
-            {toast && (
-                <div className={`alert alert-${toast.type} border-0 rounded-3 d-flex align-items-center gap-2 animate__animated animate__fadeInDown mb-3 shadow-sm`}
-                    style={{ position: 'sticky', top: 12, zIndex: 1000 }}>
-                    <i className={`bi ${toast.type === 'success' ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill'} fs-5`} />
-                    <span className="fw-semibold">{toast.msg}</span>
-                </div>
-            )}
 
             {/* ──────────────────────────── LIST VIEW ──────────────────────────── */}
             {view === 'list' && (

@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { showToast } from '@/utils/toastHelper';
 
 type SystemSetting = {
     setting_key: string;
@@ -88,12 +89,12 @@ export default function SystemConfigPage() {
                 body: JSON.stringify(formData)
             });
             if(res.ok) {
-                alert('System configuration updated successfully.');
+                showToast.success('System configuration updated successfully.');
                 fetchSettings(); // refresh
             }
         } catch (err) {
             console.error(err);
-            alert('Failed to save settings.');
+            showToast.error('Failed to save settings.');
         } finally {
             setSaving(false);
         }
@@ -109,13 +110,13 @@ export default function SystemConfigPage() {
             const res = await fetch('https://shmool.onrender.com/system/backups/create', { method: 'POST' });
             const data = await res.json();
             if (res.ok) {
-                alert(data.message);
+                showToast.success(data.message);
                 fetchBackups();
             } else {
-                alert('Error: ' + data.error);
+                showToast.error('Error: ' + data.error);
             }
         } catch (err) {
-            alert('Failed to create backup');
+            showToast.error('Failed to create backup');
         } finally {
             setCreatingBackup(false);
         }
@@ -126,9 +127,10 @@ export default function SystemConfigPage() {
         try {
             const res = await fetch(`https://shmool.onrender.com/system/backups/${filename}`, { method: 'DELETE' });
             if (res.ok) {
+                showToast.success('Backup deleted successfully');
                 fetchBackups();
             }
-        } catch(err) { alert('Failed to delete backup'); }
+        } catch(err) { showToast.error('Failed to delete backup'); }
     };
     
     const handleDownloadBackup = (filename: string) => {
@@ -156,14 +158,14 @@ export default function SystemConfigPage() {
             const data = await res.json();
             
             if (res.ok) {
-                alert(data.message);
+                showToast.success(data.message);
                 window.location.reload();
             } else {
-                alert('Restore Failed: ' + data.error);
+                showToast.error('Restore Failed: ' + data.error);
             }
         } catch (err) {
             console.error(err);
-            alert('Failed to connect to server for restore.');
+            showToast.error('Failed to connect to server for restore.');
         } finally {
             setRestoring(false);
             e.target.value = ''; // Reset input

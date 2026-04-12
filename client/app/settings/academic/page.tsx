@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { showToast } from '@/utils/toastHelper';
 
 type AcademicYear = {
     id: number;
@@ -132,7 +133,7 @@ export default function AcademicSetup() {
                 setSaveError(errData.error || `Configuration failed (${res.status})`);
                 return;
             }
-            alert('Year configured successfully! Now you can setup terms and promote students.');
+            showToast.success('Year configured successfully! Now you can setup terms and promote students.');
             await fetchYears();
             setMode('terms');
         } catch (err) {
@@ -166,7 +167,7 @@ export default function AcademicSetup() {
                 setSaveError(errData.error || `Activation failed (${res.status})`);
                 return;
             }
-            alert('Academic year activated successfully!');
+            showToast.success('Academic year activated successfully!');
             await fetchYears();
             setMode('view');
         } catch (err) {
@@ -194,7 +195,7 @@ export default function AcademicSetup() {
                 return;
             }
             setSaveError(null);
-            alert('Terms saved successfully!');
+            showToast.success('Terms saved successfully!');
             setMode('view');
         } catch (err: any) {
             console.error(err);

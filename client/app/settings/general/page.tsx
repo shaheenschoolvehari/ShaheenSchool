@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { showToast } from '@/utils/toastHelper';
 
 const API = 'https://shmool.onrender.com';
 
@@ -23,7 +24,6 @@ export default function GeneralSettings() {
     const [saving, setSaving] = useState(false);
     const [uploadingLogo, setUploadingLogo] = useState(false);
     const [logoPreview, setLogoPreview] = useState<string>('');
-    const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
     const logoInputRef = useRef<HTMLInputElement>(null);
     const { hasPermission } = useAuth();
 
@@ -62,9 +62,9 @@ export default function GeneralSettings() {
             if (!res.ok) throw new Error(data.error || 'Upload failed');
             setSettings(prev => ({ ...prev, logo_url: data.logo_url }));
             setLogoPreview(`${API}${data.logo_url}?t=${Date.now()}`);
-            setMessage({ type: 'success', text: 'Logo uploaded successfully!' });
+            showToast.success('Logo uploaded successfully!');
         } catch (err: any) {
-            setMessage({ type: 'error', text: err.message || 'Logo upload failed.' });
+            showToast.error(err.message || 'Logo upload failed.');
         } finally {
             setUploadingLogo(false);
         }
@@ -73,7 +73,6 @@ export default function GeneralSettings() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setSaving(true);
-        setMessage(null);
         await new Promise(r => setTimeout(r, 400));
         try {
             const res = await fetch(`${API}/settings`, {
@@ -82,14 +81,14 @@ export default function GeneralSettings() {
                 body: JSON.stringify(settings)
             });
             if (res.ok) {
-                setMessage({ type: 'success', text: 'Configuration saved successfully!' });
+                showToast.success('Configuration saved successfully!');
                 const data = await res.json();
                 setSettings(data);
             } else {
-                setMessage({ type: 'error', text: 'Failed to update settings.' });
+                showToast.error('Failed to update settings.');
             }
         } catch {
-            setMessage({ type: 'error', text: 'Server connection error.' });
+            showToast.error('Server connection error.');
         } finally {
             setSaving(false);
         }
@@ -108,12 +107,6 @@ export default function GeneralSettings() {
                 <h2 style={{ color: 'var(--primary-dark)', fontSize: '1.8rem', fontWeight: 'bold' }}>General Information</h2>
                 <p style={{ color: 'var(--text-gray-medium)', marginTop: '5px' }}>Manage your school&apos;s primary details and public profile.</p>
             </div>
-
-            {message && (
-                <div className={`notification ${message.type === 'success' ? 'success' : 'error'}`}>
-                    {message.type === 'success' ? '✅' : '⚠️'} {message.text}
-                </div>
-            )}
 
             <form onSubmit={handleSubmit}>
 
@@ -312,9 +305,6 @@ export default function GeneralSettings() {
                 .btn-modern.secondary { background-color: white; color: var(--text-gray-medium); border-color: #e5e7eb; }
                 .btn-modern.secondary:hover { background-color: #f3f4f6; }
                 .btn-modern:disabled { opacity: 0.7; cursor: not-allowed; }
-                .notification { padding: 15px; border-radius: 8px; margin-bottom: 20px; font-weight: 500; }
-                .notification.success { background-color: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
-                .notification.error { background-color: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
                 .spinner {
                     border: 4px solid #f3f3f3; border-top: 4px solid var(--primary-teal);
                     border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite;

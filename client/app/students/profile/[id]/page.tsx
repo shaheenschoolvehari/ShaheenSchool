@@ -11,7 +11,11 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('overview');
     const router = useRouter();
-    const { hasPermission } = useAuth();
+    const { user, hasPermission } = useAuth();
+    const [showPwd, setShowPwd] = useState(false);
+    const [changePwdModalOpen, setChangePwdModalOpen] = useState(false);
+    const [newAdminPwd, setNewAdminPwd] = useState('');
+    const [isChangingPwd, setIsChangingPwd] = useState(false);
 
     // Attendance states
     const now = new Date();
@@ -180,20 +184,29 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
         } catch(e) { notify.error("Connection Error"); }
     };
 
-    const handleChangePassword = async (password: string) => {
+const handleChangePassword = async () => {
+        if (!newAdminPwd || newAdminPwd.length < 6) {
+             notify.error("Password must be at least 6 characters.");
+             return;
+        }
+        setIsChangingPwd(true);
         try {
-            const res = await fetch(`https://shmool.onrender.com/students/${params.id}/change-password`, {
+            const res = await fetch(`https://shmool.onrender.com/students/${params.id}/change-password`, { 
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ password })
+                body: JSON.stringify({ password: newAdminPwd })
             });
             if(res.ok) {
                 notify.success("Password changed successfully");
+                setStudent((prev: any) => ({...prev, system_pwd: newAdminPwd}));
+                setChangePwdModalOpen(false);
+                setNewAdminPwd('');
             } else {
                 const d = await res.json();
                 notify.error(d.error || "Failed to change password");
             }
         } catch(e) { notify.error("Connection Error"); }
+        finally { setIsChangingPwd(false); }
     };
 
     // ── Academic helpers ─────────────────────────────────────────────────────
@@ -325,12 +338,26 @@ const getWaLink = (phone: string) => {
                                         <div className="fw-medium text-dark d-flex align-items-center justify-content-between">
                                             {student.username ? (
                                                 <>
-                                                    <span className="font-monospace bg-light border px-2 py-1 rounded small text-primary">{student.username}</span>
-                                                    <button className="btn btn-sm text-primary p-0 ms-2" title="Change Password" onClick={() => {
-                                                        const newPwd = prompt("Enter new password for student:");
-                                                        if(newPwd) handleChangePassword(newPwd);
-                                                    }}>
-                                                        <i className="bi bi-key-fill"></i>
+                                                    <div className="d-flex flex-column gap-1">
+                                                        <div className="d-flex align-items-center gap-2">
+                                                            <span className="font-monospace bg-light border px-2 py-1 rounded small text-primary">{student.username}</span>
+                                                            <button className="btn btn-sm text-secondary p-0" title="Copy Username" onClick={() => { navigator.clipboard.writeText(student.username); notify.success('Username copied'); }}>
+                                                                <i className="bi bi-copy" style={{fontSize: '0.8rem'}}></i>
+                                                            </button>
+                                                        </div>
+                                                        {user?.role_name === 'Administrator' && (
+                                                            <div className="d-flex align-items-center gap-2 mt-1">
+                                                                <span className="font-monospace text-muted small user-select-all" style={{fontSize:'0.75rem'}}>
+                                                                    {showPwd ? (student.system_pwd || 'student123') : '••••••••'}
+                                                                </span>
+                                                                <button className="btn btn-sm text-secondary p-0" title={showPwd ? 'Hide Password' : 'Show Password'} onClick={() => setShowPwd(!showPwd)}>
+                                                                    <i className={`bi bi-eye${showPwd ? '-slash' : ''}`} style={{fontSize: '0.8rem'}}></i>
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <button className="btn btn-sm text-primary p-0 ms-2" title="Change Password" onClick={() => setChangePwdModalOpen(true)}>
+                                                        <i className="bi bi-key-fill dropdown-icon-fix p-1 fs-6"></i> Change
                                                     </button>
                                                 </>
                                             ) : (
