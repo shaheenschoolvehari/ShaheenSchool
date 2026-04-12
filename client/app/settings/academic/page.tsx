@@ -279,6 +279,13 @@ export default function AcademicSetup() {
                          {/* 2. Action Area */}
                         {mode === 'view' && (
                             <div className="bg-light p-4 rounded border">
+                                {saveError && (
+                                    <div className="alert alert-danger d-flex align-items-center mb-4 animate__animated animate__shakeX">
+                                        <i className="bi bi-exclamation-triangle-fill fs-5 me-2"></i>
+                                        <div className="text-start flex-grow-1">{saveError}</div>
+                                        <button type="button" className="btn-close" onClick={() => setSaveError(null)} aria-label="Close"></button>
+                                    </div>
+                                )}
                                 {selectedYear.status === 'active' && (
                                     <div className="text-center text-md-start">
                                         <div className="d-flex align-items-center mb-3">
