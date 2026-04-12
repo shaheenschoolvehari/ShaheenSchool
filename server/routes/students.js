@@ -675,9 +675,20 @@ router.post('/', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'documen
         // ----------------------------------------------------
         // USER CREDENTIALS GENERATION
         // ----------------------------------------------------
-        // Username: STU-[AdmissionNo] (e.g., STU-FEB052026001)
-        const username = `STU-${auto_admission_no}`;
+        let username = `STU-${auto_admission_no}`;
         
+        let uIdx = 1;
+        let isUnique = false;
+        while (!isUnique) {
+          const uCheck = await client.query('SELECT id FROM app_users WHERE username = $1', [username]);
+          if (uCheck.rows.length === 0) {
+            isUnique = true;
+          } else {
+            username = `STU-${auto_admission_no}-${uIdx}`;
+            uIdx++;
+          }
+        }
+
         // Default Password: 'student123' (Hashed)
         const salt = await bcrypt.genSalt(10);
         const password_hash = await bcrypt.hash('student123', salt);
@@ -1038,7 +1049,18 @@ router.post('/bulk', async (req, res) => {
                 `, [family_id, bulkFamilyFee, bulkOpb]);
 
                 // Handle User Profile for Bulk Import
-                const username = 'STU-' + finalAdmissionNo;
+                let username = 'STU-' + finalAdmissionNo;
+                  let uIdx = 1;
+                  let isUnique = false;
+                  while(!isUnique) {
+                      const existRes = await client.query('SELECT id FROM app_users WHERE username = $1', [username]);
+                      if (existRes.rows.length === 0) {
+                          isUnique = true;
+                      } else {
+                          username = 'STU-' + finalAdmissionNo + '-' + uIdx;
+                          uIdx++;
+                      }
+                  }
                 const salt = await bcrypt.genSalt(10);
                 const password_hash = await bcrypt.hash('student123', salt);
                 
