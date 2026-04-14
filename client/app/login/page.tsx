@@ -15,11 +15,52 @@ export default function LoginPage() {
     const [error, setError] = useState('');
     const [submitting, setSubmitting] = useState(false);
 
+    // Dynamic State for Devs Info
+    const [devUmar, setDevUmar] = useState({
+        name: 'M. Umar Ajmal',
+        bio: 'Software Eng. & Machine Learning',
+        avatar: 'https://avatars.githubusercontent.com/u/126502013?v=4'
+    });
+    const [devAbdullah, setDevAbdullah] = useState({
+        name: 'Muhammad Abdullah',
+        bio: 'AI Automation & Custom Software',
+        avatar: 'https://raw.githubusercontent.com/AbdullahWali79/AbdullahImages/main/Professional.jpeg'
+    });
+
     useEffect(() => {
         if (!isLoading && isLoggedIn) {
             router.replace('/');
         }
     }, [isLoading, isLoggedIn, router]);
+
+    // Fetch dynamic GitHub data
+    useEffect(() => {
+        // Fetch M. Umar Ajmal dynamically
+        fetch('https://api.github.com/users/UmarAjmal')
+            .then(res => res.json())
+            .then(data => {
+                if (data.name) {
+                    setDevUmar(prev => ({
+                        name: data.name || prev.name,
+                        bio: data.bio || prev.bio, // Real bio from Github
+                        avatar: data.avatar_url || prev.avatar
+                    }));
+                }
+            }).catch(e => console.error('Failed to fetch Umar Ajmal data:', e));
+
+        // Fetch Muhammad Abdullah dynamically
+        fetch('https://api.github.com/users/AbdullahWali79')
+            .then(res => res.json())
+            .then(data => {
+                if (data.name) {
+                    setDevAbdullah(prev => ({
+                        name: data.name || prev.name,
+                        bio: data.bio || prev.bio,
+                        avatar: prev.avatar // Keeping his professional photo as preferred, or swapping if desired.
+                    }));
+                }
+            }).catch(e => console.error('Failed to fetch Abdullah Wali data:', e));
+    }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -110,36 +151,45 @@ export default function LoginPage() {
                         </div>
                     </div>
                 </main>
-
-                <footer className="dev-footer">
-                    <div className="creator-card">
-                        <img src="https://raw.githubusercontent.com/AbdullahWali79/AbdullahImages/main/Professional.jpeg" alt="PM" />
-                        <div className="creator-info">
-                            <small>Project Manager / Supervisor</small>
-                            <a href="https://muhammadabdullahwali.vercel.app/" target="_blank" rel="noopener noreferrer">Muhammad Abdullah</a>
-                            <span>AI Automation & Custom Software</span>
-                        </div>
-                    </div>
-
-                    <div className="creator-card">
-                        <img src="https://avatars.githubusercontent.com/u/126502013?v=4" alt="Dev" />
-                        <div className="creator-info">
-                            <small>Full Stack Developer</small>
-                            <a href="https://github.com/UmarAjmal" target="_blank" rel="noopener noreferrer">M. Umar Ajmal</a>
-                            <span>Software Eng. & Machine Learning</span>
-                        </div>
-                    </div>
-
-                    <div className="creator-card">
-                        <div className="avatar-placeholder">A</div>
-                        <div className="creator-info">
-                            <small>SEO Expert</small>
-                            <strong className="text-white">Abdullah</strong>
-                            <span>Search Engine Optimization</span>
-                        </div>
-                    </div>
-                </footer>
             </div>
+
+            {/* Redesigned Dynamic Developer Footer */}
+            <footer className="dynamic-dev-footer">
+                <h4 className="footer-title">Credits & Developers</h4>
+                <div className="footer-cards-container">
+                    
+                    {/* Project Manager / Mohammad Abdullah */}
+                    <a href="https://muhammadabdullahwali.vercel.app/" target="_blank" rel="noopener noreferrer" className="dev-card">
+                        <img src={devAbdullah.avatar} alt="PM" className="dev-avatar" />
+                        <div className="dev-details">
+                            <span className="dev-role text-accent">Project Manager / Supervisor</span>
+                            <strong className="dev-name">{devAbdullah.name}</strong>
+                            <span className="dev-bio">{devAbdullah.bio}</span>
+                        </div>
+                    </a>
+
+                    {/* Developer / Umar Ajmal */}
+                    <a href="https://github.com/UmarAjmal" target="_blank" rel="noopener noreferrer" className="dev-card">
+                        <img src={devUmar.avatar} alt="Dev" className="dev-avatar" />
+                        <div className="dev-details">
+                            <span className="dev-role text-accent">Full Stack Developer</span>
+                            <strong className="dev-name">{devUmar.name}</strong>
+                            <span className="dev-bio" title={devUmar.bio}>{devUmar.bio}</span>
+                        </div>
+                    </a>
+
+                    {/* SEO / Abdullah (Static) */}
+                    <div className="dev-card static-card">
+                        <div className="dev-avatar placeholder">A</div>
+                        <div className="dev-details">
+                            <span className="dev-role text-accent">SEO Expert</span>
+                            <strong className="dev-name text-white">Abdullah</strong>
+                            <span className="dev-bio">Search Engine Optimization</span>
+                        </div>
+                    </div>
+
+                </div>
+            </footer>
 
             <style jsx>{`
                 .loader-screen {
@@ -155,7 +205,6 @@ export default function LoginPage() {
                     background: #1a2f3b;
                     display: flex;
                     flex-direction: column;
-                    justify-content: center;
                     align-items: center;
                     overflow-x: hidden;
                     font-family: 'Inter', system-ui, sans-serif;
@@ -165,11 +214,12 @@ export default function LoginPage() {
                     z-index: 10;
                     width: 100%;
                     max-width: 1000px;
-                    padding: 40px 20px 20px;
+                    padding: 40px 20px 0;
+                    flex: 1;
                     display: flex;
                     flex-direction: column;
                     align-items: center;
-                    gap: 40px;
+                    justify-content: center;
                 }
                 .glass-board {
                     display: flex;
@@ -305,82 +355,121 @@ export default function LoginPage() {
                     border: none;
                     border-radius: 8px;
                 }
-                .dev-footer {
+
+                /* ---- PROPER DYNAMIC DESIGN FOR FOOTER CARDS ---- */
+                .dynamic-dev-footer {
+                    width: 100%;
+                    max-width: 1200px;
+                    padding: 30px 20px 40px;
+                    z-index: 10;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                }
+                .footer-title {
+                    font-size: 0.8rem;
+                    text-transform: uppercase;
+                    letter-spacing: 2px;
+                    color: rgba(255, 255, 255, 0.5);
+                    margin-bottom: 25px;
+                    font-weight: 600;
+                }
+                .footer-cards-container {
                     display: flex;
                     justify-content: center;
                     flex-wrap: wrap;
-                    gap: 20px;
+                    gap: 24px;
                     width: 100%;
                 }
-                .creator-card {
+                .dev-card {
+                    background: rgba(15, 23, 42, 0.45);
+                    border: 1px solid rgba(255, 255, 255, 0.08);
+                    backdrop-filter: blur(16px);
+                    -webkit-backdrop-filter: blur(16px);
+                    border-radius: 16px;
+                    padding: 18px 22px;
                     display: flex;
                     align-items: center;
-                    gap: 12px;
-                    background: rgba(255, 255, 255, 0.05);
-                    border: 1px solid rgba(255, 255, 255, 0.1);
-                    padding: 10px 15px;
-                    border-radius: 50px;
-                    transition: all 0.3s;
+                    gap: 18px;
+                    width: 340px;
+                    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s, box-shadow 0.3s, border-color 0.3s;
+                    text-decoration: none;
+                    color: white;
+                    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
                 }
-                .creator-card:hover {
+                .static-card {
+                    cursor: default;
+                }
+                .dev-card:hover:not(.static-card) {
+                    transform: translateY(-6px);
                     background: rgba(255, 255, 255, 0.1);
-                    transform: translateY(-2px);
+                    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.3);
+                    border-color: rgba(254, 127, 45, 0.3);
                 }
-                .creator-card img, .avatar-placeholder {
-                    width: 44px;
-                    height: 44px;
-                    border-radius: 50%;
+                .dev-avatar {
+                    width: 60px;
+                    height: 60px;
+                    border-radius: 14px;
                     object-fit: cover;
-                    border: 2px solid #FE7F2D;
+                    border: 2px solid transparent;
+                    transition: border-color 0.3s;
+                    background-clip: padding-box;
+                    flex-shrink: 0;
                 }
-                .avatar-placeholder {
+                .placeholder {
                     display: flex;
                     align-items: center;
                     justify-content: center;
                     background: #FE7F2D;
                     color: white;
                     font-weight: bold;
-                    font-size: 1.2rem;
+                    font-size: 1.6rem;
                 }
-                .creator-info {
+                .dev-card:hover:not(.static-card) .dev-avatar {
+                    border-color: #FE7F2D;
+                }
+                .dev-details {
                     display: flex;
                     flex-direction: column;
-                    line-height: 1.2;
+                    line-height: 1.3;
+                    overflow: hidden;
                 }
-                .creator-info small {
-                    font-size: 0.65rem;
-                    text-transform: uppercase;
-                    color: rgba(255,255,255,0.6);
-                    font-weight: 600;
-                }
-                .creator-info a, .creator-info strong {
-                    font-size: 0.95rem;
-                    color: white;
-                    text-decoration: none;
-                    font-weight: 700;
-                }
-                .creator-info a:hover {
+                .text-accent {
                     color: #FE7F2D;
                 }
-                .creator-info span {
-                    font-size: 0.7rem;
-                    color: rgba(255,255,255,0.8);
+                .dev-role {
+                    font-size: 0.65rem;
+                    text-transform: uppercase;
+                    font-weight: 700;
+                    letter-spacing: 0.5px;
+                    margin-bottom: 4px;
+                }
+                .dev-name {
+                    font-size: 1.05rem;
+                    font-weight: 700;
+                    color: white;
+                    margin-bottom: 2px;
+                    text-decoration: none;
+                    transition: color 0.2s;
+                }
+                .dev-card:hover:not(.static-card) .dev-name {
+                    color: #FE7F2D;
+                }
+                .dev-bio {
+                    font-size: 0.8rem;
+                    color: rgba(255, 255, 255, 0.7);
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
                 }
 
+                @media (max-width: 900px) {
+                    .glass-board { flex-direction: column; }
+                    .brand-panel, .form-panel { padding: 40px 30px; }
+                }
                 @media (max-width: 768px) {
-                    .glass-board {
-                        flex-direction: column;
-                    }
-                    .brand-panel {
-                        padding: 40px 30px;
-                    }
-                    .form-panel {
-                        padding: 40px 30px;
-                    }
-                    .creator-card {
-                        width: 100%;
-                        max-width: 350px;
-                    }
+                    .dev-card { width: 100%; max-width: 400px; }
+                    .footer-cards-container { flex-direction: column; align-items: center; }
                 }
             `}</style>
         </div>
