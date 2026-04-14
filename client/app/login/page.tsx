@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import AnimatedBackground from '@/components/AnimatedBackground';
 
 export default function LoginPage() {
     const { login, isLoggedIn, isLoading } = useAuth();
@@ -50,6 +51,7 @@ export default function LoginPage() {
         <div className="login-wrapper">
             {/* Background decoration */}
             <div className="bg-decoration" />
+            <AnimatedBackground />
 
             <div className="login-container">
                 {/* Left Branding Panel */}
@@ -166,6 +168,38 @@ export default function LoginPage() {
                             <i className="bi bi-info-circle me-1" />
                             Default credentials: <strong>root</strong> / <strong>root123</strong>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Developer Info Footer */}
+            <div className="developer-footer">
+                <div className="creator-card">
+                    <img src="https://raw.githubusercontent.com/AbdullahWali79/AbdullahImages/main/Professional.jpeg" alt="Muhammad Abdullah" className="creator-avatar" />
+                    <div className="creator-info">
+                        <span className="creator-role">Project Manager / Supervisor</span>
+                        <a href="https://muhammadabdullahwali.vercel.app/" target="_blank" rel="noopener noreferrer" className="creator-name">Muhammad Abdullah</a>
+                        <span className="creator-skill">AI Automation & Custom Software</span>
+                    </div>
+                </div>
+
+                <div className="creator-card">
+                    <img src="https://avatars.githubusercontent.com/u/126502013?v=4" alt="Umar Ajmal" className="creator-avatar" />
+                    <div className="creator-info">
+                        <span className="creator-role">Full Stack Developer</span>
+                        <a href="https://github.com/UmarAjmal" target="_blank" rel="noopener noreferrer" className="creator-name">M. Umar Ajmal</a>
+                        <span className="creator-skill">Software Eng. & Machine Learning</span>
+                    </div>
+                </div>
+
+                <div className="creator-card">
+                    <div className="creator-avatar placeholder-avatar">
+                        A
+                    </div>
+                    <div className="creator-info">
+                        <span className="creator-role">SEO Expert</span>
+                        <span className="creator-name no-link">Abdullah</span>
+                        <span className="creator-skill">Search Engine Optimization</span>   
                     </div>
                 </div>
             </div>
@@ -426,6 +460,105 @@ export default function LoginPage() {
                     .login-card { padding: 28px 20px; border-radius: 18px; }
                     .login-title { font-size: 1.3rem; }
                     .login-input, .login-btn { font-size: 16px !important; }
+                }
+
+                /* ---- Developer Footer Styles ---- */
+                .developer-footer {
+                    position: absolute;
+                    bottom: 25px;
+                    left: 0;
+                    width: 100%;
+                    display: flex;
+                    justify-content: center;
+                    gap: 30px;
+                    align-items: center;
+                    padding: 0 20px;
+                    z-index: 10;
+                    flex-wrap: wrap;
+                }
+
+                .creator-card {
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    background: rgba(255, 255, 255, 0.08);
+                    backdrop-filter: blur(8px);
+                    -webkit-backdrop-filter: blur(8px);
+                    padding: 10px 15px 10px 10px;
+                    border-radius: 50px;
+                    border: 1px solid rgba(255, 255, 255, 0.15);
+                    transition: transform 0.3s ease, background 0.3s ease, box-shadow 0.3s ease;
+                    text-decoration: none;
+                    color: white;
+                }
+
+                .creator-card:hover {
+                    transform: translateY(-3px);
+                    background: rgba(255, 255, 255, 0.15);
+                    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+                }
+
+                .creator-avatar {
+                    width: 45px;
+                    height: 45px;
+                    border-radius: 50%;
+                    object-fit: cover;
+                    border: 2px solid #FE7F2D;
+                }
+                
+                .placeholder-avatar {
+                    background: #FE7F2D;
+                    color: white;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 1.4rem;
+                    font-weight: bold;
+                }
+
+                .creator-info {
+                    display: flex;
+                    flex-direction: column;
+                    line-height: 1.2;
+                }
+
+                .creator-role {
+                    font-size: 0.65rem;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                    color: rgba(255, 255, 255, 0.7);
+                    font-weight: 600;
+                    margin-bottom: 2px;
+                }
+
+                .creator-name {
+                    font-size: 0.95rem;
+                    font-weight: 700;
+                    color: white;
+                    text-decoration: none;
+                    transition: color 0.2s ease;
+                }
+
+                a.creator-name:hover {
+                    color: #FE7F2D;
+                    text-decoration: none;
+                }
+
+                .creator-skill {
+                    font-size: 0.7rem;
+                    color: rgba(255, 255, 255, 0.85);
+                }
+
+                @media (max-width: 768px) {
+                    .developer-footer {
+                        position: relative;
+                        padding-bottom: 20px;
+                        margin-top: -60px;
+                    }
+                    .creator-card {
+                        width: 100%;
+                        max-width: 320px;
+                    }
                 }
             `}</style>
         </div>
