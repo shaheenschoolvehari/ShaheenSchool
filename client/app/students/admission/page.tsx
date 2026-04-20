@@ -208,7 +208,7 @@ export default function NewAdmission() {
 
         // If this is the first sibling, set family fee info
         if (selectedSiblings.length === 0 && sibling.family_id) {
-            const existingFee = parseFloat(sibling.family_fee) || 0;
+            const existingFee = parseFloat(sibling.family_fee) || parseFloat(sibling.monthly_fee) || 0;
             setFamilyFeeInfo({ family_fee: existingFee, family_size: sibling.family_size || 1 });
             setForm(f => ({ ...f, family_fee: existingFee > 0 ? String(existingFee) : f.family_fee }));
         }
