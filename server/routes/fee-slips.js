@@ -517,18 +517,18 @@ router.post('/admission-fees/:ledger_id/pay', async (req, res) => {
     const client = await pool.connect();
     try {
         const { ledger_id } = req.params;
-        const { amount_paid, discount_amount, payment_method, received_by, reference_no, notes, payment_date } = req.body;
-        
+        const { amount_paid, discount_amount, payment_method, received_by, reference_no, notes, payment_date, include_tuition, tuition_amount, tuition_received } = req.body;
+
         const payVal = parseFloat(amount_paid) || 0;
         const discVal = parseFloat(discount_amount) || 0;
-        
-        if (payVal < 0 || discVal < 0 || (payVal === 0 && discVal === 0))
+
+        if (payVal < 0 || discVal < 0 || (payVal === 0 && discVal === 0 && (!include_tuition || parseFloat(tuition_received) <= 0)))
             return res.status(400).json({ error: 'amount_paid or discount must be greater than 0' });
-            
+
         await client.query('BEGIN');
         const ledger = await client.query('SELECT * FROM admission_fee_ledger WHERE ledger_id=$1 FOR UPDATE', [ledger_id]);
-        if (ledger.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Admission fee ledger not found' }); }       
-        
+        if (ledger.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Admission fee ledger not found' }); }
+
         const current = ledger.rows[0];
         const oldPaid = parseFloat(current.paid_amount) || 0;
         const oldDisc = parseFloat(current.discount_amount) || 0;
@@ -558,13 +558,80 @@ router.post('/admission-fees/:ledger_id/pay', async (req, res) => {
             RETURNING *, (total_amount - paid_amount - discount_amount) AS remaining_amount
         `, [newPaid, newDisc, newStatus, ledger_id]);
 
-        await client.query('COMMIT');
-        
-        let msg = `Payment of Rs. ${payVal.toFixed(0)} recorded`;
-        if (discVal > 0) msg += ` with Rs. ${discVal.toFixed(0)} discount`;
-        
-        res.json({ message: msg, ledger: updated.rows[0], status: newStatus, payment_id: insertRes.rows[0].payment_id });
-    } catch (err) { 
+        // Process seamlessly injected Current Month Tuition Fee into monthly slips
+        if (include_tuition && tuitionAmt > 0) {
+            const today = new Date();
+            const currentMonth = today.getMonth() + 1;
+            const currentYear = today.getFullYear();
+            
+            // Check if monthly limit already exists for this student + month
+            const existingSlip = await client.query(
+                `SELECT slip_id FROM monthly_fee_slips WHERE student_id = $1 AND month = $2 AND year = $3 LIMIT 1`,
+                [current.student_id, currentMonth, currentYear]
+            );
+
+            let activeSlipId;
+
+            if (existingSlip.rows.length === 0) {
+                // Create a standalone tuition slip
+                const newSlip = await client.query(
+                    `INSERT INTO monthly_fee_slips 
+                    (student_id, family_id, class_id, month, year, total_amount, paid_amount, status)
+                    VALUES ($1, (SELECT family_id FROM students WHERE student_id=$1), (SELECT class_id FROM students WHERE student_id=$1), $2, $3, $4, $5, $6)
+                    RETURNING slip_id`,
+                    [
+                        current.student_id, 
+                        currentMonth, 
+                        currentYear, 
+                        tuitionAmt, 
+                        Math.min(tuitionAmt, tuitionRec),
+                        tuitionRec >= tuitionAmt ? 'paid' : (tuitionRec > 0 ? 'partial' : 'unpaid')
+                    ]
+                );
+                activeSlipId = newSlip.rows[0].slip_id;
+
+                await client.query(`
+                    INSERT INTO slip_line_items (slip_id, head_id, head_name, amount, paid_amount, note)
+                    VALUES ($1, NULL, 'Tuition Fee', $2, $3, 'Added upfront heavily during admission')
+                `, [activeSlipId, tuitionAmt, Math.min(tuitionAmt, tuitionRec)]);
+
+            } else {
+                activeSlipId = existingSlip.rows[0].slip_id;
+                // Append line item to existing slip
+                await client.query(`
+                    INSERT INTO slip_line_items (slip_id, head_id, head_name, amount, paid_amount, note)
+                    VALUES ($1, NULL, 'Tuition Fee', $2, $3, 'Added upfront during admission')
+                `, [activeSlipId, tuitionAmt, Math.min(tuitionAmt, tuitionRec)]);
+                
+                await client.query(`
+                    UPDATE monthly_fee_slips 
+                    SET total_amount = total_amount + $1, 
+                        paid_amount = paid_amount + $2,
+                        status = CASE WHEN (paid_amount + $2) >= (total_amount + $1) THEN 'paid' 
+                                      WHEN (paid_amount + $2) > 0 THEN 'partial' 
+                                      ELSE 'unpaid' END
+                    WHERE slip_id = $3
+                `, [tuitionAmt, Math.min(tuitionAmt, tuitionRec), activeSlipId]);
+            }
+
+            // Save actual fee payment record for full tracking
+            if (tuitionRec > 0) {
+                await client.query(
+                    `INSERT INTO fee_payments (slip_id, amount_paid, payment_date, payment_method, received_by, reference_no, notes)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+                    [
+                        activeSlipId, 
+                        Math.min(tuitionAmt, tuitionRec), 
+                        payment_date || new Date(), 
+                        payment_method || 'cash', 
+                        received_by, 
+                        reference_no, 
+                        'Collected upfront during Admission via Ledger'
+                    ]
+                );
+            }
+        }
+
         await client.query('ROLLBACK'); 
         console.error(err);
         res.status(500).json({ error: err.message });

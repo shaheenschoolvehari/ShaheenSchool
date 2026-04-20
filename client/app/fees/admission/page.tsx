@@ -77,6 +77,10 @@ export default function AdmissionFeePage() {
   const [payError, setPayError] = useState("");
   const [paySuccess, setPaySuccess] = useState("");
 
+  const [includeTuitionFee, setIncludeTuitionFee] = useState(false);
+  const [tuitionAmount, setTuitionAmount] = useState("");
+  const [tuitionReceived, setTuitionReceived] = useState("");
+
   const [school, setSchool] = useState<SchoolInfo>({
     school_name: "",
     school_address: "",
@@ -126,6 +130,8 @@ export default function AdmissionFeePage() {
     submissionDate: string,
     prevPaid: number,
     paymentId?: number,
+    tuitionAmount: number = 0,
+    tuitionReceived: number = 0
   ) => {
     const total = parseFloat(ledger.total_amount as any);
     const balance = Math.max(0, total - prevPaid - receivingAmt - discountAmt);
@@ -166,9 +172,18 @@ export default function AdmissionFeePage() {
       feeBody += `<tr><td>${sr++}</td><td>Previous Payment (Credit)</td><td>\u2212 ${fmtR(prevPaid)}</td></tr>`;
     if (discountAmt > 0)
       feeBody += `<tr><td>${sr++}</td><td>Discount</td><td>\u2212 ${fmtR(discountAmt)}</td></tr>`;
-    feeBody += `<tr><td>${sr++}</td><td><strong>Total Payable Amount</strong></td><td><strong>${fmtR(total)}</strong></td></tr>`;
-    feeBody += `<tr class="thick"><td>${sr++}</td><td><strong>Receiving Amount</strong></td><td><strong>${fmtR(receivingAmt)}</strong></td></tr>`;
-    feeBody += `<tr class="thick"><td>${sr++}</td><td><strong>Balance Amount</strong></td><td><strong>${fmtR(balance)}</strong></td></tr>`;
+    
+    if (tuitionAmount > 0) {
+      feeBody += `<tr><td>${sr++}</td><td>Current Month Tuition Fee</td><td>${fmtR(tuitionAmount)}</td></tr>`;
+    }
+
+    const netTotalPayable = total + (tuitionAmount > 0 ? tuitionAmount : 0);
+    const netReceivingAmt = receivingAmt + (tuitionAmount > 0 ? tuitionReceived : 0);
+    const netBalance = balance + (tuitionAmount > 0 ? (tuitionAmount - tuitionReceived) : 0);
+
+    feeBody += `<tr><td>${sr++}</td><td><strong>Total Payable Amount</strong></td><td><strong>${fmtR(netTotalPayable)}</strong></td></tr>`;
+    feeBody += `<tr class="thick"><td>${sr++}</td><td><strong>Receiving Amount</strong></td><td><strong>${fmtR(netReceivingAmt)}</strong></td></tr>`;
+    feeBody += `<tr class="thick"><td>${sr++}</td><td><strong>Balance Amount</strong></td><td><strong>${fmtR(netBalance)}</strong></td></tr>`;
 
     const studentBody = rows9
       .map(
@@ -260,12 +275,15 @@ export default function AdmissionFeePage() {
     setPayForm({
       amount_paid: ledger.remaining_amount.toString(),
       payment_method: "cash",
-      received_by: "",
+      received_by: auth?.user?.username || "",
       reference_no: "",
       notes: "",
       payment_date: new Date().toISOString().split("T")[0],
-      discount_amount: "",
+      discount_amount: "0",
     });
+    setIncludeTuitionFee(false);
+    setTuitionAmount(ledger.monthly_fee ? String(ledger.monthly_fee) : "0");
+    setTuitionReceived(ledger.monthly_fee ? String(ledger.monthly_fee) : "0");
     setPayError("");
     setPaySuccess("");
     setShowPayModal(true);
@@ -281,12 +299,18 @@ export default function AdmissionFeePage() {
     setPayError("");
     setPaySuccess("");
     try {
+      const payload = {
+        ...payForm,
+        include_tuition: includeTuitionFee,
+        tuition_amount: tuitionAmount,
+        tuition_received: tuitionReceived
+      };
       const res = await fetch(
         `${API}/fee-slips/admission-fees/${selectedLedger.ledger_id}/pay`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payForm),
+          body: JSON.stringify(payload),
         },
       );
       const data = await res.json();
@@ -300,6 +324,8 @@ export default function AdmissionFeePage() {
           payForm.payment_date,
           selectedLedger.paid_amount,
           data.payment_id,
+          includeTuitionFee ? parseFloat(tuitionAmount) || 0 : 0,
+          includeTuitionFee ? parseFloat(tuitionReceived) || 0 : 0
         );
       }
 
@@ -759,8 +785,45 @@ export default function AdmissionFeePage() {
                       <small className="text-muted">
                         Will reduce the remaining balance directly.
                       </small>
-                    </div>
-                    <div className="col-6">
+                    </div>                      <div className="col-12 mt-3 p-3 bg-light rounded border border-info">
+                        <div className="form-check form-switch mb-3">
+                          <input 
+                            className="form-check-input" 
+                            type="checkbox" 
+                            id="includeTuitionToggle" 
+                            checked={includeTuitionFee} 
+                            onChange={(e) => setIncludeTuitionFee(e.target.checked)} 
+                          />
+                          <label className="form-check-label fw-bold text-primary ms-2" htmlFor="includeTuitionToggle">
+                            Receive Current Month Tuition Fee Too?
+                          </label>
+                        </div>
+                        {includeTuitionFee && (
+                          <div className="row g-3">
+                            <div className="col-md-6">
+                                <label className="form-label fw-bold small text-muted">Tuition Amount</label>
+                                <input 
+                                    type="number" 
+                                    className="form-control" 
+                                    value={tuitionAmount}
+                                    onChange={(e) => setTuitionAmount(e.target.value)}
+                                />
+                            </div>
+                            <div className="col-md-6">
+                                <label className="form-label fw-bold small text-muted">Tuition Received</label>
+                                <input 
+                                    type="number" 
+                                    className="form-control text-success fw-bold" 
+                                    value={tuitionReceived}
+                                    onChange={(e) => setTuitionReceived(e.target.value)}
+                                />
+                            </div>
+                            <div className="col-12">
+                                <small className="text-secondary"><i className="bi bi-info-circle me-1"></i>This will be saved directly into the Monthly Fee Records seamlessly.</small>
+                            </div>
+                          </div>
+                        )}
+                      </div>                    <div className="col-6">
                       <label className="form-label fw-bold small text-muted">
                         Payment Method
                       </label>
