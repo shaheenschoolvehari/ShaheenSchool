@@ -839,7 +839,7 @@ router.post('/:id/pay', async (req, res) => {
     const client = await pool.connect();
     try {
         const { id } = req.params;
-        const { amount_paid, payment_method, received_by, reference_no, notes, payment_date, head_breakdown } = req.body;
+        const { amount_paid, payment_method, received_by, reference_no, notes, payment_date, head_breakdown, is_printed } = req.body;
         await client.query('BEGIN');
         const slip = await client.query('SELECT * FROM monthly_fee_slips WHERE slip_id=$1 FOR UPDATE', [id]);
         if (slip.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Slip not found' }); }
@@ -852,9 +852,9 @@ router.post('/:id/pay', async (req, res) => {
 
         // Record the payment itself
         await client.query(
-            `INSERT INTO fee_payments (slip_id,amount_paid,payment_date,payment_method,received_by,reference_no,notes)
-             VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-            [id, paidNow, payment_date || new Date(), payment_method || 'cash', received_by, reference_no, notes]
+            `INSERT INTO fee_payments (slip_id,amount_paid,payment_date,payment_method,received_by,reference_no,notes,is_printed)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+            [id, paidNow, payment_date || new Date(), payment_method || 'cash', received_by, reference_no, notes, is_printed ? true : false]
         );
         const updated = await client.query(
             `UPDATE monthly_fee_slips SET paid_amount=$1, status=$2 WHERE slip_id=$3 RETURNING *`,

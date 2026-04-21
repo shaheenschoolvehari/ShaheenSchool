@@ -34,6 +34,7 @@ interface Stats {
 interface Payment {
     payment_id: number; amount_paid: number; payment_date: string;
     payment_method: string; received_by: string; reference_no: string; notes: string;
+    is_printed?: boolean;
 }
 interface SchoolInfo {
     school_name: string; school_address: string;
@@ -296,7 +297,7 @@ export default function CollectFeePage() {
         try {
             const r = await fetch(`${API}/fee-slips/${activeSlip!.slip_id}/pay`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ amount_paid: receivingSnap, head_breakdown: headPayVals, payment_method: payMethod, payment_date: payDateSnap, received_by: receivedBy, reference_no: refNo, notes })
+                body: JSON.stringify({ amount_paid: receivingSnap, head_breakdown: headPayVals, payment_method: payMethod, payment_date: payDateSnap, received_by: receivedBy, reference_no: refNo, notes, is_printed: shouldPrint })
             });
             const d = await r.json();
             if (!r.ok) throw new Error(d.error);
@@ -856,6 +857,7 @@ export default function CollectFeePage() {
                                                             <span className="text-muted ms-2">via {p.payment_method}</span>
                                                             {p.received_by && <span className="text-muted ms-2">· {p.received_by}</span>}
                                                             {p.reference_no && <span className="text-muted ms-2">· Ref: {p.reference_no}</span>}
+                                                            <span className="ms-2 px-1 rounded text-white" style={{ fontSize: '0.65rem' }}>{p.is_printed ? 'Printed' : 'Not Printed'}</span>
                                                             {p.notes && <div style={{ fontSize: '0.7rem', color: '#888' }}>{p.notes}</div>}
                                                         </div>
                                                         <div className="d-flex align-items-center gap-2">
@@ -1044,21 +1046,18 @@ export default function CollectFeePage() {
                                                 </div>
                                                 <div className="col-12 mt-1">
                                                     <div className="d-flex gap-2">
-                                                        <button className="btn fw-bold" style={{ flex: 1, backgroundColor: '#e8f5f5', color: 'var(--primary-teal)', border: '1.5px solid var(--primary-teal)', borderRadius: 8 }}
-                                                            disabled={paying || Object.values(headPayVals).reduce((sum, v) => sum + (parseFloat(v) || 0), 0) <= 0}
-                                                            onClick={() => openReceiptWindow(
-                                                                activeSlip!,
-                                                                Object.values(headPayVals).reduce((sum, v) => sum + (parseFloat(v) || 0), 0),
-                                                                payDate,
-                                                                parseFloat(activeSlip!.paid_amount as any)
-                                                            )}>
-                                                            <i className="bi bi-printer me-1"></i>Print
-                                                        </button>
                                                         {hasPermission('fees', 'write') && (
-                                                        <button className="btn fw-bold" onClick={() => handlePay(true)} disabled={paying}
-                                                            style={{ flex: 2, backgroundColor: 'var(--accent-orange)', color: '#fff', borderRadius: 8, border: 'none' }}>
-                                                            {paying ? <><span className="spinner-border spinner-border-sm me-2" />Processing...</> : <><i className="bi bi-check-lg me-1" />Confirm &amp; Print</>}
-                                                        </button>
+                                                        <>
+                                                            <button className="btn fw-bold" style={{ flex: 1, backgroundColor: '#e8f5f5', color: 'var(--primary-teal)', border: '1.5px solid var(--primary-teal)', borderRadius: 8 }}
+                                                                disabled={paying || Object.values(headPayVals).reduce((sum, v) => sum + (parseFloat(v as string) || 0), 0) <= 0}
+                                                                onClick={() => handlePay(false)}>
+                                                                {paying ? <><span className="spinner-border spinner-border-sm me-1" />...</> : <><i className="bi bi-check-circle me-1"></i>Confirm</>}
+                                                            </button>
+                                                            <button className="btn fw-bold" onClick={() => handlePay(true)} disabled={paying || Object.values(headPayVals).reduce((sum, v) => sum + (parseFloat(v as string) || 0), 0) <= 0}
+                                                                style={{ flex: 2, backgroundColor: 'var(--accent-orange)', color: '#fff', borderRadius: 8, border: 'none' }}>
+                                                                {paying ? <><span className="spinner-border spinner-border-sm me-2" />Processing...</> : <><i className="bi bi-check-lg me-1" />Confirm &amp; Print</>}
+                                                            </button>
+                                                        </>
                                                         )}
                                                     </div>
                                                 </div>
