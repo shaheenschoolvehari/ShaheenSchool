@@ -1,48 +1,107 @@
-'use client';
-import { useState, useEffect, useRef } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-import { notify } from '@/app/utils/notify';
-
-const API = 'https://shmool.onrender.com';
-const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-
-interface SlipRow {
-    category?: string;
-    slip_id: number;
-    student_id: number;
-    first_name: string; last_name: string;
-    admission_no: string;
-    father_name: string | null;
-    father_phone: string | null;
-    class_name: string;
-    family_id: string | null;
-    is_family_slip: boolean;
-    total_amount: number;
-    paid_amount: number;
-    status: 'paid' | 'partial' | 'unpaid' | 'satteled' | 'satteled';
-    due_date: string | null;
-    issue_date: string | null;
-    month: number;
-    year: number;
-    line_items: { item_id: number; head_name: string; amount: number; note?: string }[];
-    family_members?: { student_id: number; first_name: string; last_name: string; class_name: string; admission_no: string }[];
-}
-interface Stats {
-    total_students: number; total_amount: number; paid_amount: number;
-    paid_count: number; unpaid_count: number; partial_count: number;
-}
-interface Payment {
-    payment_id: number; amount_paid: number; payment_date: string;
-    payment_method: string; received_by: string; reference_no: string; notes: string;
-}
-interface SchoolInfo {
-    school_name: string; school_address: string;
-    phone_number: string; school_phone2: string; school_phone3: string; school_logo_url: string;
-}
-
-function fmt(n: number) { return `PKR ${Number(n || 0).toLocaleString('en-PK')}`; }
-function fmtDate(d: string | null) {
-    if (!d) return '—'; return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+(() => {
+                                                                  const isTuition = (name) => (name || '').toLowerCase().includes('tuition') || (name || '').toLowerCase().includes('family monthly fee');
+                                                                  const isPrevBal = (name) => !name || (name || '').toLowerCase().includes('previous balance') || (name || '').toLowerCase().includes('opening balance');
+                                                                  
+                                                                  let tItem = null, pbItem = null;
+                                                                  const others = [];
+                                                                  
+                                                                  activeSlip.line_items.forEach((item) => {
+                                                                      if (isTuition(item.head_name)) tItem = item;
+                                                                      else if (isPrevBal(item.head_name)) pbItem = item;
+                                                                      else others.push(item);
+                                                                  });
+                                                              
+                                                                  const elements = [];
+                                                                  let keyIdx = 0;
+                                                              
+                                                                  if (tItem || pbItem) {
+                                                                      const tAmtB = parseFloat(tItem?.amount || 0);
+                                                                      const tPaid = parseFloat(tItem?.paid_amount || 0);
+                                                                      const tRem = +(tAmtB - tPaid).toFixed(2);
+                                                                      const tId = tItem ? (tItem.item_id ? tItem.item_id.toString() : tItem.head_name) : null;
+                                                              
+                                                                      const pbAmtB = parseFloat(pbItem?.amount || 0);
+                                                                      const pbPaid = parseFloat(pbItem?.paid_amount || 0);
+                                                                      const pbRem = +(pbAmtB - pbPaid).toFixed(2);
+                                                                      const pbId = pbItem ? (pbItem.item_id ? pbItem.item_id.toString() : pbItem.head_name || 'Previous Balance') : null;
+                                                              
+                                                                      const combAmtB = tAmtB + pbAmtB;
+                                                                      const combPaid = tPaid + pbPaid;
+                                                                      const combRem = (combAmtB - combPaid).toFixed(2);
+                                                              
+                                                                      const currentTVal = parseFloat(headPayVals[tId] || 0);
+                                                                      const currentPbVal = parseFloat(headPayVals[pbId] || 0);
+                                                                      const combInputVal = currentTVal + currentPbVal;
+                                                              
+                                                                      const dsDis = parseFloat(combRem) <= 0 && combPaid > 0;
+                                                              
+                                                                      elements.push(
+                                                                          <div key={'comb-'+(keyIdx++)} className="d-flex justify-content-between align-items-center bg-white p-2 rounded border shadow-sm">
+                                                                              <div className="d-flex flex-column" style={{width: '55%'}}>
+                                                                                  <span className="text-dark fw-bold" style={{ fontSize: '0.85rem' }}>
+                                                                                      {(tItem && pbItem) ? 'Tuition Fee + Prev. Balance' : (tItem ? (tItem.head_name || 'Tuition Fee') : (pbItem?.head_name || 'Previous Balance'))}
+                                                                                  </span>
+                                                                                  <span className="text-muted" style={{ fontSize: '0.7rem' }}>Billed: {combAmtB.toLocaleString('en-PK')} {combPaid > 0 ? ' • Paid: ' + combPaid.toLocaleString('en-PK') : ''}</span>
+                                                                              </div>
+                                                                              <div className="d-flex align-items-center gap-2 justify-content-end" style={{width: '45%'}}>
+                                                                                  {combAmtB > 0 && <span className="text-danger fw-bold" style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>Bal: {combRem}</span>}
+                                                                                  <div className="input-group input-group-sm w-auto" style={{ maxWidth: '100px' }}> 
+                                                                                      <input type="number" className="form-control form-control-sm text-end" placeholder="0"
+                                                                                          value={combInputVal > 0 ? combInputVal : ''}
+                                                                                          onChange={(e) => {
+                                                                                              const vStr = e.target.value;
+                                                                                              if (vStr === '') {
+                                                                                                  setHeadPayVals({...headPayVals, ...(pbId ? {[pbId]: ''} : {}), ...(tId ? {[tId]: ''} : {})});
+                                                                                                  return;
+                                                                                              }
+                                                                                              const val = parseFloat(vStr) || 0;
+                                                                                              let newPb = 0, newT = 0;
+                                                                                              if (val <= pbRem) {
+                                                                                                  newPb = Math.max(0, val);
+                                                                                              } else {
+                                                                                                  newPb = Math.max(0, pbRem);
+                                                                                                  newT = Math.max(0, val - pbRem);
+                                                                                              }
+                                                                                              if (pbRem <= 0) { newPb = 0; newT = Math.max(0, val); }
+                                                                                              
+                                                                                              setHeadPayVals({
+                                                                                                  ...headPayVals,
+                                                                                                  ...(pbId ? {[pbId]: newPb > 0 ? newPb.toString() : ''} : {}),
+                                                                                                  ...(tId ? {[tId]: newT > 0 ? newT.toString() : ''} : {})
+                                                                                              });
+                                                                                          }}
+                                                                                          disabled={dsDis} min="0" />
+                                                                                  </div>
+                                                                              </div>
+                                                                          </div>
+                                                                      );
+                                                                  }
+                                                              
+                                                                  others.forEach((item) => {
+                                                                      const headId = item.item_id ? item.item_id.toString() : item.head_name;
+                                                                      const amtB = parseFloat(item.amount || 0);
+                                                                      const paid = parseFloat(item.paid_amount || 0);
+                                                                      const rem = (amtB - paid).toFixed(2);
+                                                                      elements.push(
+                                                                          <div key={'other-'+(keyIdx++)} className="d-flex justify-content-between align-items-center bg-white p-2 rounded border shadow-sm">
+                                                                              <div className="d-flex flex-column" style={{width: '55%'}}>
+                                                                                  <span className="text-dark fw-bold" style={{ fontSize: '0.85rem' }}>{item.head_name || 'Previous Balance'}</span>
+                                                                                  <span className="text-muted" style={{ fontSize: '0.7rem' }}>Billed: {amtB.toLocaleString('en-PK')} {paid > 0 ? ' • Paid: ' + paid.toLocaleString('en-PK') : ''}</span>
+                                                                              </div>
+                                                                              <div className="d-flex align-items-center gap-2 justify-content-end" style={{width: '45%'}}>
+                                                                                  {amtB > 0 && <span className="text-danger fw-bold" style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>Bal: {rem}</span>}
+                                                                                  <div className="input-group input-group-sm w-auto" style={{ maxWidth: '100px' }}> 
+                                                                                      <input type="number" className="form-control form-control-sm text-end" placeholder="0"
+                                                                                          value={headPayVals[headId] || ''} onChange={e => setHeadPayVals({...headPayVals, [headId]: e.target.value})}
+                                                                                          disabled={parseFloat(rem) <= 0 && paid > 0} min="0" />
+                                                                                  </div>
+                                                                              </div>
+                                                                          </div>
+                                                                      );
+                                                                  });
+                                                              
+                                                                  return elements;
+                                                              })();
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -900,22 +959,110 @@ export default function CollectFeePage() {
                                                                   </div>
                                                               </div>
                                                           ) : (
-                                                              activeSlip.line_items.map((item: any, idx: number) => {
-                                                                  const headId = item.item_id ? item.item_id.toString() : item.head_name;
-                                                                  const amtB = parseFloat(item.amount || 0);
-                                                                  const paid = parseFloat(item.paid_amount || 0);
-                                                                  const rem = (amtB - paid).toFixed(2);
-                                                                  return (
-                                                                      <div key={idx} className="d-flex justify-content-between align-items-center bg-white p-2 rounded border shadow-sm">
-                                                                          <div className="d-flex flex-column" style={{width: '55%'}}>
-                                                                              <span className="text-dark fw-bold" style={{ fontSize: '0.85rem' }}>{item.head_name || 'Previous Balance'}</span>
-                                                                              <span className="text-muted" style={{ fontSize: '0.7rem' }}>Billed: {amtB.toLocaleString('en-PK')} {paid > 0 ? ` • Paid: ${paid.toLocaleString('en-PK')}` : ''}</span>
+                                                              (() => {
+                                                                  const isTuition = (name) => (name || '').toLowerCase().includes('tuition') || (name || '').toLowerCase().includes('family monthly fee');
+                                                                  const isPrevBal = (name) => !name || (name || '').toLowerCase().includes('previous balance') || (name || '').toLowerCase().includes('opening balance');
+                                                                  
+                                                                  let tItem = null, pbItem = null;
+                                                                  const others = [];
+                                                                  
+                                                                  activeSlip.line_items.forEach((item) => {
+                                                                      if (isTuition(item.head_name)) tItem = item;
+                                                                      else if (isPrevBal(item.head_name)) pbItem = item;
+                                                                      else others.push(item);
+                                                                  });
+                                                              
+                                                                  const elements = [];
+                                                                  let keyIdx = 0;
+                                                              
+                                                                  if (tItem || pbItem) {
+                                                                      const tAmtB = parseFloat(tItem?.amount || 0);
+                                                                      const tPaid = parseFloat(tItem?.paid_amount || 0);
+                                                                      const tRem = +(tAmtB - tPaid).toFixed(2);
+                                                                      const tId = tItem ? (tItem.item_id ? tItem.item_id.toString() : tItem.head_name) : null;
+                                                              
+                                                                      const pbAmtB = parseFloat(pbItem?.amount || 0);
+                                                                      const pbPaid = parseFloat(pbItem?.paid_amount || 0);
+                                                                      const pbRem = +(pbAmtB - pbPaid).toFixed(2);
+                                                                      const pbId = pbItem ? (pbItem.item_id ? pbItem.item_id.toString() : pbItem.head_name || 'Previous Balance') : null;
+                                                              
+                                                                      const combAmtB = tAmtB + pbAmtB;
+                                                                      const combPaid = tPaid + pbPaid;
+                                                                      const combRem = (combAmtB - combPaid).toFixed(2);
+                                                              
+                                                                      const currentTVal = parseFloat(headPayVals[tId] || 0);
+                                                                      const currentPbVal = parseFloat(headPayVals[pbId] || 0);
+                                                                      const combInputVal = currentTVal + currentPbVal;
+                                                              
+                                                                      const dsDis = parseFloat(combRem) <= 0 && combPaid > 0;
+                                                              
+                                                                      elements.push(
+                                                                          <div key={'comb-'+(keyIdx++)} className="d-flex justify-content-between align-items-center bg-white p-2 rounded border shadow-sm">
+                                                                              <div className="d-flex flex-column" style={{width: '55%'}}>
+                                                                                  <span className="text-dark fw-bold" style={{ fontSize: '0.85rem' }}>
+                                                                                      {(tItem && pbItem) ? 'Tuition Fee + Prev. Balance' : (tItem ? (tItem.head_name || 'Tuition Fee') : (pbItem?.head_name || 'Previous Balance'))}
+                                                                                  </span>
+                                                                                  <span className="text-muted" style={{ fontSize: '0.7rem' }}>Billed: {combAmtB.toLocaleString('en-PK')} {combPaid > 0 ? ' • Paid: ' + combPaid.toLocaleString('en-PK') : ''}</span>
+                                                                              </div>
+                                                                              <div className="d-flex align-items-center gap-2 justify-content-end" style={{width: '45%'}}>
+                                                                                  {combAmtB > 0 && <span className="text-danger fw-bold" style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>Bal: {combRem}</span>}
+                                                                                  <div className="input-group input-group-sm w-auto" style={{ maxWidth: '100px' }}> 
+                                                                                      <input type="number" className="form-control form-control-sm text-end" placeholder="0"
+                                                                                          value={combInputVal > 0 ? combInputVal : ''}
+                                                                                          onChange={(e) => {
+                                                                                              const vStr = e.target.value;
+                                                                                              if (vStr === '') {
+                                                                                                  setHeadPayVals({...headPayVals, ...(pbId ? {[pbId]: ''} : {}), ...(tId ? {[tId]: ''} : {})});
+                                                                                                  return;
+                                                                                              }
+                                                                                              const val = parseFloat(vStr) || 0;
+                                                                                              let newPb = 0, newT = 0;
+                                                                                              if (val <= pbRem) {
+                                                                                                  newPb = Math.max(0, val);
+                                                                                              } else {
+                                                                                                  newPb = Math.max(0, pbRem);
+                                                                                                  newT = Math.max(0, val - pbRem);
+                                                                                              }
+                                                                                              if (pbRem <= 0) { newPb = 0; newT = Math.max(0, val); }
+                                                                                              
+                                                                                              setHeadPayVals({
+                                                                                                  ...headPayVals,
+                                                                                                  ...(pbId ? {[pbId]: newPb > 0 ? newPb.toString() : ''} : {}),
+                                                                                                  ...(tId ? {[tId]: newT > 0 ? newT.toString() : ''} : {})
+                                                                                              });
+                                                                                          }}
+                                                                                          disabled={dsDis} min="0" />
+                                                                                  </div>
+                                                                              </div>
                                                                           </div>
-                                                                          <div className="d-flex align-items-center gap-2 justify-content-end" style={{width: '45%'}}>
-                                                                              {amtB > 0 && <span className="text-danger fw-bold" style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>Bal: {rem}</span>}
-                                                                              <div className="input-group input-group-sm w-auto" style={{ maxWidth: '100px' }}>
-                                                                                  <input type="number" className="form-control form-control-sm text-end" placeholder="0"
-                                                                                      value={headPayVals[headId] || ''} onChange={e => setHeadPayVals({...headPayVals, [headId]: e.target.value})}
+                                                                      );
+                                                                  }
+                                                              
+                                                                  others.forEach((item) => {
+                                                                      const headId = item.item_id ? item.item_id.toString() : item.head_name;
+                                                                      const amtB = parseFloat(item.amount || 0);
+                                                                      const paid = parseFloat(item.paid_amount || 0);
+                                                                      const rem = (amtB - paid).toFixed(2);
+                                                                      elements.push(
+                                                                          <div key={'other-'+(keyIdx++)} className="d-flex justify-content-between align-items-center bg-white p-2 rounded border shadow-sm">
+                                                                              <div className="d-flex flex-column" style={{width: '55%'}}>
+                                                                                  <span className="text-dark fw-bold" style={{ fontSize: '0.85rem' }}>{item.head_name || 'Previous Balance'}</span>
+                                                                                  <span className="text-muted" style={{ fontSize: '0.7rem' }}>Billed: {amtB.toLocaleString('en-PK')} {paid > 0 ? ' • Paid: ' + paid.toLocaleString('en-PK') : ''}</span>
+                                                                              </div>
+                                                                              <div className="d-flex align-items-center gap-2 justify-content-end" style={{width: '45%'}}>
+                                                                                  {amtB > 0 && <span className="text-danger fw-bold" style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>Bal: {rem}</span>}
+                                                                                  <div className="input-group input-group-sm w-auto" style={{ maxWidth: '100px' }}> 
+                                                                                      <input type="number" className="form-control form-control-sm text-end" placeholder="0"
+                                                                                          value={headPayVals[headId] || ''} onChange={e => setHeadPayVals({...headPayVals, [headId]: e.target.value})}
+                                                                                          disabled={parseFloat(rem) <= 0 && paid > 0} min="0" />
+                                                                                  </div>
+                                                                              </div>
+                                                                          </div>
+                                                                      );
+                                                                  });
+                                                              
+                                                                  return elements;
+                                                              })()}
                                                                                       disabled={parseFloat(rem) <= 0 && paid > 0} min="0" />
                                                                               </div>
                                                                           </div>
