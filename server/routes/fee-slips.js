@@ -521,9 +521,11 @@ router.post('/admission-fees/:ledger_id/pay', async (req, res) => {
 
         const payVal = parseFloat(amount_paid) || 0;
         const discVal = parseFloat(discount_amount) || 0;
+        const tuitionAmt = parseFloat(tuition_amount) || 0;
+        const tuitionRec = parseFloat(tuition_received) || 0;
 
-        if (payVal < 0 || discVal < 0 || (payVal === 0 && discVal === 0 && (!include_tuition || parseFloat(tuition_received) <= 0)))
-            return res.status(400).json({ error: 'amount_paid or discount must be greater than 0' });
+        if (payVal < 0 || discVal < 0 || (payVal === 0 && discVal === 0 && (!include_tuition || tuitionRec <= 0)))
+            return res.status(400).json({ error: 'amount_paid, discount, or tuition_received must be greater than 0' });
 
         await client.query('BEGIN');
         const ledger = await client.query('SELECT * FROM admission_fee_ledger WHERE ledger_id=$1 FOR UPDATE', [ledger_id]);
@@ -576,8 +578,8 @@ router.post('/admission-fees/:ledger_id/pay', async (req, res) => {
                 // Create a standalone tuition slip
                 const newSlip = await client.query(
                     `INSERT INTO monthly_fee_slips 
-                    (student_id, family_id, class_id, month, year, total_amount, paid_amount, status)
-                    VALUES ($1, (SELECT family_id FROM students WHERE student_id=$1), (SELECT class_id FROM students WHERE student_id=$1), $2, $3, $4, $5, $6)
+                    (student_id, family_id, class_id, month, year, total_amount, paid_amount, status, months_list)
+                    VALUES ($1, (SELECT family_id FROM students WHERE student_id=$1), (SELECT class_id FROM students WHERE student_id=$1), $2, $3, $4, $5, $6, ARRAY[$2]::int[])
                     RETURNING slip_id`,
                     [
                         current.student_id, 
