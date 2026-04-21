@@ -818,7 +818,7 @@ export default function CollectFeePage() {
                                         </div>
                                     )}
 
-                                    {/* Fee breakdown */}
+                                    {/* Fee breakdown (Hidden as per request)
                                     {activeSlip.line_items && activeSlip.line_items.length > 0 && (
                                         <div className="mb-3">
                                             <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--primary-dark)', marginBottom: 4 }}>Fee Breakdown</div>
@@ -832,7 +832,8 @@ export default function CollectFeePage() {
                                                 ))}
                                             </div>
                                         </div>
-                                    )}
+                                    )} 
+                                    */}
 
                                     {/* Payment history — always visible so Delete button is always accessible */}
                                     <div className="mb-3">
