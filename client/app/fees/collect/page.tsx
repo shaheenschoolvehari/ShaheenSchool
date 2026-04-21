@@ -946,6 +946,11 @@ export default function CollectFeePage() {
                             {(tItem && pbItem) ? 'Tuition Fee + Prev. Balance' : (tItem ? (tItem.head_name || 'Tuition Fee') : (pbItem?.head_name || 'Previous Balance'))}
                         </span>
                         <span className="text-muted" style={{ fontSize: '0.7rem' }}>Billed: {combAmtB.toLocaleString('en-PK')} {combPaid > 0 ? ' • Paid: ' + combPaid.toLocaleString('en-PK') : ''}</span>
+                        {(tItem && pbItem) && (
+                            <span className="text-muted" style={{ fontSize: '0.65rem' }}>
+                                (Remaining — Tuition: {tRem.toLocaleString('en-PK')} | Prev: {pbRem.toLocaleString('en-PK')})
+                            </span>
+                        )}
                     </div>
                     <div className="d-flex align-items-center gap-2 justify-content-end" style={{width: '45%'}}>
                         {combAmtB > 0 && <span className="text-danger fw-bold" style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>Bal: {combRem}</span>}
