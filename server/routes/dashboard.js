@@ -491,7 +491,7 @@ router.get('/daily-fee-receipts', async (req, res) => {
     try {
         const { date } = req.query;
         const targetDate = date || new Date().toISOString().split('T')[0];
-        const result = await pool.query(
+        const statsQuery = pool.query(
             `SELECT 
                 COALESCE(SUM(CASE WHEN is_printed = true THEN amount_paid ELSE 0 END), 0) as printed_amount,
                 COALESCE(SUM(CASE WHEN is_printed = false THEN amount_paid ELSE 0 END), 0) as unprinted_amount,
@@ -499,13 +499,33 @@ router.get('/daily-fee-receipts', async (req, res) => {
                 COUNT(CASE WHEN is_printed = false THEN 1 END) as unprinted_count,
                 COALESCE(SUM(amount_paid), 0) as total_amount
             FROM fee_payments
-            WHERE payment_date::date = $1`,
+            WHERE payment_date::date = `,
             [targetDate]
         );
-        res.json(result.rows[0]);
+        const listQuery = pool.query(
+            `SELECT fp.payment_id, fp.amount_paid, fp.payment_date, fp.payment_method, fp.is_printed,
+                   s.first_name||' '||COALESCE(s.last_name, '') AS student_name,
+                   c.class_name, mfs.month, mfs.year, mfs.is_family_slip, mfs.family_id
+            FROM fee_payments fp
+            JOIN monthly_fee_slips mfs ON fp.slip_id=mfs.slip_id
+            LEFT JOIN students s ON mfs.student_id=s.student_id
+            LEFT JOIN classes c ON s.class_id=c.class_id
+            WHERE fp.payment_date::date = 
+            ORDER BY fp.payment_date DESC, fp.payment_id DESC`,
+            [targetDate]
+        );
+
+        const [statsRes, listRes] = await Promise.all([statsQuery, listQuery]);
+        
+        res.json({
+            stats: statsRes.rows[0],
+            payments: listRes.rows
+        });
     } catch (err) {
         console.error(err);
         res.status(500).json({error: err.message});
+    }
+});
     }
 });
 

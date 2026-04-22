@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
@@ -8,7 +8,7 @@ import {
 } from 'recharts';
 import {
   API, MONTHS, fmt, fmtPKR, C,
-StatCard, Panel, DashShell, DashLoading, DashError, EmptyChart, RecentPaymentsTable, MaskedAmount
+StatCard, Panel, DashShell, DashLoading, DashError, EmptyChart, RecentPaymentsTable, MaskedAmount, DailyFeeReceipts
 } from './shared';
 
 type AccountantData = {
