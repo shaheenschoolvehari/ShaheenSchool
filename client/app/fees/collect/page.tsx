@@ -862,6 +862,65 @@ export default function CollectFeePage() {
                                                         </div>
                                                         <div className="d-flex align-items-center gap-2">
                                                             <span style={{ fontSize: '0.72rem', color: '#888' }}>{fmtDate(p.payment_date)}</span>
+                                                            <button
+                                                                className="btn btn-sm"
+                                                                title="Print Receipt"
+                                                                onClick={() => {
+                                                                    openReceiptWindow(activeSlip!, parseFloat(p.amount_paid as any), p.payment_date, parseFloat(activeSlip!.paid_amount as any) - parseFloat(p.amount_paid as any));
+                                                                    if (!p.is_printed) {
+                                                                        fetch(`${API}/fee-slips/payments/${p.payment_id}/print`, { method: 'PUT' })
+                                                                           .then((res) => {
+                                                                               setSlipPayments(prev => prev.map(x => x.payment_id === p.payment_id ? { ...x, is_printed: true } : x));
+                                                                           });
+                                                                    }
+                                                                }}
+                                                                style={{ fontSize: '0.7rem', backgroundColor: '#e8f5e9', color: '#198754', border: '1px solid #c3e6cb', borderRadius: 6, padding: '2px 7px' }}>
+                                                                <i className="bi bi-printer"></i>
+                                                            </button>
+                                                            <button
+                                                                className="btn btn-sm"
+                                                                title="Print Receipt"
+                                                                onClick={() => {
+                                                                    openReceiptWindow(activeSlip!, parseFloat(p.amount_paid as any), p.payment_date, parseFloat(activeSlip!.paid_amount as any) - parseFloat(p.amount_paid as any));
+                                                                    if (!p.is_printed) {
+                                                                        fetch(`${API}/fee-slips/payments/${p.payment_id}/print`, { method: 'PUT' })
+                                                                           .then((res) => {
+                                                                               setSlipPayments(prev => prev.map(x => x.payment_id === p.payment_id ? { ...x, is_printed: true } : x));
+                                                                           });
+                                                                    }
+                                                                }}
+                                                                style={{ fontSize: '0.7rem', backgroundColor: '#e8f5e9', color: '#198754', border: '1px solid #c3e6cb', borderRadius: 6, padding: '2px 7px' }}>
+                                                                <i className="bi bi-printer"></i>
+                                                            </button>
+                                                            <button
+                                                                className="btn btn-sm"
+                                                                title="Print Receipt"
+                                                                onClick={() => {
+                                                                    openReceiptWindow(activeSlip!, parseFloat(p.amount_paid as any), p.payment_date, parseFloat(activeSlip!.paid_amount as any) - parseFloat(p.amount_paid as any));
+                                                                    if (!p.is_printed) {
+                                                                        fetch(`${API}/fee-slips/payments/${p.payment_id}/print`, { method: 'PUT' })
+                                                                           .then((res) => {
+                                                                               setSlipPayments(prev => prev.map(x => x.payment_id === p.payment_id ? { ...x, is_printed: true } : x));
+                                                                           });
+                                                                    }
+                                                                }}
+                                                                style={{ fontSize: '0.7rem', backgroundColor: '#e8f5e9', color: '#198754', border: '1px solid #c3e6cb', borderRadius: 6, padding: '2px 7px' }}>
+                                                                <i className="bi bi-printer"></i>
+                                                            </button>
+
+                                                              <button
+                                                                  className="btn btn-sm"
+                                                                  title="Print Receipt"
+                                                                  onClick={() => {
+                                                                      openReceiptWindow(activeSlip!, parseFloat(p.amount_paid as any), p.payment_date, parseFloat(activeSlip!.paid_amount as any) - parseFloat(p.amount_paid as any));
+                                                                      if (!p.is_printed) {
+                                                                          fetch(`${API}/fee-slips/payments/${p.payment_id}/print`, { method: 'PUT' });
+                                                                          setSlipPayments(prev => prev.map(x => x.payment_id === p.payment_id ? { ...x, is_printed: true } : x));
+                                                                      }
+                                                                  }}
+                                                                  style={{ fontSize: '0.7rem', backgroundColor: '#e8f5e9', color: '#198754', border: '1px solid #c3e6cb', borderRadius: 6, padding: '2px 7px' }}>
+                                                                  <i className="bi bi-printer"></i>
+                                                              </button>
                                                             {hasPermission('fees', 'delete') && (
                                                             <button
                                                                 className="btn btn-sm"
@@ -1106,6 +1165,8 @@ export default function CollectFeePage() {
         </div>
     );
 }
+
+
 
 
 

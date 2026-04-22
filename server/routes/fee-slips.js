@@ -822,10 +822,11 @@ router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const slip = await pool.query(`
-            SELECT mfs.*, s.first_name, s.last_name, s.admission_no, c.class_name
+            SELECT mfs.*, s.first_name, s.last_name, s.admission_no, s.father_name, s.father_phone, c.class_name, sec.section_name
             FROM monthly_fee_slips mfs
             JOIN students s ON mfs.student_id = s.student_id
             LEFT JOIN classes c ON mfs.class_id = c.class_id
+            LEFT JOIN sections sec ON s.section_id = sec.section_id
             WHERE mfs.slip_id = $1`, [id]);
         if (slip.rows.length === 0) return res.status(404).json({ error: 'Slip not found' });
         const items = await pool.query('SELECT * FROM slip_line_items WHERE slip_id=$1 ORDER BY item_id', [id]);
@@ -977,6 +978,18 @@ router.post('/:id/pay', async (req, res) => {
         res.json({ message: 'Payment recorded', slip: updated.rows[0] });
     } catch (err) { await client.query('ROLLBACK'); console.error(err); res.status(500).json({ error: err.message }); }
     finally { client.release(); }
+});
+
+// PUT /fee-slips/payments/:payment_id/print
+router.put('/payments/:payment_id/print', async (req, res) => {
+    try { await pool.query('UPDATE fee_payments SET is_printed = TRUE WHERE payment_id = $1', [req.params.payment_id]); res.json({ success: true }); } 
+    catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PUT /fee-slips/payments/:payment_id/print
+router.put('/payments/:payment_id/print', async (req, res) => {
+    try { await pool.query('UPDATE fee_payments SET is_printed = TRUE WHERE payment_id = $1', [req.params.payment_id]); res.json({ success: true }); }
+    catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // DELETE /fee-slips/payments/:payment_id  — reverse / delete a single payment
@@ -1284,3 +1297,6 @@ router.get('/family-summary/:student_id', async (req, res) => {
 });
 
 module.exports = router;
+
+
+
