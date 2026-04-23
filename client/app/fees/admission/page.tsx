@@ -209,7 +209,7 @@ export default function AdmissionFeePage() {
   <title>Admission Fee Receipt</title>
   <style>
     @page { margin: 0; }
-    html, body { margin: 0; padding: 0; width: 78mm; box-sizing: border-box; font-family: Arial, sans-serif; color: #000; }
+    html, body { margin: 0; padding: 0; width: 72mm; box-sizing: border-box; font-family: Arial, sans-serif; color: #000; }
     .voucher { width: 100%; padding: 3mm; display: flex; flex-direction: column; box-sizing: border-box; }
     .header { display: flex; flex-direction: column; align-items: center; justify-content: center; margin-bottom: 2mm; }
     .school-name { font-size: 12pt; font-weight: bold; line-height: 1.2; text-transform: uppercase; text-align: center; margin-top: 1mm; }
@@ -221,7 +221,7 @@ export default function AdmissionFeePage() {
     .info-row { display: flex; justify-content: space-between; margin-bottom: 0.5mm; }
     .info-row2 { margin-bottom: 0.5mm; }
     .section-label { font-size: 10pt; font-weight: bold; margin-bottom: 0; margin-top: 3mm; text-align: center; border-top: 1.5px solid #000; border-bottom: 1.5px solid #000; padding: 1mm 0; }
-    table { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin-bottom: 3mm; }
+    table { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin-bottom: 3mm; table-layout: fixed; word-wrap: break-word; }
     th, td { padding: 1.5mm 0.5mm; text-align: center; }
     th { border-bottom: 1.5px solid #000; font-weight: bold; }
     td { border-bottom: 1px dotted #ccc; }
