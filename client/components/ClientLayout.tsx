@@ -3,11 +3,84 @@
 import { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { ToastContainer } from 'react-toastify';
+import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { useAuth } from '@/contexts/AuthContext';
 
 const API = 'https://shmool.onrender.com';
+
+function useAutoBackup(isLoggedIn: boolean) {
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    
+    let timeoutId: ReturnType<typeof setTimeout>;
+    
+    const checkAndSchedule = async () => {
+      try {
+        const res = await fetch(`${API}/system`);
+        const settings = await res.json();
+        
+        const enabledSetting = settings.find((s: any) => s.setting_key === 'auto_backup_enabled');
+        const timeSetting = settings.find((s: any) => s.setting_key === 'backup_time');
+        
+        if (enabledSetting?.setting_value === 'true' && timeSetting?.setting_value) {
+          const [hour, minute] = timeSetting.setting_value.split(':');
+          
+          const scheduleNextCheck = () => {
+            const now = new Date();
+            const target = new Date();
+            target.setHours(parseInt(hour, 10), parseInt(minute, 10), 0, 0);
+            
+            // If the time has already passed today, schedule for tomorrow
+            if (target.getTime() <= now.getTime()) {
+              target.setDate(target.getDate() + 1);
+            }
+            
+            const delay = target.getTime() - now.getTime();
+            timeoutId = setTimeout(async () => {
+              // Time has arrived! Trigger backup creation and download
+              try {
+                const createRes = await fetch(`${API}/system/backups/create`, { method: 'POST' });
+                const data = await createRes.json();
+                if (createRes.ok && data.message && data.message.includes('success')) {
+                  // The API response might not return filename directly but the scheduler returns `{message: 'Backup completed successfully...'}`, wait, let's check what /create returns.
+                  // Actually, fetchBackups() gets the list. The easiest is to just hit /system/backups to get the latest file.
+                  const listRes = await fetch(`${API}/system/backups`);
+                  const list = await listRes.json();
+                  if (list && list.length > 0) {
+                    const latest = list[0].name; // Assuming sorted by latest
+                    // Trigger download
+                    const a = document.createElement('a');
+                    a.href = `${API}/system/backups/download/${latest}`;
+                    a.download = latest;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    toast.success('Auto-backup triggered and downloading!');
+                  }
+                }
+              } catch (e) {
+                console.error("Auto backup download failed", e);
+              }
+              // Schedule for next day
+              scheduleNextCheck();
+            }, delay);
+          };
+          
+          scheduleNextCheck();
+        }
+      } catch (err) {
+        console.error("Failed to fetch settings for auto backup", err);
+      }
+    };
+    
+    checkAndSchedule();
+    
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [isLoggedIn]);
+}
 
 type SubItem  = { label: string; href: string };
 type NavGroup = { key: string; label: string; icon: string; href: string; permission?: string; subs?: SubItem[] };
@@ -300,6 +373,9 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   // useAuth() value is memoized → this component only re-renders when
   // user/isLoading changes (login / logout events only).
   const { user, isLoggedIn, isLoading, logout, hasPermission } = useAuth();
+
+  // Initialize auto backup downloader
+  useAutoBackup(isLoggedIn);
 
   useEffect(() => {
     // Load Bootstrap JS once on mount — not on every navigation
