@@ -869,7 +869,10 @@ export default function CollectFeePage() {
                                                                 className="btn btn-sm"
                                                                 title="Print Receipt"
                                                                 onClick={() => {
-                                                                    const prevPaid = slipPayments.slice(i + 1).reduce((sum, pay) => sum + parseFloat(pay.amount_paid as any), 0);
+                                                                    const totalExplicit = slipPayments.reduce((s, p) => s + parseFloat(p.amount_paid as any), 0);
+                                                                    const missingPaid = Math.max(0, parseFloat(activeSlip!.paid_amount as any) - totalExplicit);
+                                                                    const prevExplicit = slipPayments.slice(i + 1).reduce((sum, pay) => sum + parseFloat(pay.amount_paid as any), 0);
+                                                                    const prevPaid = missingPaid + prevExplicit;
                                                                     openReceiptWindow(activeSlip!, parseFloat(p.amount_paid as any), p.payment_date, prevPaid);
                                                                     if (!p.is_printed) {
                                                                         fetch(`${API}/fee-slips/payments/${p.payment_id}/print`, { method: 'PUT' })
