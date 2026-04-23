@@ -529,7 +529,7 @@ export function DailyFeeReceipts() {
 
         <div style={{ padding: '18px 22px', flex: 1 }}>
           {/* Summary stats row */}
-          {!loading && (
+          {/* {!loading && (
             <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
               <div style={{
                 flex: 1, background: `${C.teal}0d`, borderRadius: 12,
@@ -560,7 +560,7 @@ export function DailyFeeReceipts() {
                 <div style={{ fontSize: 22, fontWeight: 800, color: '#1a2e3b', lineHeight: 1.2 }}>{printedCount}</div>
               </div>
             </div>
-          )}
+          )} */}
 
           {loading ? <DashLoading /> : (
             <>
