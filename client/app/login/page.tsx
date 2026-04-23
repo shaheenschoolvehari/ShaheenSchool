@@ -90,7 +90,7 @@ export default function LoginPage() {
     return (
         <div className="login-page">
             <AnimatedBackground />
-            
+
             <div className="content-wrapper">
                 <main className="glass-board">
                     <div className="brand-panel">
@@ -101,10 +101,10 @@ export default function LoginPage() {
                             <h1>Smart School<br />System</h1>
                             <p>Manage students, staff, academics and finances — all in one place effortlessly.</p>
                             <div className="features">
-                                <span><i className="bi bi-check-circle-fill"/> Student & Staff Management</span>
-                                <span><i className="bi bi-check-circle-fill"/> Academic Scheduling</span>
-                                <span><i className="bi bi-check-circle-fill"/> Fee & Finance Tracking</span>
-                                <span><i className="bi bi-check-circle-fill"/> Reports & Analytics</span>
+                                <span><i className="bi bi-check-circle-fill" /> Student & Staff Management</span>
+                                <span><i className="bi bi-check-circle-fill" /> Academic Scheduling</span>
+                                <span><i className="bi bi-check-circle-fill" /> Fee & Finance Tracking</span>
+                                <span><i className="bi bi-check-circle-fill" /> Reports & Analytics</span>
                             </div>
                         </div>
                     </div>
@@ -157,7 +157,7 @@ export default function LoginPage() {
             <footer className="dynamic-dev-footer">
                 <h4 className="footer-title">Credits & Developers</h4>
                 <div className="footer-cards-container">
-                    
+
                     {/* Project Manager / Mohammad Abdullah */}
                     <a href="https://muhammadabdullahwali.vercel.app/" target="_blank" rel="noopener noreferrer" className="dev-card">
                         <img src={devAbdullah.avatar} alt="PM" className="dev-avatar" />
@@ -169,7 +169,7 @@ export default function LoginPage() {
                     </a>
 
                     {/* Developer / Umar Ajmal */}
-                    <a href="https://github.com/UmarAjmal" target="_blank" rel="noopener noreferrer" className="dev-card">
+                    <a href="https://muhammadumarajmal.vercel.app/" target="_blank" rel="noopener noreferrer" className="dev-card">
                         <img src={devUmar.avatar} alt="Dev" className="dev-avatar" />
                         <div className="dev-details">
                             <span className="dev-role text-accent">Full Stack Developer</span>
