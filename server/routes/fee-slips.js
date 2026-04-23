@@ -42,7 +42,7 @@ router.post('/generate', async (req, res) => {
         `;
         const checkRes = await client.query(checkQuery, [class_id, year, monthsArray]);
         if (checkRes.rows.length > 0) {
-            client.release();
+            await client.query('ROLLBACK');
             let conflictingSet = new Set();
             for (const r of checkRes.rows) {
                 if (r.months_list && r.months_list.length > 0) {
