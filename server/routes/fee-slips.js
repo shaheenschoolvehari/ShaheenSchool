@@ -15,14 +15,29 @@ router.post('/generate', async (req, res) => {
         const monthsArray = rawMonths.map(Number).sort((a, b) => a - b); // sorted ascending
 
         // SECURITY CHECK: Verify none of the requested months are already generated
+        // Must also catch family slips where the primary is in a DIFFERENT class
+        // (e.g., Class 2 student whose family slip is stored under Class 5 primary)
         const checkQuery = `
             SELECT DISTINCT month, months_list
-            FROM monthly_fee_slips
-            WHERE class_id = $1 AND year = $2 
+            FROM monthly_fee_slips mfs
+            WHERE year = $2 
               AND (
                  month = ANY($3::int[]) 
                  OR 
                  $3::int[] && months_list
+              )
+              AND (
+                mfs.class_id = $1
+                OR mfs.student_id IN (
+                    SELECT student_id FROM students 
+                    WHERE class_id = $1 AND status = 'Active'
+                )
+                OR (
+                    mfs.is_family_slip = TRUE AND mfs.family_id IN (
+                        SELECT family_id FROM students 
+                        WHERE class_id = $1 AND status = 'Active' AND family_id IS NOT NULL
+                    )
+                )
               )
         `;
         const checkRes = await client.query(checkQuery, [class_id, year, monthsArray]);
@@ -671,14 +686,14 @@ router.get('/print-queue', async (req, res) => {
                    mfs.total_amount, mfs.paid_amount, mfs.status, mfs.due_date, mfs.issue_date,
                    mfs.is_printed, mfs.printed_at, mfs.is_family_slip,
                    s.first_name, s.last_name, s.admission_no, s.monthly_fee, s.father_name, s.family_id AS s_family_id,
-                   c.class_name, c.class_id AS c_class_id, sec.section_name,
+                   sc.class_name, sc.class_id AS c_class_id, sec.section_name,
                    COALESCE(JSON_AGG(
                        JSON_BUILD_OBJECT('item_id',sli.item_id,'head_name',sli.head_name,'amount',sli.amount,'note',sli.note)
                        ORDER BY sli.item_id
                    ) FILTER (WHERE sli.item_id IS NOT NULL), '[]') AS line_items
             FROM monthly_fee_slips mfs
             JOIN students s ON mfs.student_id = s.student_id       
-            LEFT JOIN classes c ON mfs.class_id = c.class_id       
+            LEFT JOIN classes sc ON s.class_id = sc.class_id
             LEFT JOIN sections sec ON s.section_id = sec.section_id
             LEFT JOIN slip_line_items sli ON mfs.slip_id = sli.slip_id
             WHERE COALESCE(mfs.months_list, ARRAY[mfs.month]) = $1::int[] AND mfs.year = $2
@@ -686,8 +701,8 @@ router.get('/print-queue', async (req, res) => {
                      mfs.total_amount, mfs.paid_amount, mfs.status, mfs.due_date, mfs.issue_date,
                      mfs.is_printed, mfs.printed_at, mfs.is_family_slip,
                      s.first_name, s.last_name, s.admission_no, s.monthly_fee, s.father_name, s.family_id,
-                     c.class_name, c.class_id, sec.section_name
-            ORDER BY s.family_id NULLS LAST, c.class_id DESC NULLS LAST, s.first_name
+                     sc.class_name, sc.class_id, sec.section_name
+            ORDER BY s.family_id NULLS LAST, sc.class_id DESC NULLS LAST, s.first_name
         `, [mArr, year]);
 
         const allSlips = result.rows;
