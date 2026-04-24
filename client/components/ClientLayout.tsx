@@ -7,35 +7,35 @@ import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { useAuth } from '@/contexts/AuthContext';
 
-const API = process.env.NEXT_PUBLIC_API_URL || "https://shmool.onrender.com";
+const API = process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com";
 
 function useAutoBackup(isLoggedIn: boolean) {
   useEffect(() => {
     if (!isLoggedIn) return;
-    
+
     let timeoutId: ReturnType<typeof setTimeout>;
-    
+
     const checkAndSchedule = async () => {
       try {
         const res = await fetch(`${API}/system`);
         const settings = await res.json();
-        
+
         const enabledSetting = settings.find((s: any) => s.setting_key === 'auto_backup_enabled');
         const timeSetting = settings.find((s: any) => s.setting_key === 'backup_time');
-        
+
         if (enabledSetting?.setting_value === 'true' && timeSetting?.setting_value) {
           const [hour, minute] = timeSetting.setting_value.split(':');
-          
+
           const scheduleNextCheck = () => {
             const now = new Date();
             const target = new Date();
             target.setHours(parseInt(hour, 10), parseInt(minute, 10), 0, 0);
-            
+
             // If the time has already passed today, schedule for tomorrow
             if (target.getTime() <= now.getTime()) {
               target.setDate(target.getDate() + 1);
             }
-            
+
             const delay = target.getTime() - now.getTime();
             timeoutId = setTimeout(async () => {
               // Time has arrived! Trigger backup creation and download
@@ -66,49 +66,67 @@ function useAutoBackup(isLoggedIn: boolean) {
               scheduleNextCheck();
             }, delay);
           };
-          
+
           scheduleNextCheck();
         }
       } catch (err) {
         console.error("Failed to fetch settings for auto backup", err);
       }
     };
-    
+
     checkAndSchedule();
-    
+
     return () => {
       if (timeoutId) clearTimeout(timeoutId);
     };
   }, [isLoggedIn]);
 }
 
-type SubItem  = { label: string; href: string };
+type SubItem = { label: string; href: string };
 type NavGroup = { key: string; label: string; icon: string; href: string; permission?: string; subs?: SubItem[] };
 
 const NAV_GROUPS: NavGroup[] = [
-  { key:'dashboard',  label:'Dashboard',      icon:'bi-speedometer2',        href:'/'                                   },
-  { key:'students',   label:'Students',       icon:'bi-people-fill',         href:'/students/details',  permission:'students',
-    subs:[{label:'New Admission',href:'/students/admission'},{label:'Import Students',href:'/students/import'},{label:'Students Details',href:'/students/details'}] },
-  { key:'academic',   label:'Academic',       icon:'bi-mortarboard-fill',    href:'/academic/classes',  permission:'academic',
-    subs:[{label:'Class Setting',href:'/academic/classes'},{label:'Section Setting',href:'/academic/sections'},{label:'Subject Setting',href:'/academic/subjects'},{label:'Teacher Assign',href:'/academic/teachers'},{label:'Student Promotion',href:'/academic/promotion'}] },
-  { key:'hrm',        label:'HR Management',  icon:'bi-person-badge-fill',   href:'/hrm',               permission:'hrm',
-    subs:[{label:'Departments',href:'/hrm/departments'},{label:'Employees',href:'/hrm/employees'}] },
-  { key:'examination',label:'Examination',    icon:'bi-clipboard-check-fill',href:'/academic/examination/marks', permission:'__exam__',
-    subs:[{label:'Marks Entry',href:'/academic/examination/marks'},{label:'Result Card',href:'/academic/examination/result-card'},{label:'Marks Sheet',href:'/academic/examination/marks-sheet'},{label:'Test Marking',href:'/academic/examination/test-marking'}] },
-  { key:'expenses',   label:'Expenses',       icon:'bi-wallet2',             href:'/expenses/list',     permission:'expenses',
-    subs:[{label:'Add Expense',href:'/expenses/add'},{label:'Expense List',href:'/expenses/list'},{label:'Categories',href:'/expenses/categories'}] },
-  { key:'fees',       label:'Fee Management', icon:'bi-bank',                href:'/fees/generate',     permission:'fees',
-    subs:[{label:'Generate Slips',href:'/fees/generate'},{label:'Print Slips',href:'/fees/print'},{label:'Collect Fee',href:'/fees/collect'},{label:'Admission Fees',href:'/fees/admission'},{label:'Exam Collection',href:'/fees/exam-collection'},{label:'Fee Plans',href:'/fees/plans'},{label:'Fee Heads',href:'/fees/heads'},{label:'OP Balance',href:'/fees/opening-balance'}] },
-  { key:'attendance', label:'Attendance',     icon:'bi-calendar-check-fill', href:'/attendance/students', permission:'attendance',
-    subs:[{label:'Student Attendance',href:'/attendance/students'},{label:'Student History',href:'/attendance/students/history'},{label:'Staff Attendance',href:'/attendance/staff'},{label:'Staff History',href:'/attendance/staff/history'}] },
-  { key:'reports',    label:'Reports',        icon:'bi-bar-chart-fill',      href:'/reports/students',  permission:'reports',
-      subs:[{label:'Student Report',href:'/reports/students'},{label:'Results Report',href:'/reports/results'},{label:'Expense Report',href:'/reports/expenses'},{label:'Family Fee Report',href:'/reports/family-fee'},{label:'Admission Report',href:'/reports/admission'}] },
-  { key:'settings',   label:'Settings',       icon:'bi-gear-fill',           href:'/settings',          permission:'settings',
-    subs:[{label:'General Info',href:'/settings/general'},{label:'Academic Setup',href:'/settings/academic'},{label:'User Roles',href:'/settings/roles'},{label:'System Users',href:'/settings/users'},{label:'System Config',href:'/settings/system'}] },
+  { key: 'dashboard', label: 'Dashboard', icon: 'bi-speedometer2', href: '/' },
+  {
+    key: 'students', label: 'Students', icon: 'bi-people-fill', href: '/students/details', permission: 'students',
+    subs: [{ label: 'New Admission', href: '/students/admission' }, { label: 'Import Students', href: '/students/import' }, { label: 'Students Details', href: '/students/details' }]
+  },
+  {
+    key: 'academic', label: 'Academic', icon: 'bi-mortarboard-fill', href: '/academic/classes', permission: 'academic',
+    subs: [{ label: 'Class Setting', href: '/academic/classes' }, { label: 'Section Setting', href: '/academic/sections' }, { label: 'Subject Setting', href: '/academic/subjects' }, { label: 'Teacher Assign', href: '/academic/teachers' }, { label: 'Student Promotion', href: '/academic/promotion' }]
+  },
+  {
+    key: 'hrm', label: 'HR Management', icon: 'bi-person-badge-fill', href: '/hrm', permission: 'hrm',
+    subs: [{ label: 'Departments', href: '/hrm/departments' }, { label: 'Employees', href: '/hrm/employees' }]
+  },
+  {
+    key: 'examination', label: 'Examination', icon: 'bi-clipboard-check-fill', href: '/academic/examination/marks', permission: '__exam__',
+    subs: [{ label: 'Marks Entry', href: '/academic/examination/marks' }, { label: 'Result Card', href: '/academic/examination/result-card' }, { label: 'Marks Sheet', href: '/academic/examination/marks-sheet' }, { label: 'Test Marking', href: '/academic/examination/test-marking' }]
+  },
+  {
+    key: 'expenses', label: 'Expenses', icon: 'bi-wallet2', href: '/expenses/list', permission: 'expenses',
+    subs: [{ label: 'Add Expense', href: '/expenses/add' }, { label: 'Expense List', href: '/expenses/list' }, { label: 'Categories', href: '/expenses/categories' }]
+  },
+  {
+    key: 'fees', label: 'Fee Management', icon: 'bi-bank', href: '/fees/generate', permission: 'fees',
+    subs: [{ label: 'Generate Slips', href: '/fees/generate' }, { label: 'Print Slips', href: '/fees/print' }, { label: 'Collect Fee', href: '/fees/collect' }, { label: 'Admission Fees', href: '/fees/admission' }, { label: 'Exam Collection', href: '/fees/exam-collection' }, { label: 'Fee Plans', href: '/fees/plans' }, { label: 'Fee Heads', href: '/fees/heads' }, { label: 'OP Balance', href: '/fees/opening-balance' }]
+  },
+  {
+    key: 'attendance', label: 'Attendance', icon: 'bi-calendar-check-fill', href: '/attendance/students', permission: 'attendance',
+    subs: [{ label: 'Student Attendance', href: '/attendance/students' }, { label: 'Student History', href: '/attendance/students/history' }, { label: 'Staff Attendance', href: '/attendance/staff' }, { label: 'Staff History', href: '/attendance/staff/history' }]
+  },
+  {
+    key: 'reports', label: 'Reports', icon: 'bi-bar-chart-fill', href: '/reports/students', permission: 'reports',
+    subs: [{ label: 'Student Report', href: '/reports/students' }, { label: 'Results Report', href: '/reports/results' }, { label: 'Expense Report', href: '/reports/expenses' }, { label: 'Family Fee Report', href: '/reports/family-fee' }, { label: 'Admission Report', href: '/reports/admission' }]
+  },
+  {
+    key: 'settings', label: 'Settings', icon: 'bi-gear-fill', href: '/settings', permission: 'settings',
+    subs: [{ label: 'General Info', href: '/settings/general' }, { label: 'Academic Setup', href: '/settings/academic' }, { label: 'User Roles', href: '/settings/roles' }, { label: 'System Users', href: '/settings/users' }, { label: 'System Config', href: '/settings/system' }]
+  },
 ];
 
 function getInitials(name: string) {
-  return name.split(' ').filter(Boolean).slice(0,2).map(w => w[0].toUpperCase()).join('');
+  return name.split(' ').filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -127,7 +145,7 @@ const SidebarInner = memo(function SidebarInner({ user, isLoggedIn, logout, hasP
 
   // ── Navigation loading overlay (dots) ────────────────────────────────────
   const [navLoading, setNavLoading] = useState(false);
-  const [navDone,    setNavDone]    = useState(false);
+  const [navDone, setNavDone] = useState(false);
   const navDoneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // When pathname actually changes → play the "done" animation then hide bar
@@ -149,14 +167,14 @@ const SidebarInner = memo(function SidebarInner({ user, isLoggedIn, logout, hasP
   const [activePath, setActivePath] = useState(pathname);
   useEffect(() => { setActivePath(pathname); }, [pathname]);
 
-  const [open,       setOpen]       = useState(true);
-  const [isMobile,   setIsMobile]   = useState(false);
-  const [openMenu,   setOpenMenu]   = useState<string|null>(() => {
+  const [open, setOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
+  const [openMenu, setOpenMenu] = useState<string | null>(() => {
     // initialise synchronously so there's no delayed openMenu flash
     const g = NAV_GROUPS.find(g => {
       if (g.key === 'dashboard') return pathname === '/';
       return g.subs ? g.subs.some(s => pathname === s.href || pathname.startsWith(s.href + '/'))
-                    : pathname.startsWith(g.href);
+        : pathname.startsWith(g.href);
     });
     return g?.key ?? null;
   });
@@ -180,17 +198,17 @@ const SidebarInner = memo(function SidebarInner({ user, isLoggedIn, logout, hasP
     fetch(`${API}/settings`)
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d?.school_name) setSchoolName(d.school_name); })
-      .catch(() => {});
+      .catch(() => { });
   }, [isLoggedIn]);
 
   // Stable refs so inline-arrow callbacks in JSX don't break memo
-  const logoutRef  = useRef(logout);  logoutRef.current  = logout;
-  const permRef    = useRef(hasPermission); permRef.current = hasPermission;
+  const logoutRef = useRef(logout); logoutRef.current = logout;
+  const permRef = useRef(hasPermission); permRef.current = hasPermission;
 
   // Pre-compute which groups to show — only re-runs when login state changes
   const visibleGroups = useMemo(
     () => NAV_GROUPS.filter(g => {
-      if (!g.permission)               return true;
+      if (!g.permission) return true;
       if (g.permission === '__exam__') return isLoggedIn;
       return permRef.current(g.permission);
     }),
@@ -199,13 +217,13 @@ const SidebarInner = memo(function SidebarInner({ user, isLoggedIn, logout, hasP
   );
 
   const toggleSidebar = useCallback(() => setOpen(p => !p), []);
-  const closeMobile   = useCallback(() => { if (isMobile) setOpen(false); }, [isMobile]);
+  const closeMobile = useCallback(() => { if (isMobile) setOpen(false); }, [isMobile]);
 
   // Uses activePath (optimistic) so highlight changes on click, not on nav-complete
   const isActive = useCallback((g: NavGroup) => {
     if (g.key === 'dashboard') return activePath === '/';
     return g.subs ? g.subs.some(s => activePath === s.href || activePath.startsWith(s.href + '/'))
-                  : activePath.startsWith(g.href);
+      : activePath.startsWith(g.href);
   }, [activePath]);
 
   const handleGroup = useCallback((g: NavGroup) => {
@@ -283,8 +301,8 @@ const SidebarInner = memo(function SidebarInner({ user, isLoggedIn, logout, hasP
         {/* Nav */}
         <nav className="sl-nav">
           {visibleGroups.map(g => {
-            const active  = isActive(g);
-            const isOpen  = openMenu === g.key;
+            const active = isActive(g);
+            const isOpen = openMenu === g.key;
             const hasSubs = !!g.subs;
             return (
               <div key={g.key} className="sl-group">
@@ -299,7 +317,7 @@ const SidebarInner = memo(function SidebarInner({ user, isLoggedIn, logout, hasP
                     {expanded && <i className={`bi bi-chevron-down sl-chevron${isOpen ? ' sl-chevron-open' : ''}`} />}
                   </button>
                 ) : (
-                  <Link href={g.href} onClick={() => handleLinkClick(g)} style={{textDecoration:'none',display:'block'}}>
+                  <Link href={g.href} onClick={() => handleLinkClick(g)} style={{ textDecoration: 'none', display: 'block' }}>
                     <div className={`sl-item${active ? ' sl-active' : ''}`} title={!expanded ? g.label : undefined}>
                       <i className={`bi ${g.icon} sl-icon`} />
                       {expanded && <span className="sl-label">{g.label}</span>}
@@ -310,7 +328,7 @@ const SidebarInner = memo(function SidebarInner({ user, isLoggedIn, logout, hasP
                   <ul className="sl-sub">
                     {g.subs!.map(s => (
                       <li key={s.href}>
-                        <Link href={s.href} onClick={() => handleSubClick(s.href)} style={{textDecoration:'none',display:'block'}}>
+                        <Link href={s.href} onClick={() => handleSubClick(s.href)} style={{ textDecoration: 'none', display: 'block' }}>
                           <div className={`sl-sub-item${activePath === s.href ? ' sl-sub-active' : ''}`}>
                             <span className="sl-dot" />
                             {s.label}
@@ -353,7 +371,7 @@ const SidebarInner = memo(function SidebarInner({ user, isLoggedIn, logout, hasP
 // ─────────────────────────────────────────────────────────────────────────────
 function AuthRedirect() {
   const { isLoggedIn, isLoading } = useAuth();
-  const router   = useRouter();
+  const router = useRouter();
   const pathname = usePathname() || '/';
 
   useEffect(() => {
@@ -380,12 +398,12 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   useEffect(() => {
     // Load Bootstrap JS once on mount — not on every navigation
     // @ts-ignore
-    import('bootstrap/dist/js/bootstrap.bundle.min.js').catch(() => {});
+    import('bootstrap/dist/js/bootstrap.bundle.min.js').catch(() => { });
   }, []);
 
   // Auth still resolving
   if (isLoading) return (
-    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#1e3545'}}>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#1e3545' }}>
       <div className="spinner-border text-light" role="status"><span className="visually-hidden">Loading…</span></div>
     </div>
   );

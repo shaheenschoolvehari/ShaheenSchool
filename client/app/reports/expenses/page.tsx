@@ -28,7 +28,7 @@ export default function ExpenseReportPage() {
         const m = String(now.getMonth() + 1).padStart(2, '0');
         setFromDate(`${y}-${m}-01`);
         setToDate(`${y}-${m}-${new Date(y, now.getMonth() + 1, 0).getDate()}`);
-        fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shmool.onrender.com"}'}` + '/reports/expense-categories').then(r => r.json()).then(setCategories).catch(console.error);
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}'}` + '/reports/expense-categories').then(r => r.json()).then(setCategories).catch(console.error);
     }, []);
 
     const loadReport = async () => {
@@ -38,7 +38,7 @@ export default function ExpenseReportPage() {
             if (fromDate) params.append('from_date', fromDate);
             if (toDate) params.append('to_date', toDate);
             if (categoryId) params.append('category_id', categoryId);
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shmool.onrender.com"}/reports/expenses?${params}`);
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/reports/expenses?${params}`);
             if (!res.ok) throw new Error((await res.json()).error || 'Failed');
             const data = await res.json();
             setExpenses(data.expenses.map((e: Expense) => ({ ...e, amount: Number(e.amount) })));
@@ -132,30 +132,30 @@ export default function ExpenseReportPage() {
                                 </div>
                                 <div className="card-body p-0">
                                     <div className="table-responsive">
-                                    <table className="table mb-0" style={{ fontSize: 13 }}>
-                                        <thead>
-                                            <tr>
-                                                <th style={{ background: '#233D4D', color: 'white', padding: '8px 12px' }}>Category</th>
-                                                <th style={{ background: '#233D4D', color: 'white', padding: '8px 12px', textAlign: 'right' }}>Amount</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {categorySummary.map(c => (
-                                                <tr key={c.category}>
-                                                    <td style={{ padding: '8px 12px' }}>{c.category}</td>
-                                                    <td style={{ padding: '8px 12px', textAlign: 'right' }}>Rs. {c.total.toLocaleString()}</td>
+                                        <table className="table mb-0" style={{ fontSize: 13 }}>
+                                            <thead>
+                                                <tr>
+                                                    <th style={{ background: '#233D4D', color: 'white', padding: '8px 12px' }}>Category</th>
+                                                    <th style={{ background: '#233D4D', color: 'white', padding: '8px 12px', textAlign: 'right' }}>Amount</th>
                                                 </tr>
-                                            ))}
-                                        </tbody>
-                                        <tfoot>
-                                            <tr style={{ background: '#f0f4f8' }}>
-                                                <td style={{ padding: '10px 12px', fontWeight: 700 }}>Grand Total</td>
-                                                <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: '#dc3545' }}>
-                                                    Rs. {grandTotal.toLocaleString()}
-                                                </td>
-                                            </tr>
-                                        </tfoot>
-                                    </table>
+                                            </thead>
+                                            <tbody>
+                                                {categorySummary.map(c => (
+                                                    <tr key={c.category}>
+                                                        <td style={{ padding: '8px 12px' }}>{c.category}</td>
+                                                        <td style={{ padding: '8px 12px', textAlign: 'right' }}>Rs. {c.total.toLocaleString()}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                            <tfoot>
+                                                <tr style={{ background: '#f0f4f8' }}>
+                                                    <td style={{ padding: '10px 12px', fontWeight: 700 }}>Grand Total</td>
+                                                    <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: '#dc3545' }}>
+                                                        Rs. {grandTotal.toLocaleString()}
+                                                    </td>
+                                                </tr>
+                                            </tfoot>
+                                        </table>
                                     </div>
                                 </div>
                             </div>
