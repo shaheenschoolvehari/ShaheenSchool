@@ -22,6 +22,8 @@ async function createAcademicTables() {
                 id SERIAL PRIMARY KEY,
                 academic_year_id INT REFERENCES academic_years(id) ON DELETE CASCADE,
                 term_name VARCHAR(100) NOT NULL,
+                has_summer_work BOOLEAN DEFAULT FALSE,
+                has_winter_work BOOLEAN DEFAULT FALSE,
                 start_date DATE,
                 end_date DATE
             );

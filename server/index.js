@@ -100,7 +100,10 @@ async function seedRootUser() {
     }
 }
 
+const { runEssentialMigrations } = require('./migrations');
+
 app.listen(PORT, '0.0.0.0', async () => {
     console.log(`Server is running on port ${PORT}`);
+    await runEssentialMigrations();
     await seedRootUser();
 });

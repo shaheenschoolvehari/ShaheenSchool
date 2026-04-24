@@ -160,6 +160,10 @@ router.post('/terms', async (req, res) => {
     try {
         const { academic_year_id, terms } = req.body;
 
+        if (!academic_year_id || !Array.isArray(terms)) {
+            return res.status(400).json({ error: "Invalid request data. academic_year_id and terms array are required." });
+        }
+
         // 1. Check if year is completed (outside transaction — read-only check)
         const yearCheck = await client.query("SELECT status FROM academic_years WHERE id = $1", [academic_year_id]);
         if (yearCheck.rows.length === 0) return res.status(404).json({ error: 'Year not found' });

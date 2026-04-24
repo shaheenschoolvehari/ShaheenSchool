@@ -1524,6 +1524,8 @@ async function createAcademicTables() {
                 id SERIAL PRIMARY KEY,
                 academic_year_id INT REFERENCES academic_years(id) ON DELETE CASCADE,
                 term_name VARCHAR(100) NOT NULL,
+                has_summer_work BOOLEAN DEFAULT FALSE,
+                has_winter_work BOOLEAN DEFAULT FALSE,
                 start_date DATE,
                 end_date DATE
             );
@@ -1565,6 +1567,29 @@ await createAcademicTables();
 
     } catch(err) {
       console.error('[Error Details in create-academic-table.js]:', err.message);
+    }
+  })();
+  // ====== FROM: update-terms-table.js ======
+  await (async () => {
+    try {
+        console.log("Updating Academic Terms Table (Adding columns if missing)...");
+
+        await pool.query(`
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='academic_terms' AND column_name='has_summer_work') THEN
+                    ALTER TABLE academic_terms ADD COLUMN has_summer_work BOOLEAN DEFAULT FALSE;
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='academic_terms' AND column_name='has_winter_work') THEN
+                    ALTER TABLE academic_terms ADD COLUMN has_winter_work BOOLEAN DEFAULT FALSE;
+                END IF;
+            END $$;
+        `);
+
+        console.log("✓ Academic Terms Table Updated Successfully.");
+    } catch (err) {
+        console.error("Error updating academic terms table:", err.message);
     }
   })();
   // ====== FROM: add-userid-col.js ======
