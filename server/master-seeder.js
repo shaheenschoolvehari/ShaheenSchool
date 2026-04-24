@@ -1628,6 +1628,24 @@ await run();
       console.error('[Error Details in add-print-tracking.js]:', err.message);
     }
   })();
+  // ====== FROM: add-year-configuration.js ======
+  await (async () => {
+    try {
+        console.log("Adding is_configured column to academic_years...");
+        await pool.query(`
+            ALTER TABLE academic_years 
+            ADD COLUMN IF NOT EXISTS is_configured BOOLEAN DEFAULT false;
+        `);
+        await pool.query(`
+            UPDATE academic_years 
+            SET is_configured = true 
+            WHERE start_date IS NOT NULL;
+        `);
+        console.log("✓ is_configured column added and updated");
+    } catch(err) {
+      console.error('[Error Details in add-year-configuration.js]:', err.message);
+    }
+  })();
   // ====== FROM: seed-school-settings.js ======
   await (async () => {
     try {
