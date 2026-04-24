@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 
-const API = `${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}'}`;
+const API = process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com";
+
+
 
 type Term = { id: number; term_name: string };
 type ClassItem = { class_id: number; class_name: string };
@@ -68,7 +70,8 @@ function fmtN(v: number | null | undefined): string {
     return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.00$/, '');
 }
 
-const API_BASE_MS = `${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}'}`;
+const API_BASE_MS = process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com";
+
 
 function buildPrintHtml(payload: SheetPayload): string {
     const { meta, school, subjects, students } = payload;

@@ -3,7 +3,9 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { notify } from '@/app/utils/notify';
 
-const API = `${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}'}`;
+const API = process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com";
+
+
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 interface SlipRow {

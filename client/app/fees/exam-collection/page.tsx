@@ -26,7 +26,9 @@ type StudentItem = {
     selected?: boolean;
 };
 
-const API = `${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}'}`;
+const API = process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com";
+
+
 
 export default function ExamCollectionPage() {
     const { user } = useAuth();

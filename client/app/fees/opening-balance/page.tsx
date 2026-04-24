@@ -2,7 +2,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 
-const API = `${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}'}`;
+const API = process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com";
+
+
 
 interface FamilyOPB {
     family_id: string;

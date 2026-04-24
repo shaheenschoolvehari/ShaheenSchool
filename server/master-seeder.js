@@ -1599,12 +1599,20 @@ async function run() {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
+        // Add print tracking to monthly_fee_slips
         await client.query(`
             ALTER TABLE monthly_fee_slips
             ADD COLUMN IF NOT EXISTS is_printed BOOLEAN DEFAULT FALSE,
             ADD COLUMN IF NOT EXISTS printed_at TIMESTAMP
         `);
         console.log('✅ Added is_printed + printed_at to monthly_fee_slips');
+        // Add print tracking to fee_payments (needed for daily-fee-receipts dashboard)
+        await client.query(`
+            ALTER TABLE fee_payments
+            ADD COLUMN IF NOT EXISTS is_printed BOOLEAN DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS printed_at TIMESTAMP
+        `);
+        console.log('✅ Added is_printed + printed_at to fee_payments');
         await client.query('COMMIT');
     } catch (err) {
         await client.query('ROLLBACK');

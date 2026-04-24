@@ -33,7 +33,8 @@ type SheetResponse = {
     students: StudentMarkRow[];
 };
 
-const API = `${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}'}`;
+const API = process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com";
+
 
 export default function ExaminationMarksPage() {
     const { user, hasPermission } = useAuth();
