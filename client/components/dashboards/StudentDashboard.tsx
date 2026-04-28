@@ -335,7 +335,7 @@ export default function StudentDashboard({ user }: { user: any }) {
                         <div className="d-flex align-items-end gap-4" style={{ marginBottom: '-60px' }}>
                             <div className="position-relative">
                                 <img 
-                                    src={student.image_url ? `${API}/${student.image_url}` : "https://via.placeholder.com/150"} 
+                                    src={student.image_url ? `${API}/${student.image_url}` : "https://ui-avatars.com/api/?name=" + (student.first_name || 'Student') + "&background=random&size=150"} 
                                     className="rounded-circle border border-4 border-white shadow-lg bg-white"
                                     style={{ width: '160px', height: '160px', objectFit: 'cover' }}
                                 />
