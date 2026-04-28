@@ -218,7 +218,21 @@ export default function NewAdmission() {
             setForm(f => ({
                 ...f,
                 father_name: sibling.father_name || f.father_name,
+                father_phone: sibling.father_phone || f.father_phone,
+                father_cnic: sibling.father_cnic || f.father_cnic,
+                father_occupation: sibling.father_occupation || f.father_occupation,
                 mother_name: sibling.mother_name || f.mother_name,
+                mother_phone: sibling.mother_phone || f.mother_phone,
+                mother_cnic: sibling.mother_cnic || f.mother_cnic,
+                mother_occupation: sibling.mother_occupation || f.mother_occupation,
+                current_address: sibling.current_address || f.current_address,
+                permanent_address: sibling.permanent_address || f.permanent_address,
+                city: sibling.city || f.city,
+                guardian_name: sibling.guardian_name || f.guardian_name,
+                guardian_relation: sibling.guardian_relation || f.guardian_relation,
+                guardian_phone: sibling.guardian_phone || f.guardian_phone,
+                guardian_cnic: sibling.guardian_cnic || f.guardian_cnic,
+                guardian_address: sibling.guardian_address || f.guardian_address,
             }));
         }
 
@@ -252,7 +266,21 @@ export default function NewAdmission() {
             setForm(f => ({
                 ...f,
                 father_name: sibling.father_name || f.father_name,
+                father_phone: sibling.father_phone || f.father_phone,
+                father_cnic: sibling.father_cnic || f.father_cnic,
+                father_occupation: sibling.father_occupation || f.father_occupation,
                 mother_name: sibling.mother_name || f.mother_name,
+                mother_phone: sibling.mother_phone || f.mother_phone,
+                mother_cnic: sibling.mother_cnic || f.mother_cnic,
+                mother_occupation: sibling.mother_occupation || f.mother_occupation,
+                current_address: sibling.current_address || f.current_address,
+                permanent_address: sibling.permanent_address || f.permanent_address,
+                city: sibling.city || f.city,
+                guardian_name: sibling.guardian_name || f.guardian_name,
+                guardian_relation: sibling.guardian_relation || f.guardian_relation,
+                guardian_phone: sibling.guardian_phone || f.guardian_phone,
+                guardian_cnic: sibling.guardian_cnic || f.guardian_cnic,
+                guardian_address: sibling.guardian_address || f.guardian_address,
             }));
         }
     };
