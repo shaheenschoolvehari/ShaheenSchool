@@ -13,6 +13,7 @@ async function createAdmissionFeeTables() {
                 student_id  INTEGER NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
                 total_amount   DECIMAL(10,2) NOT NULL DEFAULT 0,
                 paid_amount    DECIMAL(10,2) NOT NULL DEFAULT 0,
+                discount_amount DECIMAL(10,2) DEFAULT 0,
                 status         VARCHAR(20)   NOT NULL DEFAULT 'unpaid',
                 -- unpaid | partial | paid
                 admission_date DATE,
@@ -29,6 +30,7 @@ async function createAdmissionFeeTables() {
                 payment_id     SERIAL PRIMARY KEY,
                 ledger_id      INTEGER NOT NULL REFERENCES admission_fee_ledger(ledger_id) ON DELETE CASCADE,
                 amount_paid    DECIMAL(10,2) NOT NULL,
+                discount_amount DECIMAL(10,2) DEFAULT 0,
                 payment_date   DATE NOT NULL DEFAULT CURRENT_DATE,
                 payment_method VARCHAR(30) DEFAULT 'cash',
                 -- cash | bank | online | cheque
