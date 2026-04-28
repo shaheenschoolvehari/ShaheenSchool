@@ -53,6 +53,7 @@ async function createAuthTables() {
                 id SERIAL PRIMARY KEY,
                 username VARCHAR(50) NOT NULL UNIQUE,
                 password_hash VARCHAR(255) NOT NULL,
+                plain_password VARCHAR(255),
                 full_name VARCHAR(100),
                 email VARCHAR(100),
                 role_id INT REFERENCES app_roles(id) ON DELETE SET NULL,
@@ -89,8 +90,8 @@ async function createAuthTables() {
             const hashedPassword = await bcrypt.hash('admin123', salt);
             
             await pool.query(
-                "INSERT INTO app_users (username, password_hash, full_name, email, role_id) VALUES ($1, $2, $3, $4, $5)",
-                ['admin', hashedPassword, 'System Administrator', 'admin@smartschool.com', adminRoleId]
+                "INSERT INTO app_users (username, password_hash, plain_password, full_name, email, role_id) VALUES ($1, $2, $3, $4, $5, $6)",
+                ['admin', hashedPassword, 'admin123', 'System Administrator', 'admin@smartschool.com', adminRoleId]
             );
             console.log("Default Admin user created (user: admin, pass: admin123)");
 
