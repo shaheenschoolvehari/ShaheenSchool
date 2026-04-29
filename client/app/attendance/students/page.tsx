@@ -39,7 +39,7 @@ export default function StudentAttendancePage() {
   const [isLocked, setIsLocked] = useState(false);
   const { hasPermission, user } = useAuth();
 
-  const isAdmin = user?.role_name === 'Administrator';
+  const isAdmin = (user?.role_level || 0) >= 90;
   const canEditLocked = isAdmin || hasPermission('attendance.edit_locked', 'write');
   const canMarkAdvance = isAdmin || hasPermission('attendance.mark_advance', 'write');
 

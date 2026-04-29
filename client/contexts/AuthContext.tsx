@@ -17,6 +17,7 @@ export interface AuthUser {
     email: string;
     role_id: number;
     role_name: string;
+    role_level?: number;
     is_active: boolean;
     permissions: Permission[];
 }
@@ -82,24 +83,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         router.push('/login');
     }, [router]);
 
-    // Returns true if Administrator role (full access), OR if role has explicit permission.
-    // Supports both module-level ('students') and page-level ('students.admission') keys.
-    // Page-level is checked first; if not found, falls back to module-level.
+    // Returns true if Administrator/Supervisor can access, OR if role has explicit permission.
+    // Supports both module-level ('attendance') and page-level ('attendance.daily') keys.
+    // Hierarchy: Admin (>=90) > Supervisor (>=65) > Role permissions
     const hasPermission = useCallback((module: string, action: 'read' | 'write' | 'delete' = 'read'): boolean => {
         if (!user) return false;
-        if (user.role_name === 'Administrator') return true;
+        
+        const roleLevel = user.role_level || 0;
+        const moduleLower = module.toLowerCase();
+        
+        // 1. Admin (role_level >= 90): Full access to everything
+        if (roleLevel >= 90) return true;
+
+        // 2. Supervisor (role_level >= 65): Access to academic & operational modules
+        const supervisorModules = ['attendance', 'exams', 'marks', 'result', 'exam_fees', 'academics', 'classes', 'sections', 'dashboard'];
+        const isModuleAllowed = supervisorModules.some(m => 
+            moduleLower === m || moduleLower.startsWith(m + '.')
+        );
+        
+        if (roleLevel >= 65 && isModuleAllowed) {
+            // Supervisors can read and write (not delete)
+            if (action === 'delete') return false;
+            return true;
+        }
 
         const perms = user.permissions || [];
 
-        // 1. Try exact match (e.g., 'students.admission')
-        const exact = perms.find(p => p.module_name.toLowerCase() === module.toLowerCase());
+        // 3. Try exact match (e.g., 'students.admission')
+        const exact = perms.find(p => p.module_name.toLowerCase() === moduleLower);
         if (exact) {
             if (action === 'read') return exact.can_read;
             if (action === 'write') return exact.can_write;
             if (action === 'delete') return exact.can_delete;
         }
 
-        // 2. Fallback to parent module (e.g., 'students' for 'students.admission')
+        // 4. Fallback to parent module (e.g., 'students' for 'students.admission')
         const parentModule = module.includes('.') ? module.split('.')[0] : null;
         if (parentModule) {
             const parent = perms.find(p => p.module_name.toLowerCase() === parentModule.toLowerCase());
@@ -110,11 +128,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
         }
 
-        // 3. Module-level check: if called with a bare module key (e.g. 'students') and no
+        // 5. Module-level check: if called with a bare module key (e.g. 'students') and no
         //    module-level row exists, check if ANY page-level row in that module grants access.
         //    This allows sidebar nav & layout guards to work when only page-level keys are stored.
         if (!module.includes('.')) {
-            const prefix = module.toLowerCase() + '.';
+            const prefix = moduleLower + '.';
             const anyPageAccess = perms.some(p => {
                 if (!p.module_name.toLowerCase().startsWith(prefix)) return false;
                 if (action === 'read') return p.can_read;

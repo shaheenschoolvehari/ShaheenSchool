@@ -378,7 +378,7 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                                                             <i className="bi bi-key-fill p-1 fs-6"></i>
                                                         </button>
                                                     </div>
-                                                    {user?.role_name === 'Administrator' && (
+                                                    {(user?.role_level || 0) >= 90 && (
                                                         <div className="d-flex align-items-center gap-2 mt-1">
                                                             <span className="font-monospace text-muted small user-select-all text-break" style={{ fontSize: '0.75rem', wordBreak: 'break-all' }}>
                                                                 {showPwd ? (student.system_pwd || 'student123') : '••••••••'}

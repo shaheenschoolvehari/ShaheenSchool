@@ -483,7 +483,7 @@ export default function RolesPage() {
                                                         <i className="bi bi-files me-1" />Clone
                                                     </button>
                                                 )}
-                                                {!['Administrator', 'Teacher', 'Accountant', 'Student'].includes(role.role_name) && !role.is_system_default && hasPermission('settings', 'delete') && (
+                                                {!role.is_system_default && hasPermission('settings', 'delete') && (
                                                     <button className="btn btn-sm btn-outline-danger rounded-3" onClick={() => handleDelete(role.id)} title="Delete Role">
                                                         <i className="bi bi-trash3" />
                                                     </button>

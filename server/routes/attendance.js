@@ -9,7 +9,7 @@ function parseUserId(input) {
 
 async function getUserContext(client, userId) {
     const userRes = await client.query(
-        `SELECT u.id, u.is_active, r.role_name
+        `SELECT u.id, u.is_active, r.role_name, r.role_level
          FROM app_users u
          LEFT JOIN app_roles r ON r.id = u.role_id
          WHERE u.id = $1`,
@@ -25,7 +25,9 @@ async function getUserContext(client, userId) {
         return { error: { status: 403, message: 'User is inactive' } };
     }
 
-    const isAdmin = user.role_name === 'Administrator';
+    // Role hierarchy: Admin(90+) can do anything, Supervisor(65+) can supervise/manage teachers
+    const isAdmin = (user.role_level || 0) >= 90;
+    const isSupervisor = (user.role_level || 0) >= 65;
 
     const empRes = await client.query(
         `SELECT employee_id
@@ -39,6 +41,7 @@ async function getUserContext(client, userId) {
     return {
         user,
         isAdmin,
+        isSupervisor,
         employeeId: empRes.rows[0]?.employee_id || null
     };
 }
@@ -79,7 +82,8 @@ router.get('/students/daily', async (req, res) => {
             const ctx = await getUserContext(client, userId);
             if (ctx.error) return res.status(ctx.error.status).json({ error: ctx.error.message });
 
-            if (!ctx.isAdmin) {
+            // Allow if: Admin OR Supervisor (Coordinator/Head/VP) OR Class Teacher
+            if (!ctx.isAdmin && !ctx.isSupervisor) {
                 const allowed = await canTeacherAccessClassTeacher(client, ctx.employeeId, Number(class_id), Number(section_id));
                 if (!allowed) return res.status(403).json({ error: 'You are not the class teacher for this class/section' });
             }
@@ -124,7 +128,8 @@ router.post('/students/daily', async (req, res) => {
         const ctx = await getUserContext(client, userId);
         if (ctx.error) return res.status(ctx.error.status).json({ error: ctx.error.message });
 
-        if (!ctx.isAdmin) {
+        // Allow if: Admin OR Supervisor (Coordinator/Head/VP) OR Class Teacher
+        if (!ctx.isAdmin && !ctx.isSupervisor) {
             const firstStudentId = records[0]?.student_id;
             const studentRes = await client.query(
                 `SELECT class_id, section_id FROM students WHERE student_id = $1`,

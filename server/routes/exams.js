@@ -54,7 +54,7 @@ function parseUserId(input) {
 
 async function getUserContext(client, userId) {
     const userRes = await client.query(
-        `SELECT u.id, u.is_active, r.role_name
+        `SELECT u.id, u.is_active, r.role_name, r.role_level
          FROM app_users u
          LEFT JOIN app_roles r ON r.id = u.role_id
          WHERE u.id = $1`,
@@ -70,7 +70,9 @@ async function getUserContext(client, userId) {
         return { error: { status: 403, message: 'User is inactive' } };
     }
 
-    const isAdmin = user.role_name === 'Administrator';
+    // Role hierarchy: Admin(90+) can do anything, Supervisor(65+) can supervise/manage teachers
+    const isAdmin = (user.role_level || 0) >= 90;
+    const isSupervisor = (user.role_level || 0) >= 65;
 
     const empRes = await client.query(
         `SELECT employee_id
@@ -84,6 +86,7 @@ async function getUserContext(client, userId) {
     return {
         user,
         isAdmin,
+        isSupervisor,
         employeeId: empRes.rows[0]?.employee_id || null
     };
 }
@@ -235,7 +238,8 @@ router.get('/context', async (req, res) => {
         let sections = [];
         let subjects = [];
 
-        if (ctx.isAdmin) {
+        // Admin (>=90) and Supervisor (>=65) can see all classes
+        if (ctx.isAdmin || ctx.isSupervisor) {
             const classRes = await client.query(`SELECT class_id, class_name FROM classes ORDER BY class_name ASC`);
             const sectionRes = await client.query(`SELECT section_id, section_name, class_id FROM sections ORDER BY class_id, section_name ASC`);
             const subjectRes = await client.query(
@@ -252,6 +256,7 @@ router.get('/context', async (req, res) => {
             sections = sectionRes.rows;
             subjects = subjectRes.rows;
         } else {
+            // Teacher: See only assigned classes
             if (!ctx.employeeId) {
                 return res.json({
                     is_admin: false,
@@ -340,7 +345,8 @@ router.get('/marking-sheet', async (req, res) => {
         const ctx = await getUserContext(client, userId);
         if (ctx.error) return res.status(ctx.error.status).json({ error: ctx.error.message });
 
-        if (!ctx.isAdmin) {
+        // Allow if: Admin OR Supervisor (Coordinator/Head/VP) OR assigned teacher
+        if (!ctx.isAdmin && !ctx.isSupervisor) {
             const allowed = await canTeacherAccessSheet(client, ctx.employeeId, classId, sectionId, subjectId);
             if (!allowed) return res.status(403).json({ error: 'You are not assigned to this class/section/subject' });
         }
@@ -435,7 +441,8 @@ router.post('/marks/save', async (req, res) => {
         const ctx = await getUserContext(client, userId);
         if (ctx.error) return res.status(ctx.error.status).json({ error: ctx.error.message });
 
-        if (!ctx.isAdmin) {
+        // Allow if: Admin OR Supervisor (Coordinator/Head/VP) OR assigned teacher
+        if (!ctx.isAdmin && !ctx.isSupervisor) {
             const allowed = await canTeacherAccessSheet(client, ctx.employeeId, classId, sectionId, subjectId);
             if (!allowed) return res.status(403).json({ error: 'You are not assigned to this class/section/subject' });
 
@@ -566,7 +573,8 @@ router.get('/result-card/students', async (req, res) => {
         const ctx = await getUserContext(client, userId);
         if (ctx.error) return res.status(ctx.error.status).json({ error: ctx.error.message });
 
-        if (!ctx.isAdmin) {
+        // Allow if: Admin OR Supervisor (Coordinator/Head/VP) OR assigned teacher
+        if (!ctx.isAdmin && !ctx.isSupervisor) {
             const allowed = await canTeacherAccessClassSection(client, ctx.employeeId, classId, sectionId);
             if (!allowed) return res.status(403).json({ error: 'You are not assigned to this class/section' });
         }
@@ -655,7 +663,8 @@ router.post('/result-card/data', async (req, res) => {
         const ctx = await getUserContext(client, userId);
         if (ctx.error) return res.status(ctx.error.status).json({ error: ctx.error.message });
 
-        if (!ctx.isAdmin) {
+        // Allow if: Admin OR Supervisor (Coordinator/Head/VP) OR assigned teacher
+        if (!ctx.isAdmin && !ctx.isSupervisor) {
             const allowed = await canTeacherAccessClassSection(client, ctx.employeeId, classId, sectionId);
             if (!allowed) return res.status(403).json({ error: 'You are not assigned to this class/section' });
         }
@@ -896,7 +905,8 @@ router.get('/class-marks-sheet', async (req, res) => {
         const ctx = await getUserContext(client, userId);
         if (ctx.error) return res.status(ctx.error.status).json({ error: ctx.error.message });
 
-        if (!ctx.isAdmin) {
+        // Allow if: Admin OR Supervisor (Coordinator/Head/VP) OR assigned teacher
+        if (!ctx.isAdmin && !ctx.isSupervisor) {
             const allowed = await canTeacherAccessClassSection(client, ctx.employeeId, classId, sectionId);
             if (!allowed) return res.status(403).json({ error: 'You are not assigned to this class/section' });
         }
@@ -1325,7 +1335,8 @@ router.get('/tests/context', async (req, res) => {
 
         let classes = [], sections = [], subjects = [];
 
-        if (ctx.isAdmin) {
+        // Admin (>=90) and Supervisor (>=65) can see all classes
+        if (ctx.isAdmin || ctx.isSupervisor) {
             const classRes  = await client.query(`SELECT class_id, class_name FROM classes ORDER BY class_name ASC`);
             const sectionRes = await client.query(`SELECT section_id, section_name, class_id FROM sections ORDER BY class_id, section_name ASC`);
             const subjectRes = await client.query(
@@ -1398,7 +1409,8 @@ router.get('/tests', async (req, res) => {
         const ctx = await getUserContext(client, userId);
         if (ctx.error) return res.status(ctx.error.status).json({ error: ctx.error.message });
 
-        if (!ctx.isAdmin) {
+        // Allow if: Admin OR Supervisor (Coordinator/Head/VP) OR assigned teacher
+        if (!ctx.isAdmin && !ctx.isSupervisor) {
             const allowed = await canTeacherAccessSheet(client, ctx.employeeId, classId, sectionId, subjectId);
             if (!allowed) return res.status(403).json({ error: 'You are not assigned to this class/section/subject' });
         }
@@ -1447,7 +1459,8 @@ router.post('/tests', async (req, res) => {
         const ctx = await getUserContext(client, userId);
         if (ctx.error) return res.status(ctx.error.status).json({ error: ctx.error.message });
 
-        if (!ctx.isAdmin) {
+        // Allow if: Admin OR Supervisor (Coordinator/Head/VP) OR assigned teacher
+        if (!ctx.isAdmin && !ctx.isSupervisor) {
             const allowed = await canTeacherAccessSheet(client, ctx.employeeId, classId, sectionId, subjectId);
             if (!allowed) return res.status(403).json({ error: 'You are not assigned to this class/section/subject' });
         }
@@ -1494,7 +1507,8 @@ router.get('/tests/:test_id/sheet', async (req, res) => {
 
         const test = testRes.rows[0];
 
-        if (!ctx.isAdmin) {
+        // Allow if: Admin OR Supervisor (Coordinator/Head/VP) OR assigned teacher
+        if (!ctx.isAdmin && !ctx.isSupervisor) {
             const allowed = await canTeacherAccessSheet(client, ctx.employeeId, test.class_id, test.section_id, test.subject_id);
             if (!allowed) return res.status(403).json({ error: 'You are not assigned to this class/section/subject' });
         }
@@ -1545,7 +1559,8 @@ router.post('/tests/:test_id/save', async (req, res) => {
 
         const test = testRes.rows[0];
 
-        if (!ctx.isAdmin) {
+        // Allow if: Admin OR Supervisor (Coordinator/Head/VP) OR assigned teacher
+        if (!ctx.isAdmin && !ctx.isSupervisor) {
             const allowed = await canTeacherAccessSheet(client, ctx.employeeId, test.class_id, test.section_id, test.subject_id);
             if (!allowed) return res.status(403).json({ error: 'You are not assigned to this class/section/subject' });
 

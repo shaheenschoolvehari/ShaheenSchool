@@ -15,7 +15,7 @@ router.post('/login', async (req, res) => {
         const result = await pool.query(`
             SELECT 
                 u.id, u.username, u.password_hash, u.full_name, u.email, u.is_active, u.role_id,
-                r.role_name,
+                r.role_name, r.role_level,
                 COALESCE(
                     json_agg(
                         json_build_object(
@@ -31,7 +31,7 @@ router.post('/login', async (req, res) => {
             LEFT JOIN app_roles r ON u.role_id = r.id
             LEFT JOIN role_permissions p ON r.id = p.role_id
             WHERE u.username = $1
-            GROUP BY u.id, u.username, u.password_hash, u.full_name, u.email, u.is_active, u.role_id, r.role_name
+            GROUP BY u.id, u.username, u.password_hash, u.full_name, u.email, u.is_active, u.role_id, r.role_name, r.role_level
         `, [username]);
 
         if (result.rows.length === 0) {

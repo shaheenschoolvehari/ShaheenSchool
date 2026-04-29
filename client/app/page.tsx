@@ -12,25 +12,25 @@ export default function Dashboard() {
 
   if (isLoading || !user) return <DashLoading />;
 
-  const role = user.role_name?.toLowerCase() || '';
+  const roleLevel = user.role_level || 0;
   const name = user.full_name || user.username || 'User';
 
-  if (role.includes('admin') || role.includes('principal') || role.includes('super')) {
+  // Admin dashboard for role_level >= 90 (Admin, Principal, VP)
+  if (roleLevel >= 90) {
     return <AdminDashboard userName={name} />;
   }
 
-  if (role.includes('teacher')) {
+  // Teacher dashboard for role_level >= 50 and <= 89 (Coordinator, Head, Teacher)
+  if (roleLevel >= 50) {
     return <TeacherDashboard userId={user.id} />;
   }
 
-  if (
-    role.includes('accountant') ||
-    role.includes('finance')    ||
-    role.includes('cashier')
-  ) {
+  // Accountant dashboard for role_level >= 20 and < 50
+  if (roleLevel >= 20) {
     return <AccountantDashboard userName={name} />;
   }
 
-  if (role.includes('student')) { return <StudentDashboard key={`dashboard-${user.id}`} user={user} />; }
+  // Student dashboard for role_level < 20
+  if (roleLevel < 20) { return <StudentDashboard key={`dashboard-${user.id}`} user={user} />; }
   return <GenericDashboard userName={name} role={user.role_name || 'Staff'} />;
 }
