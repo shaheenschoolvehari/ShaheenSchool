@@ -30,7 +30,7 @@ export default function NewAdmission() {
         // Personal
         first_name: '',
         last_name: '',
-        gender: 'Male',
+        gender: '',
         dob: '',
         cnic_bform: '',
         religion: '',
@@ -337,13 +337,55 @@ export default function NewAdmission() {
 
             if (res.ok) {
                 toast.update(toastId, { render: `Admission Successful! ID: ${data.admission_no}`, type: "success", isLoading: false, autoClose: 5000 });
-                // Reset Forms
+                // Reset ALL form fields
                 setForm({
-                    ...form,
-                    first_name: '', last_name: '',
-                    father_name: '', mother_name: '', guardian_name: '',
-                    roll_no: '', mobile_no: ''
+                    roll_no: '',
+                    class_id: '',
+                    section_id: '',
+                    admission_date: new Date().toISOString().split('T')[0],
+                    category: 'Normal',
+                    first_name: '',
+                    last_name: '',
+                    gender: '',
+                    dob: '',
+                    cnic_bform: '',
+                    religion: '',
+                    blood_group: '',
+                    has_disability: false,
+                    disability_details: '',
+                    mobile_no: '',
+                    email: '',
+                    current_address: '',
+                    permanent_address: '',
+                    city: '',
+                    father_name: '',
+                    father_phone: '',
+                    father_cnic: '',
+                    father_occupation: '',
+                    mother_name: '',
+                    mother_phone: '',
+                    mother_cnic: '',
+                    mother_occupation: '',
+                    is_orphan: false,
+                    guardian_name: '',
+                    guardian_relation: '',
+                    guardian_phone: '',
+                    guardian_cnic: '',
+                    guardian_address: '',
+                    monthly_fee: '',
+                    family_fee: '',
+                    admission_fee: '',
+                    other_charges: '',
+                    opening_balance: ''
                 });
+                // Reset sibling selection
+                setHasSibling(false);
+                setSelectedSiblings([]);
+                setSiblingSearch('');
+                setSearchResults([]);
+                setFamilyFeeInfo(null);
+                setGuardianType('Father');
+                // Reset files
                 setImageFile(null);
                 setDocumentFiles(null);
             } else {
@@ -466,11 +508,12 @@ export default function NewAdmission() {
                                             value={form.dob} onChange={e => setForm({ ...form, dob: e.target.value })} />
                                     </div>
                                     <div className="col-md-4">
-                                        <label className="form-label fw-bold">Gender</label>
-                                        <select className="form-select" value={form.gender} onChange={e => setForm({ ...form, gender: e.target.value })}>
-                                            <option>Male</option>
-                                            <option>Female</option>
-                                            <option>Other</option>
+                                        <label className="form-label fw-bold">Gender <span className="text-danger">*</span></label>
+                                        <select className="form-select" required value={form.gender} onChange={e => setForm({ ...form, gender: e.target.value })}>
+                                            <option value="">-- Select Gender --</option>
+                                            <option value="Male">Male</option>
+                                            <option value="Female">Female</option>
+                                            <option value="Other">Other</option>
                                         </select>
                                     </div>
                                     <div className="col-md-4">
@@ -703,6 +746,34 @@ export default function NewAdmission() {
                                                                 <div className="col-md-6">
                                                                     <small className="text-muted d-block">Father Name:</small>
                                                                     <strong>{sibling.father_name || 'N/A'}</strong>
+                                                                </div>
+                                                                <div className="col-md-6">
+                                                                    <small className="text-muted d-block">Mother Name:</small>
+                                                                    <strong>{sibling.mother_name || 'N/A'}</strong>
+                                                                </div>
+                                                                <div className="col-md-6">
+                                                                    <small className="text-muted d-block">Father Phone:</small>
+                                                                    <strong>{sibling.father_phone || 'N/A'}</strong>
+                                                                </div>
+                                                                <div className="col-md-6">
+                                                                    <small className="text-muted d-block">Mother Phone:</small>
+                                                                    <strong>{sibling.mother_phone || 'N/A'}</strong>
+                                                                </div>
+                                                                <div className="col-md-6">
+                                                                    <small className="text-muted d-block">Father CNIC:</small>
+                                                                    <strong>{sibling.father_cnic || 'N/A'}</strong>
+                                                                </div>
+                                                                <div className="col-md-6">
+                                                                    <small className="text-muted d-block">Mother CNIC:</small>
+                                                                    <strong>{sibling.mother_cnic || 'N/A'}</strong>
+                                                                </div>
+                                                                <div className="col-12">
+                                                                    <small className="text-muted d-block">Current Address:</small>
+                                                                    <strong>{sibling.current_address || 'N/A'}</strong>
+                                                                </div>
+                                                                <div className="col-md-6">
+                                                                    <small className="text-muted d-block">City:</small>
+                                                                    <strong>{sibling.city || 'N/A'}</strong>
                                                                 </div>
                                                                 <div className="col-md-6">
                                                                     <small className="text-muted d-block">Class & Section:</small>
