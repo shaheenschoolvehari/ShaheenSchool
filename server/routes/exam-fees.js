@@ -71,6 +71,17 @@ router.get('/classes', async (req, res) => {
                 return res.json([]); // No assignment found if logic reached here without employeeId
             }
              // Fallback for Accountant/Admin/Supervisor -> Show All
+        }
+
+        const result = await pool.query(query, params);
+        res.json(result.rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send("Server Error");
+    }
+});
+
+// GET /sections
 router.get('/sections', async (req, res) => {
     try {
         const { class_id, user_id } = req.query;
