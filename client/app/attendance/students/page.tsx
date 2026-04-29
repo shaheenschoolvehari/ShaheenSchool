@@ -46,9 +46,10 @@ export default function StudentAttendancePage() {
   useEffect(() => {
     const loadMeta = async () => {
       const API = process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com";
+      const roleLevel = user?.role_level || 0;
 
       try {
-        if (isAdmin) {
+        if (isAdmin || roleLevel >= 65) {
           const [classesRes, sectionsRes] = await Promise.all([
             fetch(`${API}/academic`),
             fetch(`${API}/academic/sections`)
@@ -85,7 +86,7 @@ export default function StudentAttendancePage() {
     };
 
     loadMeta();
-  }, [isAdmin, user?.id]);
+  }, [isAdmin, user?.id, user?.role_level]);
 
   const loadAttendance = useCallback(async () => {
     if (!classId || !sectionId || !date) return;
