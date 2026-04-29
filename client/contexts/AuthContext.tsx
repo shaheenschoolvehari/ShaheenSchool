@@ -96,7 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (roleLevel >= 90) return true;
 
         // 2. Supervisor (role_level >= 65): Access to academic & operational modules
-        const supervisorModules = ['attendance', 'exams', 'marks', 'result', 'exam_fees', 'academics', 'classes', 'sections', 'dashboard'];
+        const supervisorModules = ['attendance', 'academic', 'exams', 'marks', 'result', 'exam_fees', 'fees', 'classes', 'sections', 'dashboard'];
         const isModuleAllowed = supervisorModules.some(m => 
             moduleLower === m || moduleLower.startsWith(m + '.')
         );
