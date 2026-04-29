@@ -115,17 +115,12 @@ async function canTeacherAccessSheet(client, employeeId, classId, sectionId, sub
     const accessRes = await client.query(
         `SELECT 1
          FROM teacher_class_assignment tca
-         JOIN teacher_subject_assignment tsa
-           ON tsa.employee_id = tca.employee_id
-          AND tsa.subject_id = $4
-         JOIN subjects s
-           ON s.subject_id = tsa.subject_id
-          AND s.section_id = tca.section_id
          WHERE tca.employee_id = $1
            AND tca.class_id = $2
            AND tca.section_id = $3
+                     AND tca.is_class_teacher = TRUE
          LIMIT 1`,
-        [employeeId, classId, sectionId, subjectId]
+                [employeeId, classId, sectionId]
     );
 
     return accessRes.rows.length > 0;
@@ -140,6 +135,7 @@ async function canTeacherAccessClassSection(client, employeeId, classId, section
          WHERE employee_id = $1
            AND class_id = $2
            AND section_id = $3
+                     AND is_class_teacher = TRUE
          LIMIT 1`,
         [employeeId, classId, sectionId]
     );
@@ -275,12 +271,10 @@ router.get('/context', async (req, res) => {
                  FROM teacher_class_assignment tca
                  JOIN classes c ON c.class_id = tca.class_id
                  JOIN sections sec ON sec.section_id = tca.section_id
-                 JOIN teacher_subject_assignment tsa
-                   ON tsa.employee_id = tca.employee_id
-                 JOIN subjects s
-                   ON s.subject_id = tsa.subject_id
-                  AND s.section_id = sec.section_id
+                                 LEFT JOIN subjects s
+                                     ON s.section_id = sec.section_id
                  WHERE tca.employee_id = $1
+                                     AND tca.is_class_teacher = TRUE
                  ORDER BY c.class_name, sec.section_name, s.subject_name`,
                 [ctx.employeeId]
             );
@@ -299,15 +293,17 @@ router.get('/context', async (req, res) => {
 
             classes = Array.from(classMap.values());
             sections = Array.from(sectionMap.values());
-            subjects = scopeRes.rows.map(r => ({
-                subject_id: r.subject_id,
-                subject_name: r.subject_name,
-                subject_code: r.subject_code,
-                section_id: r.section_id,
-                section_name: r.section_name,
-                class_id: r.class_id,
-                class_name: r.class_name
-            }));
+            subjects = scopeRes.rows
+                .filter(r => r.subject_id !== null && r.subject_id !== undefined)
+                .map(r => ({
+                    subject_id: r.subject_id,
+                    subject_name: r.subject_name,
+                    subject_code: r.subject_code,
+                    section_id: r.section_id,
+                    section_name: r.section_name,
+                    class_id: r.class_id,
+                    class_name: r.class_name
+                }));
         }
 
         res.json({

@@ -44,16 +44,54 @@ export default function StudentAttendancePage() {
   const canMarkAdvance = isAdmin || hasPermission('attendance.mark_advance', 'write');
 
   useEffect(() => {
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/academic`).then(r => r.json()).then(d => Array.isArray(d) ? setClasses(d) : null).catch(() => { });
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/academic/sections`).then(r => r.json()).then(d => Array.isArray(d) ? setSections(d) : null).catch(() => { });
-  }, []);
+    const loadMeta = async () => {
+      const API = process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com";
+
+      try {
+        if (isAdmin) {
+          const [classesRes, sectionsRes] = await Promise.all([
+            fetch(`${API}/academic`),
+            fetch(`${API}/academic/sections`)
+          ]);
+
+          const classesData = await classesRes.json();
+          const sectionsData = await sectionsRes.json();
+          if (Array.isArray(classesData)) setClasses(classesData);
+          if (Array.isArray(sectionsData)) setSections(sectionsData);
+          return;
+        }
+
+        if (!user?.id) return;
+
+        const [teacherRes, sectionsRes] = await Promise.all([
+          fetch(`${API}/dashboard/teacher?user_id=${user.id}`),
+          fetch(`${API}/academic/sections`)
+        ]);
+
+        const teacherData = await teacherRes.json();
+        const sectionsData = await sectionsRes.json();
+
+        const teacherClasses = Array.isArray(teacherData?.classes)
+          ? teacherData.classes
+              .filter((c: any) => c.is_class_teacher)
+              .map((c: any) => ({ class_id: c.id ?? c.class_id, class_name: c.class_name }))
+          : [];
+
+        if (Array.isArray(teacherClasses)) setClasses(teacherClasses);
+        if (Array.isArray(sectionsData)) setSections(sectionsData);
+      } catch {
+        // keep existing empty state if loading fails
+      }
+    };
+
+    loadMeta();
+  }, [isAdmin, user?.id]);
 
   const loadAttendance = useCallback(async () => {
-    if (!classId || !date) return;
+    if (!classId || !sectionId || !date) return;
     setLoading(true);
     try {
-      const secParam = sectionId ? `&section_id=${sectionId}` : '';
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/attendance/students/daily?class_id=${classId}&date=${date}${secParam}`);
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/attendance/students/daily?class_id=${classId}&section_id=${sectionId}&date=${date}&user_id=${user?.id}`);
       const data = await res.json();
       if (!Array.isArray(data)) { notify.error('Failed to load students'); setLoading(false); return; }
       setStudents(data);
@@ -80,7 +118,7 @@ export default function StudentAttendancePage() {
   };
 
   const saveAttendance = async () => {
-    if (isLocked || !classId || !date || !students.length) return;
+    if (isLocked || !classId || !sectionId || !date || !students.length) return;
     setSaving(true);
     try {
       const records = students.map(s => ({
@@ -90,7 +128,7 @@ export default function StudentAttendancePage() {
       }));
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/attendance/students/daily`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ class_id: classId, date, records })
+        body: JSON.stringify({ class_id: classId, section_id: sectionId, date, records, user_id: user?.id })
       });
       const d = await res.json();
       if (res.ok) notify.success(`Attendance saved for ${students.length} students!`);
@@ -111,6 +149,12 @@ export default function StudentAttendancePage() {
   const fmtDate = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-PK', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
   const classSections = sections.filter(s => String(s.class_id) === String(classId));
+
+  useEffect(() => {
+    if (classSections.length === 1 && !sectionId) {
+      setSectionId(String(classSections[0].section_id));
+    }
+  }, [classSections, sectionId]);
 
   return (
     <div className="container-fluid px-3 px-md-4 py-3 animate__animated animate__fadeIn">
@@ -171,7 +215,7 @@ export default function StudentAttendancePage() {
               </div>
               <div className="col-md-3">
                 <button className="btn btn-primary-custom w-100 fw-bold rounded-3" style={{ height: 42 }}
-                  onClick={loadAttendance} disabled={!classId || loading}>
+                  onClick={loadAttendance} disabled={!classId || !sectionId || loading}>
                   {loading
                     ? <><span className="spinner-border spinner-border-sm me-2" />Loading...</>
                     : <><i className="bi bi-arrow-repeat me-2" />Load Attendance</>}

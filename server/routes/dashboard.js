@@ -116,6 +116,7 @@ router.get('/teacher', async (req, res) => {
                 class_name:     c.class_name,
                 section_name:   c.section_name  || '',
                 total_students: parseInt(c.student_count || 0),
+                is_class_teacher: !!c.is_class_teacher,
                 subject_name:   '',
             })),
 
