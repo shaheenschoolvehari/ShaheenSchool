@@ -300,9 +300,16 @@ export default function NewAdmission() {
         try {
             const formData = new FormData();
 
-            // Append Text Fields
+            // Append Text Fields - Handle optional date fields properly
             Object.keys(form).forEach(key => {
-                const value = (form as any)[key];
+                let value = (form as any)[key];
+                
+                // For date fields (dob), only append if not empty
+                // This prevents "invalid input syntax for type date" error
+                if (key === 'dob' && (!value || value.trim() === '')) {
+                    return; // Skip empty date fields
+                }
+                
                 formData.append(key, value);
             });
 
