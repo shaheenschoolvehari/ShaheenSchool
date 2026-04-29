@@ -14,9 +14,25 @@ type Role = {
     id: number;
     role_name: string;
     description: string;
+    role_level?: number;
     is_system_default: boolean;
+    is_custom?: boolean;
     permissions: Permission[];
+    assigned_count?: number;
 };
+
+/* Role Level Hierarchy */
+const ROLE_LEVELS = [
+    { value: 100, label: '100 - Administrator', desc: 'Full system access' },
+    { value: 95, label: '95 - Principal', desc: 'All features (except system settings)' },
+    { value: 90, label: '90 - Vice Principal', desc: 'Teaching + basic admin features' },
+    { value: 75, label: '75 - Coordinator', desc: 'Teaching + limited admin features' },
+    { value: 65, label: '65 - Head Teacher', desc: 'Teaching features only' },
+    { value: 50, label: '50 - Teacher', desc: 'Own classes only' },
+    { value: 30, label: '30 - Accountant', desc: 'Finance features only' },
+    { value: 20, label: '20 - Assistant', desc: 'Support staff (limited)' },
+    { value: 10, label: '10 - Student', desc: 'Own data only' },
+];
 
 /* ─────────────────────────────────────────────────────────────────────────────
    PAGE TREE  —  every module maps to its sub-pages with page-level keys
@@ -139,8 +155,9 @@ export default function RolesPage() {
         Object.fromEntries(Object.keys(PAGE_TREE).map(k => [k, true]))
     );
     const [formData, setFormData] = useState<Role>({
-        id: 0, role_name: '', description: '', is_system_default: false, permissions: [],
+        id: 0, role_name: '', description: '', role_level: 50, is_system_default: false, is_custom: true, permissions: [],
     });
+    const [confirmModal, setConfirmModal] = useState<{ show: boolean; assignedCount: number; roleId: number; originalLevel?: number } | null>(null);
     const { hasPermission } = useAuth();
 
     // Replaced local showToast with global one.
@@ -183,14 +200,30 @@ export default function RolesPage() {
     };
 
     const handleEdit = (role: Role) => {
-        setFormData({ ...role, permissions: buildFormPerms(role.permissions || []) });
+        setFormData({ 
+            ...role, 
+            role_level: role.role_level || 50,
+            permissions: buildFormPerms(role.permissions || []) 
+        });
         setExpanded(Object.fromEntries(Object.keys(PAGE_TREE).map(k => [k, true])));
         setView('form');
     };
 
+    const handleClone = async (roleId: number) => {
+        try {
+            setSaving(true);
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/roles/${roleId}/clone`, { method: 'POST' });
+            if (res.ok) {
+                fetchRoles();
+                showToastMsg('success', 'Role cloned successfully! Edit the new role to customize it.');
+            } else showToastMsg('danger', 'Failed to clone role');
+        } catch { showToastMsg('danger', 'Server error'); }
+        finally { setSaving(false); }
+    };
+
     const handleCreate = () => {
         setFormData({
-            id: 0, role_name: '', description: '', is_system_default: false,
+            id: 0, role_name: '', description: '', role_level: 50, is_system_default: false, is_custom: true,
             permissions: ALL_PAGES.map(p => ({ module_name: p.key, can_read: false, can_write: false, can_delete: false })),
         });
         setExpanded(Object.fromEntries(Object.keys(PAGE_TREE).map(k => [k, true])));
@@ -208,21 +241,36 @@ export default function RolesPage() {
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
+        
+        // If editing existing role with assigned users, show confirmation modal
+        if (formData.id !== 0 && (formData.assigned_count ?? 0) > 0) {
+            setConfirmModal({ show: true, assignedCount: formData.assigned_count ?? 0, roleId: formData.id, originalLevel: formData.role_level });
+            return;
+        }
+        
+        await performSave();
+    };
+
+    const performSave = async (applyToAssigned: boolean = false) => {
         setSaving(true);
-        const url = formData.id === 0 ? `${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/roles` : `${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/roles/${formData.id}`;
+        const url = formData.id === 0 ? `${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/roles` : `${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/roles/${formData.id}${formData.id !== 0 && applyToAssigned ? '?apply_to_assigned=true' : ''}`;
         const method = formData.id === 0 ? 'POST' : 'PUT';
         try {
             const res = await fetch(url, {
                 method,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(formData),
+                body: JSON.stringify({ ...formData, role_level: formData.role_level || 50 }),
             });
             if (res.ok) {
                 setView('list');
                 fetchRoles();
+                setConfirmModal(null);
                 showToastMsg('success', formData.id === 0 ? 'Role created successfully' : 'Role updated successfully');
-            } else showToastMsg('danger', 'Failed to save role');
-        } catch { showToastMsg('danger', 'Server error'); }
+            } else {
+                const error = await res.json();
+                showToastMsg('danger', error.message || 'Failed to save role');
+            }
+        } catch (err) { showToastMsg('danger', 'Server error'); }
         finally { setSaving(false); }
     };
 
@@ -357,12 +405,19 @@ export default function RolesPage() {
                                                     <h5 className="fw-bold mb-1" style={{ color: 'var(--primary-dark)' }}>{role.role_name}</h5>
                                                     <p className="text-muted small mb-0" style={{ minHeight: 36 }}>{role.description || 'No description'}</p>
                                                 </div>
-                                                {role.is_system_default && (
-                                                    <span className="badge rounded-pill px-2 py-1 ms-2 flex-shrink-0"
-                                                        style={{ background: 'linear-gradient(90deg,#6366f1,#8b5cf6)', color: '#fff', fontSize: '0.7rem' }}>
-                                                        <i className="bi bi-lock-fill me-1" />System
-                                                    </span>
-                                                )}
+                                                <div className="d-flex flex-column gap-1 ms-2 flex-shrink-0">
+                                                    {role.is_system_default && (
+                                                        <span className="badge rounded-pill px-2 py-1"
+                                                            style={{ background: 'linear-gradient(90deg,#6366f1,#8b5cf6)', color: '#fff', fontSize: '0.7rem' }}>
+                                                            <i className="bi bi-lock-fill me-1" />System
+                                                        </span>
+                                                    )}
+                                                    {(role.assigned_count ?? 0) > 0 && (
+                                                        <span className="badge rounded-pill px-2 py-1" style={{ background: '#e0f2fe', color: '#0369a1', fontSize: '0.7rem' }}>
+                                                            <i className="bi bi-people-fill me-1" />{role.assigned_count} user{role.assigned_count !== 1 ? 's' : ''}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </div>
 
                                             {/* Pages counter */}
@@ -421,6 +476,11 @@ export default function RolesPage() {
                                                         onClick={() => handleEdit(role)}
                                                         style={{ background: 'var(--primary-dark)', color: '#fff', border: 'none' }}>
                                                         <i className="bi bi-sliders me-2" />Configure Permissions
+                                                    </button>
+                                                )}
+                                                {hasPermission('settings', 'write') && (
+                                                    <button className="btn btn-sm btn-outline-primary rounded-3" onClick={() => handleClone(role.id)} title="Clone Role">
+                                                        <i className="bi bi-files me-1" />Clone
                                                     </button>
                                                 )}
                                                 {!['Administrator', 'Teacher', 'Accountant', 'Student'].includes(role.role_name) && !role.is_system_default && hasPermission('settings', 'delete') && (
@@ -494,6 +554,33 @@ export default function RolesPage() {
                                             placeholder="Short description of this role's responsibilities"
                                             style={{ border: '1.5px solid #dee2e6', height: 42 }} />
                                     </div>
+                                    <div className="col-12 col-md-6">
+                                        <label className="form-label fw-semibold small text-uppercase" style={{ letterSpacing: '0.05em', color: 'var(--primary-dark)' }}>
+                                            Role Level
+                                        </label>
+                                        <select className="form-control rounded-3"
+                                            value={formData.role_level || 50}
+                                            onChange={e => setFormData({ ...formData, role_level: parseInt(e.target.value) })}
+                                            style={{ border: '1.5px solid #dee2e6', height: 42 }}>
+                                            {ROLE_LEVELS.map(level => (
+                                                <option key={level.value} value={level.value}>
+                                                    {level.label} - {level.desc}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    {formData.id !== 0 && (formData.assigned_count ?? 0) > 0 && (
+                                        <div className="col-12 col-md-6">
+                                            <div className="p-3 rounded-3" style={{ background: '#e0f2fe', border: '1px solid #0ea5e9' }}>
+                                                <p className="fw-semibold small mb-1" style={{ color: '#0369a1' }}>
+                                                    <i className="bi bi-people-fill me-2" />Assigned Users
+                                                </p>
+                                                <p className="mb-0 text-muted small">
+                                                    This role is assigned to <strong>{formData.assigned_count}</strong> user{formData.assigned_count !== 1 ? 's' : ''}. Changes will affect all of them.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -705,6 +792,62 @@ export default function RolesPage() {
                             </div>
                         </div>
                     </form>
+                </div>
+            )}
+
+            {/* Confirmation Modal */}
+            {confirmModal?.show && (
+                <div className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center" 
+                    style={{ background: 'rgba(0,0,0,0.5)', zIndex: 9999 }}>
+                    <div className="card border-0 rounded-4 shadow-lg" style={{ maxWidth: 450, width: '90%' }}>
+                        <div className="card-body p-4">
+                            <div className="mb-3 p-3 rounded-3" style={{ background: '#fef3c7', border: '1px solid #fcd34d' }}>
+                                <h5 className="fw-bold mb-1 d-flex align-items-center gap-2" style={{ color: '#b45309' }}>
+                                    <i className="bi bi-exclamation-triangle-fill" /> Updating Shared Role
+                                </h5>
+                                <p className="mb-0 small" style={{ color: '#92400e' }}>
+                                    This role is assigned to <strong>{confirmModal.assignedCount}</strong> user{confirmModal.assignedCount !== 1 ? 's' : ''}. Your changes will affect all of them.
+                                </p>
+                            </div>
+
+                            <p className="text-muted mb-3">
+                                <i className="bi bi-info-circle me-2" />Choose one of the following options:
+                            </p>
+
+                            <div className="d-flex flex-column gap-2 mb-4">
+                                <button type="button" className="btn btn-sm p-2 text-start rounded-3"
+                                    onClick={() => performSave(true)}
+                                    disabled={saving}
+                                    style={{ background: '#d1fae5', color: '#047857', border: '1.5px solid #10b981', fontWeight: 600 }}>
+                                    <i className="bi bi-check-circle-fill me-2" />
+                                    <div>
+                                        <div style={{ fontSize: '0.9rem' }}>Apply to all {confirmModal.assignedCount} user{confirmModal.assignedCount !== 1 ? 's' : ''}</div>
+                                        <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>Update the shared role for everyone</div>
+                                    </div>
+                                </button>
+
+                                <button type="button" className="btn btn-sm p-2 text-start rounded-3"
+                                    onClick={async () => {
+                                        setConfirmModal(null);
+                                        await handleClone(confirmModal.roleId);
+                                    }}
+                                    disabled={saving}
+                                    style={{ background: '#e0f2fe', color: '#0369a1', border: '1.5px solid #0ea5e9', fontWeight: 600 }}>
+                                    <i className="bi bi-files me-2" />
+                                    <div>
+                                        <div style={{ fontSize: '0.9rem' }}>Clone & edit</div>
+                                        <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>Create a copy for different permissions</div>
+                                    </div>
+                                </button>
+                            </div>
+
+                            <button type="button" className="btn btn-light w-100 rounded-3 fw-semibold"
+                                onClick={() => setConfirmModal(null)}
+                                disabled={saving}>
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

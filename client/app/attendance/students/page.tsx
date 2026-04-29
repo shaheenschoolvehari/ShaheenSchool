@@ -150,11 +150,19 @@ export default function StudentAttendancePage() {
 
   const classSections = sections.filter(s => String(s.class_id) === String(classId));
 
+  // Auto-select section if only one exists for the class; reset when class changes
   useEffect(() => {
+    if (!classId) {
+      setSectionId('');
+      return;
+    }
+    
     if (classSections.length === 1 && !sectionId) {
       setSectionId(String(classSections[0].section_id));
+    } else if (classSections.length > 1) {
+      setSectionId('');
     }
-  }, [classSections, sectionId]);
+  }, [classId, classSections.length]);
 
   return (
     <div className="container-fluid px-3 px-md-4 py-3 animate__animated animate__fadeIn">
@@ -202,8 +210,8 @@ export default function StudentAttendancePage() {
                 </label>
                 <select className="form-select rounded-3" value={sectionId} onChange={e => setSectionId(e.target.value)} disabled={!classId}
                   style={{ border: '1.5px solid #dee2e6', height: 42 }}>
-                  <option value="">— All Sections —</option>
-                  {classSections.map(s => <option key={s.section_id} value={s.section_id}>{s.section_name}</option>)}
+                  <option value="">— Select Section —</option>
+                  {classSections.map(s => <option key={s.section_id} value={String(s.section_id)}>{s.section_name}</option>)}
                 </select>
               </div>
               <div className="col-md-3">
