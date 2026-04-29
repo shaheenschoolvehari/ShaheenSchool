@@ -125,6 +125,48 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+const NAV_PERMISSION_MAP: Record<string, string> = {
+  '/students/admission': 'students.admission',
+  '/students/import': 'students.import',
+  '/students/details': 'students.details',
+  '/academic/classes': 'academic.classes',
+  '/academic/sections': 'academic.sections',
+  '/academic/subjects': 'academic.subjects',
+  '/academic/teachers': 'academic.teachers',
+  '/academic/promotion': 'academic.promotion',
+  '/academic/examination/marks': 'academic.examination',
+  '/academic/examination/result-card': 'academic.result-card',
+  '/academic/examination/marks-sheet': 'academic.marks-sheet',
+  '/academic/examination/test-marking': 'academic.examination',
+  '/hrm/departments': 'hrm.departments',
+  '/hrm/employees': 'hrm.employees',
+  '/expenses/add': 'expenses.add',
+  '/expenses/list': 'expenses.list',
+  '/expenses/categories': 'expenses.categories',
+  '/fees/generate': 'fees.generate',
+  '/fees/print': 'fees.generate',
+  '/fees/collect': 'fees.collect',
+  '/fees/admission': 'fees.admission',
+  '/fees/exam-collection': 'fees.collect',
+  '/fees/plans': 'fees.plans',
+  '/fees/heads': 'fees.heads',
+  '/fees/opening-balance': 'fees.opening-balance',
+  '/attendance/students': 'attendance.students',
+  '/attendance/students/history': 'attendance.students.history',
+  '/attendance/staff': 'attendance.staff',
+  '/attendance/staff/history': 'attendance.staff.history',
+  '/reports/students': 'reports.students',
+  '/reports/results': 'reports.results',
+  '/reports/expenses': 'reports.expenses',
+  '/reports/family-fee': 'reports.family-fee',
+  '/reports/admission': 'reports.admission',
+  '/settings/general': 'settings.general',
+  '/settings/academic': 'settings.academic',
+  '/settings/roles': 'settings.roles',
+  '/settings/users': 'settings.users',
+  '/settings/system': 'settings.system',
+};
+
 function getInitials(name: string) {
   return name.split(' ').filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
 }
@@ -205,15 +247,26 @@ const SidebarInner = memo(function SidebarInner({ user, isLoggedIn, logout, hasP
   const logoutRef = useRef(logout); logoutRef.current = logout;
   const permRef = useRef(hasPermission); permRef.current = hasPermission;
 
-  // Pre-compute which groups to show — only re-runs when login state changes
+  const canSeeRoute = useCallback((href: string) => {
+    const permissionKey = NAV_PERMISSION_MAP[href];
+    if (!permissionKey) return false;
+    return permRef.current(permissionKey);
+  }, []);
+
+  // Pre-compute which groups to show — only re-runs when permissions change
   const visibleGroups = useMemo(
-    () => NAV_GROUPS.filter(g => {
-      if (!g.permission) return true;
-      if (g.permission === '__exam__') return isLoggedIn;
-      return permRef.current(g.permission);
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isLoggedIn]
+    () => NAV_GROUPS.map(g => {
+      if (g.key === 'dashboard') return g;
+
+      const visibleSubs = g.subs?.filter(sub => canSeeRoute(sub.href)) ?? [];
+
+      if (visibleSubs.length === 0) {
+        return null;
+      }
+
+      return { ...g, subs: visibleSubs };
+    }).filter(Boolean) as NavGroup[],
+    [canSeeRoute]
   );
 
   const toggleSidebar = useCallback(() => setOpen(p => !p), []);
