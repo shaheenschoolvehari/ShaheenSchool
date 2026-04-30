@@ -250,12 +250,12 @@ export default function RolesPage() {
             return;
         }
         
-        await performSave();
+        await performSave(true);
     };
 
-    const performSave = async (applyToAssigned: boolean = false) => {
+    const performSave = async (applyToAssigned: boolean = true) => {
         setSaving(true);
-        const url = formData.id === 0 ? `${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/roles` : `${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/roles/${formData.id}${formData.id !== 0 && applyToAssigned ? '?apply_to_assigned=true' : ''}`;
+        const url = formData.id === 0 ? `${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/roles` : `${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/roles/${formData.id}?apply_to_assigned=${applyToAssigned}`;
         const method = formData.id === 0 ? 'POST' : 'PUT';
         try {
             const res = await fetch(url, {
