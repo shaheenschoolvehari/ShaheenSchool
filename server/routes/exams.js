@@ -312,11 +312,10 @@ router.get('/context', async (req, res) => {
                  SELECT DISTINCT
                     c.class_id, c.class_name,
                     sec.section_id, sec.section_name,
-                    s.subject_id, s.subject_name, s.subject_code
+                    NULL::int as subject_id, NULL::varchar as subject_name, NULL::varchar as subject_code
                  FROM teacher_class_assignment tca
                  JOIN classes c ON c.class_id = tca.class_id
                  JOIN sections sec ON sec.section_id = tca.section_id
-                 LEFT JOIN subjects s ON s.section_id = sec.section_id
                  WHERE tca.employee_id = $1
 
                  ORDER BY class_name, section_name, subject_name`,
@@ -1410,11 +1409,10 @@ router.get('/tests/context', async (req, res) => {
                  SELECT DISTINCT
                     c.class_id, c.class_name,
                     sec.section_id, sec.section_name,
-                    s.subject_id, s.subject_name, s.subject_code
+                    NULL::int as subject_id, NULL::varchar as subject_name, NULL::varchar as subject_code
                  FROM teacher_class_assignment tca
                  JOIN classes c ON c.class_id = tca.class_id
                  JOIN sections sec ON sec.section_id = tca.section_id
-                 LEFT JOIN subjects s ON s.section_id = sec.section_id
                  WHERE tca.employee_id = $1
 
                  ORDER BY class_name, section_name, subject_name`,
