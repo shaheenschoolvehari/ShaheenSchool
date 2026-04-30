@@ -1729,6 +1729,23 @@ await seed();
       console.error('[Error Details in seed-backup-settings.js]:', err.message);
     }
   })();
+  // ====== FEE PLAN CLASSES FIX ======
+  await (async () => {
+    try {
+        console.log("Setting up fee_plan_classes table...");
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS fee_plan_classes (
+                plan_id INT REFERENCES fee_plans(plan_id) ON DELETE CASCADE,
+                class_id INT REFERENCES classes(class_id) ON DELETE CASCADE,
+                PRIMARY KEY (plan_id, class_id)
+            );
+        `);
+        console.log("fee_plan_classes table created successfully.");
+    } catch(err) {
+      console.error('[Error Details in fee_plan_classes table setup]:', err.message);
+    }
+  })();
+
   console.log('======================================================');
   console.log('   MASTER SEEDER COMPLETED SUCCESSFULLY               ');
   console.log('======================================================');
