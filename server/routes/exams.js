@@ -115,30 +115,58 @@ async function getActiveAcademicYear(client) {
 async function canTeacherAccessSheet(client, employeeId, classId, sectionId, subjectId) {
     if (!employeeId) return false;
 
-    const accessRes = await client.query(
+    // Check class assignment
+    let accessRes = await client.query(
         `SELECT 1
          FROM teacher_class_assignment tca
          WHERE tca.employee_id = $1
            AND tca.class_id = $2
            AND tca.section_id = $3
-                     AND tca.is_class_teacher = TRUE
          LIMIT 1`,
-                [employeeId, classId, sectionId]
+        [employeeId, classId, sectionId]
     );
 
-    return accessRes.rows.length > 0;
+    if (accessRes.rows.length > 0) return true;
+
+    // Check optional subject assignment
+    if (subjectId) {
+        accessRes = await client.query(
+            `SELECT 1
+             FROM teacher_subject_assignment tsa
+             WHERE tsa.employee_id = $1
+               AND tsa.subject_id = $2
+             LIMIT 1`,
+            [employeeId, subjectId]
+        );
+        if (accessRes.rows.length > 0) return true;
+    }
+
+    return false;
 }
 
 async function canTeacherAccessClassSection(client, employeeId, classId, sectionId) {
     if (!employeeId) return false;
 
-    const accessRes = await client.query(
+    // Check class assignment
+    let accessRes = await client.query(
         `SELECT 1
          FROM teacher_class_assignment
          WHERE employee_id = $1
            AND class_id = $2
            AND section_id = $3
-                     AND is_class_teacher = TRUE
+         LIMIT 1`,
+        [employeeId, classId, sectionId]
+    );
+
+    if (accessRes.rows.length > 0) return true;
+
+    // Check optional subject assignment
+    accessRes = await client.query(
+        `SELECT 1
+         FROM teacher_subject_assignment tsa
+         JOIN subjects s ON s.subject_id = tsa.subject_id
+         WHERE tsa.employee_id = $1
+           AND s.section_id = $3
          LIMIT 1`,
         [employeeId, classId, sectionId]
     );
@@ -273,14 +301,25 @@ router.get('/context', async (req, res) => {
                     c.class_id, c.class_name,
                     sec.section_id, sec.section_name,
                     s.subject_id, s.subject_name, s.subject_code
+                 FROM teacher_subject_assignment tsa
+                 JOIN subjects s ON s.subject_id = tsa.subject_id
+                 JOIN sections sec ON sec.section_id = s.section_id
+                 JOIN classes c ON c.class_id = sec.class_id
+                 WHERE tsa.employee_id = $1
+
+                 UNION
+
+                 SELECT DISTINCT
+                    c.class_id, c.class_name,
+                    sec.section_id, sec.section_name,
+                    s.subject_id, s.subject_name, s.subject_code
                  FROM teacher_class_assignment tca
                  JOIN classes c ON c.class_id = tca.class_id
                  JOIN sections sec ON sec.section_id = tca.section_id
-                                 LEFT JOIN subjects s
-                                     ON s.section_id = sec.section_id
+                 LEFT JOIN subjects s ON s.section_id = sec.section_id
                  WHERE tca.employee_id = $1
-                                     AND tca.is_class_teacher = TRUE
-                 ORDER BY c.class_name, sec.section_name, s.subject_name`,
+
+                 ORDER BY class_name, section_name, subject_name`,
                 [ctx.employeeId]
             );
 
@@ -1360,13 +1399,25 @@ router.get('/tests/context', async (req, res) => {
                     c.class_id, c.class_name,
                     sec.section_id, sec.section_name,
                     s.subject_id, s.subject_name, s.subject_code
+                 FROM teacher_subject_assignment tsa
+                 JOIN subjects s ON s.subject_id = tsa.subject_id
+                 JOIN sections sec ON sec.section_id = s.section_id
+                 JOIN classes c ON c.class_id = sec.class_id
+                 WHERE tsa.employee_id = $1
+
+                 UNION
+
+                 SELECT DISTINCT
+                    c.class_id, c.class_name,
+                    sec.section_id, sec.section_name,
+                    s.subject_id, s.subject_name, s.subject_code
                  FROM teacher_class_assignment tca
                  JOIN classes c ON c.class_id = tca.class_id
                  JOIN sections sec ON sec.section_id = tca.section_id
-                 JOIN teacher_subject_assignment tsa ON tsa.employee_id = tca.employee_id
-                 JOIN subjects s ON s.subject_id = tsa.subject_id AND s.section_id = sec.section_id
+                 LEFT JOIN subjects s ON s.section_id = sec.section_id
                  WHERE tca.employee_id = $1
-                 ORDER BY c.class_name, sec.section_name, s.subject_name`,
+
+                 ORDER BY class_name, section_name, subject_name`,
                 [ctx.employeeId]
             );
             const classMap = new Map(), sectionMap = new Map();
