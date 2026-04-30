@@ -83,6 +83,7 @@ const PAGE_TREE: Record<string, ModuleDef> = {
             { key: 'academic.teachers', label: 'Teacher Assignments', icon: 'bi-person-workspace', desc: 'Assign teachers to classes/subjects' },
             { key: 'academic.promotion', label: 'Promotion', icon: 'bi-arrow-up-circle', desc: 'Promote students to next class' },
             { key: 'academic.examination', label: 'Enter Marks', icon: 'bi-pencil-square', desc: 'Enter exam marks per subject' },
+            { key: 'academic.examination.test-marking', label: 'Test Marking', icon: 'bi-journal-check', desc: 'Enter class test marks' },
             { key: 'academic.marks-sheet', label: 'Marks Sheet', icon: 'bi-table', desc: 'View class-wide marks sheet' },
             { key: 'academic.result-card', label: 'Result Cards', icon: 'bi-file-earmark-text', desc: 'Print individual result cards' },
         ],
@@ -103,6 +104,7 @@ const PAGE_TREE: Record<string, ModuleDef> = {
             { key: 'fees.collect', label: 'Collect Fees', icon: 'bi-cash-stack', desc: 'Receive and record fee payments' },
             { key: 'fees.admission', label: 'Admission Fees', icon: 'bi-cash-coin', desc: 'Collect one-time admission fees' },
             { key: 'fees.opening-balance', label: 'Opening Balance', icon: 'bi-clock-history', desc: 'Set prior dues / opening balance' },
+            { key: 'fees.exam-collection', label: 'Exam Fees', icon: 'bi-cash-coin', desc: 'Collect exam fees' },
         ],
     },
     expenses: {
