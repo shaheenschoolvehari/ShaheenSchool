@@ -160,19 +160,6 @@ async function canTeacherAccessClassSection(client, employeeId, classId, section
         [employeeId, classId, sectionId]
     );
 
-    if (accessRes.rows.length > 0) return true;
-
-    // Check optional subject assignment
-    accessRes = await client.query(
-        `SELECT 1
-         FROM teacher_subject_assignment tsa
-         JOIN subjects s ON s.subject_id = tsa.subject_id
-         WHERE tsa.employee_id = $1
-           AND s.section_id = $3
-         LIMIT 1`,
-        [employeeId, classId, sectionId]
-    );
-
     return accessRes.rows.length > 0;
 }
 
