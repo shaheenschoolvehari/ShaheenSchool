@@ -28,6 +28,7 @@ async function createFeeTables() {
                 plan_id SERIAL PRIMARY KEY,
                 plan_name VARCHAR(150) NOT NULL,
                 class_id INTEGER REFERENCES classes(class_id) ON DELETE SET NULL,
+                applies_to_all BOOLEAN DEFAULT FALSE,
                 academic_year VARCHAR(20) NOT NULL DEFAULT '2026',
                 description TEXT,
                 is_active BOOLEAN DEFAULT TRUE,
@@ -35,6 +36,17 @@ async function createFeeTables() {
             );
         `);
         console.log('✅ fee_plans created');
+
+        // 2.5. Fee Plan Classes - Multi-class mapping
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS fee_plan_classes (
+                id SERIAL PRIMARY KEY,
+                plan_id INTEGER NOT NULL REFERENCES fee_plans(plan_id) ON DELETE CASCADE,
+                class_id INTEGER NOT NULL REFERENCES classes(class_id) ON DELETE CASCADE,
+                UNIQUE(plan_id, class_id)
+            );
+        `);
+        console.log('✅ fee_plan_classes created');
 
         // 3. Fee Plan Heads - Which heads belong to a plan and their amounts
         await client.query(`
