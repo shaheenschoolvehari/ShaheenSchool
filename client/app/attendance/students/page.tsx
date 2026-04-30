@@ -49,6 +49,7 @@ export default function StudentAttendancePage() {
       if (!user?.id) return;
 
       try {
+        
         const res = await fetch(`${API}/exams/context/class-teacher?user_id=${user.id}`);
         const data = await res.json();
         
