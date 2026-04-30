@@ -437,7 +437,7 @@ const createStudentsTable = async () => {
     } catch (err) {
         console.error("Error creating students table:", err.message);
     } finally {
-        /* /* pool.end() removed for master seeder; */ removed for master seeder; */
+        /* /* pool.end() removed for master seeder;  removed for master seeder; */
     }
 };
 
@@ -980,6 +980,12 @@ async function createFeeTables() {
                 month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
                 year INTEGER NOT NULL,
                 due_date DATE,
+                issue_date DATE,
+                has_multi_months BOOLEAN DEFAULT FALSE,
+                months_list INTEGER[],
+                is_family_slip BOOLEAN DEFAULT FALSE,
+                is_printed BOOLEAN DEFAULT FALSE,
+                printed_at TIMESTAMP,
                 total_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
                 paid_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
                 status VARCHAR(20) NOT NULL DEFAULT 'unpaid',
