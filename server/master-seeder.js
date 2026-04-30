@@ -173,7 +173,7 @@ async function createAuthTables() {
 await createAuthTables();
 
     } catch(err) {
-      console.error('[Error Details in create-user-roles.js]:', err.message);
+      console.error('[Error in create-user-roles.js]:', err.message);
     }
   })();
   // ====== FROM: create-settings-table.js ======
@@ -221,7 +221,7 @@ async function createSettingsTable() {
 await createSettingsTable();
 
     } catch(err) {
-      console.error('[Error Details in create-settings-table.js]:', err.message);
+      console.error('[Error in create-settings-table.js]:', err.message);
     }
   })();
   // ====== FROM: create-system-settings.js ======
@@ -280,7 +280,87 @@ async function createSystemSettingsTable() {
 await createSystemSettingsTable();
 
     } catch(err) {
-      console.error('[Error Details in create-system-settings.js]:', err.message);
+      console.error('[Error in create-system-settings.js]:', err.message);
+    }
+  })();
+  // ====== FROM: seed-role-levels.js ======
+  await (async () => {
+    try {
+// Seed script to initialize role levels for existing and new roles
+// Run this after migration to ensure all roles have proper levels
+
+
+
+async function seedRoleLevels() {
+    const client = await pool.connect();
+    try {
+        console.log('Seeding role levels...');
+
+        // Define all role levels (system + common custom roles)
+        const roleLevels = {
+            'Administrator': 100,
+            'Principal': 95,
+            'Vice Principal': 90,
+            'Coordinator': 75,
+            'Primary Head': 65,
+            'Middle Head': 65,
+            'Matric Head': 65,
+            'Teacher': 50,
+            'Accountant': 30,
+            'Assistant': 20,
+            'Student': 10
+        };
+
+        // Update existing roles with levels
+        for (const [roleName, level] of Object.entries(roleLevels)) {
+            const res = await client.query(
+                'SELECT id FROM app_roles WHERE role_name = $1',
+                [roleName]
+            );
+
+            if (res.rows.length > 0) {
+                await client.query(
+                    'UPDATE app_roles SET role_level = $1 WHERE role_name = $2',
+                    [level, roleName]
+                );
+                console.log(`✓ Updated role "${roleName}" → level ${level}`);
+            } else {
+                // Create missing common roles (system defaults)
+                if (['Administrator', 'Teacher', 'Accountant', 'Student'].includes(roleName)) {
+                    const isSystem = ['Administrator', 'Teacher', 'Accountant', 'Student'].includes(roleName);
+                    await client.query(
+                        `INSERT INTO app_roles (role_name, description, role_level, is_system_default, is_custom)
+                         VALUES ($1, $2, $3, $4, $5)
+                         ON CONFLICT (role_name) DO UPDATE SET role_level = $3`,
+                        [roleName, `${roleName} role`, level, isSystem, !isSystem]
+                    );
+                    console.log(`✓ Created/updated role "${roleName}" → level ${level}`);
+                }
+            }
+        }
+
+        console.log('Role level seeding completed!');
+        return { success: true };
+    } catch (err) {
+        console.error('Error seeding role levels:', err.message);
+        throw err;
+    } finally {
+        client.release();
+    }
+}
+
+// Run if executed directly
+)
+        .catch(err => {
+            console.error('Seed failed:', err);
+            /* process.exit removed */
+        });
+}
+
+
+
+    } catch(err) {
+      console.error('[Error in seed-role-levels.js]:', err.message);
     }
   })();
   // ====== FROM: create-classes-tables.js ======
@@ -317,14 +397,14 @@ const createClassesTables = async () => {
     } catch (err) {
         console.error("Error creating Classes tables:", err.message);
     } finally {
-        /* pool.end() removed for master seeder; */
+        /* pool.end() removed for master seeder */
     }
 };
 
 await createClassesTables();
 
     } catch(err) {
-      console.error('[Error Details in create-classes-tables.js]:', err.message);
+      console.error('[Error in create-classes-tables.js]:', err.message);
     }
   })();
   // ====== FROM: update-classes-table.js ======
@@ -343,14 +423,14 @@ const updateClassesTable = async () => {
     } catch (err) {
         console.error("Error updating classes table:", err.message);
     } finally {
-        /* pool.end() removed for master seeder; */
+        /* pool.end() removed for master seeder */
     }
 };
 
 await updateClassesTable();
 
     } catch(err) {
-      console.error('[Error Details in update-classes-table.js]:', err.message);
+      console.error('[Error in update-classes-table.js]:', err.message);
     }
   })();
   // ====== FROM: create-subjects-table.js ======
@@ -377,14 +457,14 @@ const createSubjectsTable = async () => {
     } catch (err) {
         console.error("Error creating subjects table:", err.message);
     } finally {
-        /* pool.end() removed for master seeder; */
+        /* pool.end() removed for master seeder */
     }
 };
 
 await createSubjectsTable();
 
     } catch(err) {
-      console.error('[Error Details in create-subjects-table.js]:', err.message);
+      console.error('[Error in create-subjects-table.js]:', err.message);
     }
   })();
   // ====== FROM: create-students-table.js ======
@@ -437,14 +517,14 @@ const createStudentsTable = async () => {
     } catch (err) {
         console.error("Error creating students table:", err.message);
     } finally {
-        /* /* pool.end() removed for master seeder;  removed for master seeder; */
+        /* /* pool.end() removed for master seeder */ removed for master seeder; */
     }
 };
 
 await createStudentsTable();
 
     } catch(err) {
-      console.error('[Error Details in create-students-table.js]:', err.message);
+      console.error('[Error in create-students-table.js]:', err.message);
     }
   })();
   // ====== FROM: update-students-schema.js ======
@@ -524,7 +604,7 @@ const updateStudentsTableComprehensive = async () => {
 
 await updateStudentsTableComprehensive();
     } catch(err) {
-      console.error('[Error Details in update-students-schema.js]:', err.message);
+      console.error('[Error in update-students-schema.js]:', err.message);
     }
   })();
   // ====== FROM: update-students-family-system.js ======
@@ -622,14 +702,37 @@ const updateStudentsForFamilySystem = async () => {
         console.error("❌ Error updating students table:", err.message);
     } finally {
         client.release();
-        /* pool.end() removed for master seeder; */
+        /* pool.end() removed for master seeder */
     }
 };
 
 await updateStudentsForFamilySystem();
 
     } catch(err) {
-      console.error('[Error Details in update-students-family-system.js]:', err.message);
+      console.error('[Error in update-students-family-system.js]:', err.message);
+    }
+  })();
+  // ====== FROM: add-userid-col.js ======
+  await (async () => {
+    try {
+
+
+async function migrate() {
+    try {
+        console.log("Adding user_id to students table...");
+        await pool.query(`
+            ALTER TABLE students 
+            ADD COLUMN IF NOT EXISTS user_id INT REFERENCES app_users(id) ON DELETE SET NULL;
+        `);
+        console.log("Migration complete.");
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+await migrate();
+    } catch(err) {
+      console.error('[Error in add-userid-col.js]:', err.message);
     }
   })();
   // ====== FROM: create-hrm-tables.js ======
@@ -675,14 +778,14 @@ const createHRMTables = async () => {
     } catch (err) {
         console.error("Error creating HRM tables:", err.message);
     } finally {
-        /* pool.end() removed for master seeder; */
+        /* pool.end() removed for master seeder */
     }
 };
 
 await createHRMTables();
 
     } catch(err) {
-      console.error('[Error Details in create-hrm-tables.js]:', err.message);
+      console.error('[Error in create-hrm-tables.js]:', err.message);
     }
   })();
   // ====== FROM: update-employees-table.js ======
@@ -714,14 +817,14 @@ const updateEmployeeSchema = async () => {
     } catch (err) {
         console.error("Error updating schema:", err.message);
     } finally {
-        /* pool.end() removed for master seeder; */
+        /* pool.end() removed for master seeder */
     }
 };
 
 await updateEmployeeSchema();
 
     } catch(err) {
-      console.error('[Error Details in update-employees-table.js]:', err.message);
+      console.error('[Error in update-employees-table.js]:', err.message);
     }
   })();
   // ====== FROM: enhance-employees-for-teachers.js ======
@@ -823,14 +926,273 @@ const enhanceEmployeesForTeachers = async () => {
         console.error("❌ Error:", err.message);
     } finally {
         client.release();
-        /* pool.end() removed for master seeder; */
+        /* pool.end() removed for master seeder */
     }
 };
 
 await enhanceEmployeesForTeachers();
 
     } catch(err) {
-      console.error('[Error Details in enhance-employees-for-teachers.js]:', err.message);
+      console.error('[Error in enhance-employees-for-teachers.js]:', err.message);
+    }
+  })();
+  // ====== FROM: create-academic-table.js ======
+  await (async () => {
+    try {
+
+
+async function createAcademicTables() {
+    try {
+        console.log("Creating Academic Tables...");
+
+        // 1. Create Academic Years Table
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS academic_years (
+                id SERIAL PRIMARY KEY,
+                year_name VARCHAR(20) NOT NULL UNIQUE,
+                start_date DATE,
+                end_date DATE,
+                is_active BOOLEAN DEFAULT FALSE,
+                status VARCHAR(20) DEFAULT 'upcoming' -- upcoming, active, completed
+            );
+        `);
+
+        // 2. Create Academic Terms Table
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS academic_terms (
+                id SERIAL PRIMARY KEY,
+                academic_year_id INT REFERENCES academic_years(id) ON DELETE CASCADE,
+                term_name VARCHAR(100) NOT NULL,
+                has_summer_work BOOLEAN DEFAULT FALSE,
+                has_winter_work BOOLEAN DEFAULT FALSE,
+                start_date DATE,
+                end_date DATE
+            );
+        `);
+
+        // 3. Pre-populate 50 Years (2025 - 2075)
+        const check = await pool.query("SELECT COUNT(*) FROM academic_years");
+        if (parseInt(check.rows[0].count) === 0) {
+            console.log("Populating 50 years of academic cycles...");
+            
+            const startYear = 2025;
+            const endYear = 2075;
+            let values = [];
+            
+            for (let y = startYear; y <= endYear; y++) {
+                // Assuming a typical cycle like "2025-2026"
+                const yearName = `${y}-${y + 1}`;
+                // We'll leave dates null for user to configure later, or set defaults
+                // Let's just insert the names for now
+                await pool.query(
+                    "INSERT INTO academic_years (year_name, status) VALUES ($1, 'upcoming')", 
+                    [yearName]
+                );
+            }
+            console.log("Inserted years from 2025-2026 to 2075-2076.");
+        } else {
+            console.log("Academic years already exist. Skipping population.");
+        }
+
+        console.log("Academic Setup Tables created successfully!");
+        /* process.exit removed */
+    } catch (err) {
+        console.error("Error creating academic tables:", err.message);
+        /* process.exit removed */
+    }
+}
+
+await createAcademicTables();
+
+    } catch(err) {
+      console.error('[Error in create-academic-table.js]:', err.message);
+    }
+  })();
+  // ====== FROM: add-year-configuration.js ======
+  await (async () => {
+    try {
+
+
+async function addYearConfiguration() {
+    try {
+        console.log("Adding is_configured column to academic_years...");
+        
+        // Add is_configured column
+        await pool.query(`
+            ALTER TABLE academic_years 
+            ADD COLUMN IF NOT EXISTS is_configured BOOLEAN DEFAULT false;
+        `);
+        
+        // Update existing years with dates as configured
+        await pool.query(`
+            UPDATE academic_years 
+            SET is_configured = true 
+            WHERE start_date IS NOT NULL;
+        `);
+        
+        console.log("✓ is_configured column added successfully");
+        console.log("✓ Existing configured years updated");
+        
+        /* process.exit removed */
+    } catch (err) {
+        console.error("Error adding configuration column:", err.message);
+        /* process.exit removed */
+    }
+}
+
+await addYearConfiguration();
+
+    } catch(err) {
+      console.error('[Error in add-year-configuration.js]:', err.message);
+    }
+  })();
+  // ====== FROM: update-terms-table.js ======
+  await (async () => {
+    try {
+
+
+async function updateTermsTable() {
+    try {
+        console.log("Updating Academic Terms Table...");
+
+        await pool.query(`
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='academic_terms' AND column_name='has_summer_work') THEN
+                    ALTER TABLE academic_terms ADD COLUMN has_summer_work BOOLEAN DEFAULT FALSE;
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='academic_terms' AND column_name='has_winter_work') THEN
+                    ALTER TABLE academic_terms ADD COLUMN has_winter_work BOOLEAN DEFAULT FALSE;
+                END IF;
+            END $$;
+        `);
+
+        console.log("Academic Terms Table Updated Successfully.");
+    } catch (err) {
+        console.error("Error updating table:", err);
+    }
+}
+
+await updateTermsTable();
+
+    } catch(err) {
+      console.error('[Error in update-terms-table.js]:', err.message);
+    }
+  })();
+  // ====== FROM: create-student-records-table.js ======
+  await (async () => {
+    try {
+
+
+async function createStudentRecordsTable() {
+    try {
+        console.log("Creating student_academic_records table...");
+        
+        // Create table
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS student_academic_records (
+                id SERIAL PRIMARY KEY,
+                
+                -- Student reference
+                student_id INTEGER NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
+                
+                -- Academic year this record belongs to
+                academic_year_id INTEGER NOT NULL REFERENCES academic_years(id) ON DELETE CASCADE,
+                
+                -- Class/Section placement for THIS year
+                class_id INTEGER NOT NULL REFERENCES classes(class_id) ON DELETE CASCADE,
+                section_id INTEGER NOT NULL REFERENCES sections(section_id) ON DELETE CASCADE,
+                roll_no VARCHAR(50),
+                
+                -- Performance snapshot (calculated from exam_marks)
+                total_marks NUMERIC(10,2) DEFAULT 0,
+                obtained_marks NUMERIC(10,2) DEFAULT 0,
+                percentage NUMERIC(5,2) DEFAULT 0,
+                grade VARCHAR(10),
+                rank_in_class INTEGER,
+                
+                -- Status for this year
+                status VARCHAR(20) DEFAULT 'active',
+                -- Values: 'active', 'promoted', 'detained', 'left', 'transferred'
+                
+                -- Promotion details (filled when promoted)
+                promoted_to_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL,
+                promoted_to_class_id INTEGER REFERENCES classes(class_id) ON DELETE SET NULL,
+                promoted_on DATE,
+                promoted_by_user_id INTEGER REFERENCES app_users(id) ON DELETE SET NULL,
+                
+                -- Additional metadata
+                attendance_percentage NUMERIC(5,2),
+                remarks TEXT,
+                
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                
+                -- Unique constraint: One record per student per year
+                UNIQUE(student_id, academic_year_id)
+            );
+        `);
+        
+        console.log("✓ student_academic_records table created");
+        
+        // Create indexes for performance
+        await pool.query(`
+            CREATE INDEX IF NOT EXISTS idx_sar_student 
+            ON student_academic_records(student_id);
+        `);
+        
+        await pool.query(`
+            CREATE INDEX IF NOT EXISTS idx_sar_year_class 
+            ON student_academic_records(academic_year_id, class_id, section_id);
+        `);
+        
+        await pool.query(`
+            CREATE INDEX IF NOT EXISTS idx_sar_status 
+            ON student_academic_records(status);
+        `);
+        
+        await pool.query(`
+            CREATE INDEX IF NOT EXISTS idx_sar_promotion 
+            ON student_academic_records(promoted_to_year_id, promoted_to_class_id) 
+            WHERE promoted_to_year_id IS NOT NULL;
+        `);
+        
+        console.log("✓ Indexes created successfully");
+        
+        // Create automatic updated_at trigger
+        await pool.query(`
+            CREATE OR REPLACE FUNCTION update_sar_timestamp()
+            RETURNS TRIGGER AS $$
+            BEGIN
+                NEW.updated_at = CURRENT_TIMESTAMP;
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+        `);
+        
+        await pool.query(`
+            DROP TRIGGER IF EXISTS sar_update_timestamp ON student_academic_records;
+            CREATE TRIGGER sar_update_timestamp
+            BEFORE UPDATE ON student_academic_records
+            FOR EACH ROW
+            EXECUTE FUNCTION update_sar_timestamp();
+        `);
+        
+        console.log("✓ Automatic timestamp trigger created");
+        console.log("\n✅ Student academic records table setup complete!");
+        
+        /* process.exit removed */
+    } catch (err) {
+        console.error("Error creating student records table:", err.message);
+        /* process.exit removed */
+    }
+}
+
+await createStudentRecordsTable();
+
+    } catch(err) {
+      console.error('[Error in create-student-records-table.js]:', err.message);
     }
   })();
   // ====== FROM: create-attendance-tables.js ======
@@ -865,12 +1227,12 @@ async function run() {
         )
     `);
     console.log('Attendance tables created successfully');
-    /* pool.end() removed for master seeder; */
+    /* pool.end() removed for master seeder */
 }
 await run();
 
     } catch(err) {
-      console.error('[Error Details in create-attendance-tables.js]:', err.message);
+      console.error('[Error in create-attendance-tables.js]:', err.message);
     }
   })();
   // ====== FROM: init-expenses.js ======
@@ -902,7 +1264,7 @@ async function initExpenseTables() {
 await initExpenseTables();
 
     } catch(err) {
-      console.error('[Error Details in init-expenses.js]:', err.message);
+      console.error('[Error in init-expenses.js]:', err.message);
     }
   })();
   // ====== FROM: create-fee-tables.js ======
@@ -1050,14 +1412,14 @@ async function createFeeTables() {
         console.error('❌ Error creating tables:', err.message);
     } finally {
         client.release();
-        /* pool.end() removed for master seeder; */
+        /* pool.end() removed for master seeder */
     }
 }
 
 await createFeeTables();
 
     } catch(err) {
-      console.error('[Error Details in create-fee-tables.js]:', err.message);
+      console.error('[Error in create-fee-tables.js]:', err.message);
     }
   })();
   // ====== FROM: add-opening-balance.js ======
@@ -1123,14 +1485,14 @@ async function addOpeningBalance() {
         console.error('❌ Migration failed:', err.message);
     } finally {
         client.release();
-        /* pool.end() removed for master seeder; */
+        /* pool.end() removed for master seeder */
     }
 }
 
 await addOpeningBalance();
 
     } catch(err) {
-      console.error('[Error Details in add-opening-balance.js]:', err.message);
+      console.error('[Error in add-opening-balance.js]:', err.message);
     }
   })();
   // ====== FROM: add-opb-head.js ======
@@ -1205,14 +1567,14 @@ async function addOPBHead() {
         console.error('❌ Migration failed:', err.message);
     } finally {
         client.release();
-        /* pool.end() removed for master seeder; */
+        /* pool.end() removed for master seeder */
     }
 }
 
 await addOPBHead();
 
     } catch(err) {
-      console.error('[Error Details in add-opb-head.js]:', err.message);
+      console.error('[Error in add-opb-head.js]:', err.message);
     }
   })();
   // ====== FROM: rename-opb-head.js ======
@@ -1233,12 +1595,12 @@ async function run() {
     );
     console.log('Line items renamed:', li.rowCount);
 
-    /* pool.end() removed for master seeder; */
+    /* pool.end() removed for master seeder */
 }
 await run();
 
     } catch(err) {
-      console.error('[Error Details in rename-opb-head.js]:', err.message);
+      console.error('[Error in rename-opb-head.js]:', err.message);
     }
   })();
   // ====== FROM: create-admission-fee-table.js ======
@@ -1323,7 +1685,7 @@ async function createAdmissionFeeTables() {
 await createAdmissionFeeTables();
 
     } catch(err) {
-      console.error('[Error Details in create-admission-fee-table.js]:', err.message);
+      console.error('[Error in create-admission-fee-table.js]:', err.message);
     }
   })();
   // ====== FROM: create-exam-fee-collection-table.js ======
@@ -1362,7 +1724,7 @@ async function createExamFeeCollectionTable() {
 await createExamFeeCollectionTable();
 
     } catch(err) {
-      console.error('[Error Details in create-exam-fee-collection-table.js]:', err.message);
+      console.error('[Error in create-exam-fee-collection-table.js]:', err.message);
     }
   })();
   // ====== FROM: update-multi-months.js ======
@@ -1386,7 +1748,7 @@ async function run() {
 await run();
 
     } catch(err) {
-      console.error('[Error Details in update-multi-months.js]:', err.message);
+      console.error('[Error in update-multi-months.js]:', err.message);
     }
   })();
   // ====== FROM: add-family-fee-column.js ======
@@ -1437,109 +1799,14 @@ async function addFamilyFeeColumn() {
         console.error('❌ Migration failed:', err.message);
     } finally {
         client.release();
-        /* pool.end() removed for master seeder; */
+        /* pool.end() removed for master seeder */
     }
 }
 
 await addFamilyFeeColumn();
 
     } catch(err) {
-      console.error('[Error Details in add-family-fee-column.js]:', err.message);
-    }
-  })();
-  // ====== FROM: create-academic-table.js ======
-  await (async () => {
-    try {
-
-
-async function createAcademicTables() {
-    try {
-        console.log("Creating Academic Tables...");
-
-        // 1. Create Academic Years Table
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS academic_years (
-                id SERIAL PRIMARY KEY,
-                year_name VARCHAR(20) NOT NULL UNIQUE,
-                start_date DATE,
-                end_date DATE,
-                is_active BOOLEAN DEFAULT FALSE,
-                status VARCHAR(20) DEFAULT 'upcoming' -- upcoming, active, completed
-            );
-        `);
-
-        // 2. Create Academic Terms Table
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS academic_terms (
-                id SERIAL PRIMARY KEY,
-                academic_year_id INT REFERENCES academic_years(id) ON DELETE CASCADE,
-                term_name VARCHAR(100) NOT NULL,
-                has_summer_work BOOLEAN DEFAULT FALSE,
-                has_winter_work BOOLEAN DEFAULT FALSE,
-                start_date DATE,
-                end_date DATE
-            );
-        `);
-
-        // 3. Pre-populate 50 Years (2025 - 2075)
-        const check = await pool.query("SELECT COUNT(*) FROM academic_years");
-        if (parseInt(check.rows[0].count) === 0) {
-            console.log("Populating 50 years of academic cycles...");
-            
-            const startYear = 2025;
-            const endYear = 2075;
-            let values = [];
-            
-            for (let y = startYear; y <= endYear; y++) {
-                // Assuming a typical cycle like "2025-2026"
-                const yearName = `${y}-${y + 1}`;
-                // We'll leave dates null for user to configure later, or set defaults
-                // Let's just insert the names for now
-                await pool.query(
-                    "INSERT INTO academic_years (year_name, status) VALUES ($1, 'upcoming')", 
-                    [yearName]
-                );
-            }
-            console.log("Inserted years from 2025-2026 to 2075-2076.");
-        } else {
-            console.log("Academic years already exist. Skipping population.");
-        }
-
-        console.log("Academic Setup Tables created successfully!");
-        /* process.exit removed */
-    } catch (err) {
-        console.error("Error creating academic tables:", err.message);
-        /* process.exit removed */
-    }
-}
-
-await createAcademicTables();
-
-    } catch(err) {
-      console.error('[Error Details in create-academic-table.js]:', err.message);
-    }
-  })();
-  // ====== FROM: add-userid-col.js ======
-  await (async () => {
-    try {
-
-
-async function migrate() {
-    try {
-        console.log("Adding user_id to students table...");
-        await pool.query(`
-            ALTER TABLE students 
-            ADD COLUMN IF NOT EXISTS user_id INT REFERENCES app_users(id) ON DELETE SET NULL;
-        `);
-        console.log("Migration complete.");
-    } catch (e) {
-        console.error(e);
-    }
-}
-
-await migrate();
-    } catch(err) {
-      console.error('[Error Details in add-userid-col.js]:', err.message);
+      console.error('[Error in add-family-fee-column.js]:', err.message);
     }
   })();
   // ====== FROM: add-print-tracking.js ======
@@ -1563,13 +1830,46 @@ async function run() {
         console.error('❌ Error:', err.message);
     } finally {
         client.release();
-        /* pool.end() removed for master seeder; */
+        /* pool.end() removed for master seeder */
     }
 }
 await run();
 
     } catch(err) {
-      console.error('[Error Details in add-print-tracking.js]:', err.message);
+      console.error('[Error in add-print-tracking.js]:', err.message);
+    }
+  })();
+  // ====== FROM: fix_monthly_slips.js ======
+  await (async () => {
+    try {
+
+
+
+
+async function fixDB() {
+    try {
+        console.log("Adding missing columns to monthly_fee_slips...");
+        await pool.query(`
+            ALTER TABLE monthly_fee_slips 
+            ADD COLUMN IF NOT EXISTS issue_date DATE,
+            ADD COLUMN IF NOT EXISTS is_family_slip BOOLEAN DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS has_multi_months BOOLEAN DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS months_list INTEGER[],
+            ADD COLUMN IF NOT EXISTS is_printed BOOLEAN DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS printed_at TIMESTAMP;
+        `);
+        console.log("Columns added successfully!");
+    } catch(err) {
+        console.error("Error:", err.message);
+    } finally {
+        /* pool.end() removed for master seeder */
+    }
+}
+
+await fixDB();
+
+    } catch(err) {
+      console.error('[Error in fix_monthly_slips.js]:', err.message);
     }
   })();
   // ====== FROM: seed-school-settings.js ======
@@ -1592,12 +1892,12 @@ async function run() {
         );
         console.log('Seeded:', key);
     }
-    /* pool.end() removed for master seeder; */
+    /* pool.end() removed for master seeder */
 }
 await run();
 
     } catch(err) {
-      console.error('[Error Details in seed-school-settings.js]:', err.message);
+      console.error('[Error in seed-school-settings.js]:', err.message);
     }
   })();
   // ====== FROM: seed-backup-settings.js ======
@@ -1621,7 +1921,7 @@ async function seed() {
 }
 await seed();
     } catch(err) {
-      console.error('[Error Details in seed-backup-settings.js]:', err.message);
+      console.error('[Error in seed-backup-settings.js]:', err.message);
     }
   })();
   console.log('======================================================');
