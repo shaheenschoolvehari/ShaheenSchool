@@ -92,7 +92,7 @@ router.post('/generate', async (req, res) => {
         }
         if (planResult.rows.length === 0) {
             await client.query('ROLLBACK');
-            return res.status(404).json({ error: 'No active fee plan found for this class.' });
+            return res.status(400).json({ error: 'No active fee plan found for this class.' });
         }
         const planId = planResult.rows[0].plan_id;
         const planHeads = await client.query(
@@ -116,7 +116,7 @@ router.post('/generate', async (req, res) => {
         );
         if (studentsResult.rows.length === 0) {
             await client.query('ROLLBACK');
-            return res.status(404).json({ error: 'No active students found in this class' });
+            return res.status(400).json({ error: 'No active students found in this class' });
         }
 
         // ─── Group students by family_id to identify multi-member families ───
