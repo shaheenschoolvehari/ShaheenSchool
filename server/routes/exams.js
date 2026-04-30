@@ -122,6 +122,7 @@ async function canTeacherAccessSheet(client, employeeId, classId, sectionId, sub
          WHERE tca.employee_id = $1
            AND tca.class_id = $2
            AND tca.section_id = $3
+           AND tca.is_class_teacher = true
          LIMIT 1`,
         [employeeId, classId, sectionId]
     );
@@ -154,6 +155,7 @@ async function canTeacherAccessClassSection(client, employeeId, classId, section
          WHERE employee_id = $1
            AND class_id = $2
            AND section_id = $3
+           AND is_class_teacher = true
          LIMIT 1`,
         [employeeId, classId, sectionId]
     );
@@ -316,7 +318,7 @@ router.get('/context', async (req, res) => {
                  FROM teacher_class_assignment tca
                  JOIN classes c ON c.class_id = tca.class_id
                  JOIN sections sec ON sec.section_id = tca.section_id
-                 WHERE tca.employee_id = $1
+                 WHERE tca.employee_id = $1 AND tca.is_class_teacher = true
 
                  ORDER BY class_name, section_name, subject_name`,
                 [ctx.employeeId]
@@ -1413,7 +1415,7 @@ router.get('/tests/context', async (req, res) => {
                  FROM teacher_class_assignment tca
                  JOIN classes c ON c.class_id = tca.class_id
                  JOIN sections sec ON sec.section_id = tca.section_id
-                 WHERE tca.employee_id = $1
+                 WHERE tca.employee_id = $1 AND tca.is_class_teacher = true
 
                  ORDER BY class_name, section_name, subject_name`,
                 [ctx.employeeId]

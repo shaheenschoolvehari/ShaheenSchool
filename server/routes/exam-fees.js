@@ -97,7 +97,7 @@ router.get('/sections', async (req, res) => {
                 SELECT DISTINCT s.* 
                 FROM sections s
                 JOIN teacher_class_assignment tca ON tca.section_id = s.section_id
-                WHERE s.class_id = $1 AND tca.employee_id = $2
+                WHERE s.class_id = $1 AND tca.employee_id = $2 AND tca.is_class_teacher = true
                 ORDER BY s.section_name ASC
             `;
             params = [class_id, ctx.employeeId];
