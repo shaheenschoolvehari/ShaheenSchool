@@ -9,7 +9,7 @@ import {
 
 type TeacherData = {
   teacher:    { name:string; designation:string; employee_id:string };
-  classes:    { id:number; class_name:string; section_name:string; total_students:number; subject_name:string }[];
+  classes:    { id:number; class_name:string; section_name:string; total_students:number; subject_name:string; is_class_teacher: boolean }[];
   subjects:   { id:number; subject_name:string; class_name:string; section_name:string }[];
   my_att_today: { status:string; check_in:string } | null;
   class_att_today: { class_id:number; class_name:string; section_name:string; total:number; present:number; absent:number; late:number; marked:number }[];
