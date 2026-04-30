@@ -46,47 +46,21 @@ export default function StudentAttendancePage() {
   useEffect(() => {
     const loadMeta = async () => {
       const API = process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com";
-      const roleLevel = user?.role_level || 0;
+      if (!user?.id) return;
 
       try {
-        if (isAdmin || roleLevel >= 65) {
-          const [classesRes, sectionsRes] = await Promise.all([
-            fetch(`${API}/academic`),
-            fetch(`${API}/academic/sections`)
-          ]);
-
-          const classesData = await classesRes.json();
-          const sectionsData = await sectionsRes.json();
-          if (Array.isArray(classesData)) setClasses(classesData);
-          if (Array.isArray(sectionsData)) setSections(sectionsData);
-          return;
-        }
-
-        if (!user?.id) return;
-
-        const [teacherRes, sectionsRes] = await Promise.all([
-          fetch(`${API}/dashboard/teacher?user_id=${user.id}`),
-          fetch(`${API}/academic/sections`)
-        ]);
-
-        const teacherData = await teacherRes.json();
-        const sectionsData = await sectionsRes.json();
-
-        const teacherClasses = Array.isArray(teacherData?.classes)
-          ? teacherData.classes
-              .filter((c: any) => c.is_class_teacher)
-              .map((c: any) => ({ class_id: c.id ?? c.class_id, class_name: c.class_name }))
-          : [];
-
-        if (Array.isArray(teacherClasses)) setClasses(teacherClasses);
-        if (Array.isArray(sectionsData)) setSections(sectionsData);
+        const res = await fetch(`${API}/exams/context/class-teacher?user_id=${user.id}`);
+        const data = await res.json();
+        
+        if (Array.isArray(data.classes)) setClasses(data.classes);
+        if (Array.isArray(data.sections)) setSections(data.sections);
       } catch {
         // keep existing empty state if loading fails
       }
     };
 
     loadMeta();
-  }, [isAdmin, user?.id, user?.role_level]);
+  }, [user?.id]);
 
   const loadAttendance = useCallback(async () => {
     if (!classId || !sectionId || !date) return;
