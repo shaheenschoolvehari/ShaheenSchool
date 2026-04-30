@@ -103,9 +103,9 @@ for (let f of files) {
   c = c.replace(/const path\s*=\s*require\(.*?\);?/gi, '');
   c = c.replace(/const db\s*=\s*require\(.*?\);?/gi, '');
 
-  // Remove pool/process endings
-  c = c.replace(/pool\.end\(\);?/gi, '/* pool.end() removed for master seeder */');
-  c = c.replace(/process\.exit\(\d*\);?/gi, '/* process.exit removed */');
+  // Remove pool/process endings using negative lookbehind to avoid nesting block comments
+  c = c.replace(/(?<!\/\*\s*)pool\.end\(\);?/gi, '/* pool.end() removed for master seeder */');
+  c = c.replace(/(?<!\/\*\s*)process\.exit\(\d*\);?/gi, '/* process.exit removed */');
 
   // Convert top-level function calls to awaited calls
   c = c.replace(/^([A-Za-z0-9_]+)\(\)(?:\.catch\(.*?\))?;?$/gm, 'await $1();');
@@ -113,8 +113,8 @@ for (let f of files) {
   // Remove module.exports lines (not needed in seeder)
   c = c.replace(/^module\.exports\s*=.*$/gm, '');
 
-  // Remove "if (require.main === module)" blocks
-  c = c.replace(/if\s*\(\s*require\.main\s*===\s*module\s*\)\s*\{[\s\S]*?\}/g, '');
+  // Disable "if (require.main === module)" blocks instead of trying to parse braces
+  c = c.replace(/if\s*\(\s*require\.main\s*===\s*module\s*\)/g, 'if (false /* block disabled in master seeder */)');
 
   output += `
   // ====== FROM: ${f} ======

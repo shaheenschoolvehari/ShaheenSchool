@@ -350,7 +350,12 @@ async function seedRoleLevels() {
 }
 
 // Run if executed directly
-)
+if (false /* block disabled in master seeder */) {
+    seedRoleLevels()
+        .then(() => {
+            console.log('Seed complete');
+            /* process.exit removed */
+        })
         .catch(err => {
             console.error('Seed failed:', err);
             /* process.exit removed */
@@ -517,7 +522,7 @@ const createStudentsTable = async () => {
     } catch (err) {
         console.error("Error creating students table:", err.message);
     } finally {
-        /* /* pool.end() removed for master seeder */ removed for master seeder; */
+        /* pool.end() removed for master seeder; */
     }
 };
 
