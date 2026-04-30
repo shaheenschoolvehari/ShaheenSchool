@@ -182,8 +182,9 @@ export default function TeacherDashboard({ userId }: { userId: number }) {
                 onMouseLeave={e=>{(e.currentTarget as HTMLElement).style.background='#f8fdf7';}}
               >
                 <div>
-                  <div style={{ fontWeight:700, fontSize:14, color:'#1a2e3b' }}>
-                    {c.class_name}{c.section_name ? ' — ' : ''}
+                  <div style={{ fontWeight:700, fontSize:14, color:'#1a2e3b', display: 'flex', alignItems: 'center' }}>
+                    {c.class_name}{c.section_name ? ' — ' + c.section_name : ''}
+                    {c.is_class_teacher && <i className="bi bi-star-fill ms-2 text-warning" style={{ fontSize: 12 }} title="Class Incharge" />}
                   </div>
                   {c.subject_name && <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>{c.subject_name}</div>}
                 </div>
@@ -216,7 +217,7 @@ export default function TeacherDashboard({ userId }: { userId: number }) {
                   </div>
                   <div style={{ fontWeight:700, fontSize:13, color:'#1a2e3b' }}>{s.subject_name}</div>
                 </div>
-                <span style={{ fontSize:12, color:'#94a3b8' }}>{s.class_name}{s.section_name ? ' · ' : ''}                  </span>
+                <span style={{ fontSize:12, color:'#94a3b8' }}>{s.class_name}{s.section_name ? ' · ' + s.section_name : ''}</span>
                 </div>
               ))}
             </div>

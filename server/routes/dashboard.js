@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const router  = express.Router();
 const pool    = require('../db');
 
@@ -43,7 +43,7 @@ router.get('/teacher', async (req, res) => {
                 FROM teacher_class_assignment tca
                 JOIN classes c ON tca.class_id = c.class_id
                 LEFT JOIN sections sec ON tca.section_id = sec.section_id
-                LEFT JOIN students s ON s.class_id = c.class_id
+                LEFT JOIN students s ON s.class_id = c.class_id AND s.section_id = sec.section_id
                 WHERE tca.employee_id = $1
                 GROUP BY c.class_id, c.class_name, sec.section_id, sec.section_name, tca.is_class_teacher
                 ORDER BY c.class_name`, [emp_id])
@@ -51,27 +51,32 @@ router.get('/teacher', async (req, res) => {
 
             // Assigned subjects
             emp_id ? pool.query(`
-                SELECT s.subject_id, s.subject_name, s.subject_code
+                SELECT s.subject_id, s.subject_name, s.subject_code,
+                       c.class_name, sec.section_name
                 FROM teacher_subject_assignment tsa
                 JOIN subjects s ON tsa.subject_id = s.subject_id
+                JOIN sections sec ON sec.section_id = s.section_id
+                JOIN classes c ON c.class_id = sec.class_id
                 WHERE tsa.employee_id = $1
-                ORDER BY s.subject_name`, [emp_id])
+                ORDER BY c.class_name, sec.section_name, s.subject_name`, [emp_id])
             : Promise.resolve({ rows: [] }),
 
             // Today's attendance summary for teacher's classes
             emp_id ? pool.query(`
-                SELECT c.class_name, c.class_id,
+                SELECT c.class_name, c.class_id, sec.section_name, sec.section_id,
                        COUNT(s.student_id) FILTER (WHERE s.status='Active') AS total_students,
                        COUNT(sa.attendance_id) FILTER (WHERE sa.attendance_date = CURRENT_DATE AND sa.status='Present') AS present,
                        COUNT(sa.attendance_id) FILTER (WHERE sa.attendance_date = CURRENT_DATE AND sa.status='Absent')  AS absent,
+                       COUNT(sa.attendance_id) FILTER (WHERE sa.attendance_date = CURRENT_DATE AND sa.status='Late')    AS late,
                        COUNT(sa.attendance_id) FILTER (WHERE sa.attendance_date = CURRENT_DATE)                         AS marked
                 FROM teacher_class_assignment tca
                 JOIN classes c ON tca.class_id = c.class_id
-                LEFT JOIN students s ON s.class_id = c.class_id
+                JOIN sections sec ON tca.section_id = sec.section_id
+                LEFT JOIN students s ON s.class_id = c.class_id AND s.section_id = sec.section_id
                 LEFT JOIN student_attendance sa ON sa.student_id = s.student_id AND sa.attendance_date = CURRENT_DATE
                 WHERE tca.employee_id = $1
-                GROUP BY c.class_id, c.class_name
-                ORDER BY c.class_name`, [emp_id])
+                GROUP BY c.class_id, c.class_name, sec.section_id, sec.section_name
+                ORDER BY c.class_name, sec.section_name`, [emp_id])
             : Promise.resolve({ rows: [] }),
 
             // Teacher's own attendance today
@@ -81,20 +86,20 @@ router.get('/teacher', async (req, res) => {
                 WHERE employee_id=$1 AND attendance_date=CURRENT_DATE LIMIT 1`, [emp_id])
             : Promise.resolve({ rows: [] }),
 
-            // Last 5 attendance entries made (any class)
+            // Last 10 attendance entries made
             emp_id ? pool.query(`
-                SELECT sa.attendance_date, c.class_name,
-                       COUNT(*) FILTER (WHERE sa.status='Present') AS present,
-                       COUNT(*) FILTER (WHERE sa.status='Absent')  AS absent,
-                       COUNT(*)                                     AS total
-                FROM student_attendance sa
-                JOIN students st ON sa.student_id = st.student_id
-                JOIN classes c ON st.class_id = c.class_id
-                WHERE c.class_id IN (
-                    SELECT class_id FROM teacher_class_assignment WHERE employee_id=$1
-                )
-                GROUP BY sa.attendance_date, c.class_name
-                ORDER BY sa.attendance_date DESC, c.class_name LIMIT 10`, [emp_id])
+                SELECT sa.attendance_date, c.class_name, sec.section_name,
+                       COUNT(sa.attendance_id) FILTER (WHERE sa.status='Present') AS present,
+                       COUNT(sa.attendance_id) FILTER (WHERE sa.status='Absent')  AS absent,
+                       COUNT(sa.attendance_id)                                     AS total
+                FROM teacher_class_assignment tca
+                JOIN classes c ON tca.class_id = c.class_id
+                JOIN sections sec ON tca.section_id = sec.section_id
+                JOIN students st ON st.class_id = c.class_id AND st.section_id = sec.section_id
+                JOIN student_attendance sa ON sa.student_id = st.student_id
+                WHERE tca.employee_id = $1
+                GROUP BY sa.attendance_date, c.class_name, sec.section_name
+                ORDER BY sa.attendance_date DESC, c.class_name, sec.section_name LIMIT 10`, [emp_id])
             : Promise.resolve({ rows: [] }),
 
             // Upcoming exams (exams module placeholder — graceful fallback)
@@ -123,8 +128,8 @@ router.get('/teacher', async (req, res) => {
             subjects: subjectsRes.rows.map(s => ({
                 id:           s.subject_id,
                 subject_name: s.subject_name,
-                class_name:   '',
-                section_name: '',
+                class_name:   s.class_name || '',
+                section_name: s.section_name || '',
             })),
 
             my_att_today: staffTodayRes.rows[0]
@@ -134,18 +139,18 @@ router.get('/teacher', async (req, res) => {
             class_att_today: todayAttSummaryRes.rows.map(r => ({
                 class_id:     r.class_id,
                 class_name:   r.class_name,
-                section_name: '',
+                section_name: r.section_name || '',
                 total:        parseInt(r.total_students || 0),
                 present:      parseInt(r.present        || 0),
                 absent:       parseInt(r.absent         || 0),
-                late:         0,
+                late:         parseInt(r.late           || 0),
                 marked:       parseInt(r.marked         || 0) > 0 ? 1 : 0,
             })),
 
             recent_att: recentMarkedRes.rows.map(r => ({
                 date:         r.attendance_date,
                 class_name:   r.class_name,
-                section_name: '',
+                section_name: r.section_name || '',
                 total:        parseInt(r.total   || 0),
                 present:      parseInt(r.present || 0),
                 absent:       parseInt(r.absent  || 0),
