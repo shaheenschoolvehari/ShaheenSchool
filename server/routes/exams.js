@@ -354,6 +354,92 @@ router.get('/context', async (req, res) => {
     }
 });
 
+router.get('/context/class-teacher', async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const userId = parseUserId(req.query.user_id);
+        if (!userId) {
+            return res.status(400).json({ error: 'user_id is required' });
+        }
+
+        const ctx = await getUserContext(client, userId);
+        if (ctx.error) return res.status(ctx.error.status).json({ error: ctx.error.message });
+
+        const activeYear = await getActiveAcademicYear(client);
+        if (!activeYear) {
+            return res.status(404).json({ error: 'No academic year found. Please create/activate one first.' });
+        }
+
+        const termRes = await client.query(
+            `SELECT id, term_name, start_date, end_date
+             FROM academic_terms
+             WHERE academic_year_id = $1
+             ORDER BY id ASC`,
+            [activeYear.id]
+        );
+
+        let classes = [];
+        let sections = [];
+
+        if (ctx.isAdmin || ctx.isSupervisor) {
+            const classRes = await client.query(`SELECT class_id, class_name FROM classes ORDER BY class_name ASC`);
+            const sectionRes = await client.query(`SELECT section_id, section_name, class_id FROM sections ORDER BY class_id, section_name ASC`);
+            classes = classRes.rows;
+            sections = sectionRes.rows;
+        } else {
+            if (!ctx.employeeId) {
+                return res.json({
+                    is_admin: false,
+                    active_year: activeYear,
+                    terms: termRes.rows,
+                    classes: [],
+                    sections: []
+                });
+            }
+
+            const scopeRes = await client.query(
+                `SELECT DISTINCT
+                    c.class_id, c.class_name,
+                    sec.section_id, sec.section_name
+                 FROM teacher_class_assignment tca
+                 JOIN classes c ON c.class_id = tca.class_id
+                 JOIN sections sec ON sec.section_id = tca.section_id
+                 WHERE tca.employee_id = $1 AND tca.is_class_teacher = true
+                 ORDER BY class_name, section_name`,
+                [ctx.employeeId]
+            );
+
+            const classMap = new Map();
+            const sectionMap = new Map();
+
+            for (const row of scopeRes.rows) {
+                classMap.set(row.class_id, { class_id: row.class_id, class_name: row.class_name });
+                sectionMap.set(row.section_id, {
+                    section_id: row.section_id,
+                    section_name: row.section_name,
+                    class_id: row.class_id
+                });
+            }
+
+            classes = Array.from(classMap.values());
+            sections = Array.from(sectionMap.values());
+        }
+
+        res.json({
+            is_admin: ctx.isAdmin,
+            active_year: activeYear,
+            terms: termRes.rows,
+            classes,
+            sections
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
 router.get('/marking-sheet', async (req, res) => {
     const client = await pool.connect();
     try {

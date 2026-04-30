@@ -243,7 +243,7 @@ export default function ClassMarksSheetPage() {
         setLoadingCtx(true);
         setMsg(null);
         try {
-            const r = await fetch(`${API}/exams/context?user_id=${user.id}`);
+            const r = await fetch(`${API}/exams/context/class-teacher?user_id=${user.id}`);
             const d = await r.json();
             if (!r.ok) throw new Error(d.error || 'Failed to load context');
 
