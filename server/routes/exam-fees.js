@@ -45,13 +45,12 @@ router.get('/classes', async (req, res) => {
 
         // If not admin, check if employee and filter assignments
         if (!ctx.isAdmin && ctx.employeeId) {
-            // Join with teacher_class_assignment to find assigned classes
-            // Assuming teacher_class_assignment maps employee_id to class_id
+            // Join with teacher_class_assignment to find assigned classes WHERE is_class_teacher = true
             query = `
                 SELECT DISTINCT c.* 
                 FROM classes c
                 JOIN teacher_class_assignment tca ON tca.class_id = c.class_id
-                WHERE tca.employee_id = $1
+                WHERE tca.employee_id = $1 AND tca.is_class_teacher = true
                 ORDER BY c.class_name ASC
             `;
             params = [ctx.employeeId];
