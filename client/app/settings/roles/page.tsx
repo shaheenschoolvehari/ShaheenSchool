@@ -82,10 +82,15 @@ const PAGE_TREE: Record<string, ModuleDef> = {
             { key: 'academic.subjects', label: 'Subjects', icon: 'bi-journal-text', desc: 'Manage subject records' },
             { key: 'academic.teachers', label: 'Teacher Assignments', icon: 'bi-person-workspace', desc: 'Assign teachers to classes/subjects' },
             { key: 'academic.promotion', label: 'Promotion', icon: 'bi-arrow-up-circle', desc: 'Promote students to next class' },
-            { key: 'academic.examination', label: 'Enter Marks', icon: 'bi-pencil-square', desc: 'Enter exam marks per subject' },
+        ],
+    },
+    examination: {
+        label: 'Examination', icon: 'bi-clipboard-check-fill', color: '#7c3aed',
+        pages: [
+            { key: 'academic.examination', label: 'Marks Entry', icon: 'bi-pencil-square', desc: 'Enter exam marks per subject' },
             { key: 'academic.examination.test-marking', label: 'Test Marking', icon: 'bi-journal-check', desc: 'Enter class test marks' },
-            { key: 'academic.marks-sheet', label: 'Marks Sheet', icon: 'bi-table', desc: 'View class-wide marks sheet' },
-            { key: 'academic.result-card', label: 'Result Cards', icon: 'bi-file-earmark-text', desc: 'Print individual result cards' },
+            { key: 'academic.marks-sheet', label: 'Marks Sheet', icon: 'bi-table', desc: 'View class-wide marks sheet (Incharge only)' },
+            { key: 'academic.result-card', label: 'Result Cards', icon: 'bi-file-earmark-text', desc: 'Print individual result cards (Incharge only)' },
         ],
     },
     hrm: {
