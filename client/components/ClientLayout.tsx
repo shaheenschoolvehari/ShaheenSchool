@@ -100,8 +100,8 @@ const NAV_GROUPS: NavGroup[] = [
     subs: [{ label: 'Departments', href: '/hrm/departments' }, { label: 'Employees', href: '/hrm/employees' }]
   },
   {
-    key: 'examination', label: 'Examination', icon: 'bi-clipboard-check-fill', href: '/academic/examination/marks', permission: '__exam__',
-    subs: [{ label: 'Marks Entry', href: '/academic/examination/marks' }, { label: 'Result Card', href: '/academic/examination/result-card' }, { label: 'Marks Sheet', href: '/academic/examination/marks-sheet' }, { label: 'Test Marking', href: '/academic/examination/test-marking' }]
+    key: 'examination', label: 'Examination', icon: 'bi-clipboard-check-fill', href: '/examination/marks', permission: '__exam__',
+    subs: [{ label: 'Marks Entry', href: '/examination/marks' }, { label: 'Result Card', href: '/examination/result-card' }, { label: 'Marks Sheet', href: '/examination/marks-sheet' }, { label: 'Test Marking', href: '/examination/test-marking' }]
   },
   {
     key: 'expenses', label: 'Expenses', icon: 'bi-wallet2', href: '/expenses/list', permission: 'expenses',
@@ -134,10 +134,10 @@ const NAV_PERMISSION_MAP: Record<string, string> = {
   '/academic/subjects': 'academic.subjects',
   '/academic/teachers': 'academic.teachers',
   '/academic/promotion': 'academic.promotion',
-  '/academic/examination/marks': 'academic.examination',
-  '/academic/examination/result-card': 'academic.result-card',
-  '/academic/examination/marks-sheet': 'academic.marks-sheet',
-  '/academic/examination/test-marking': 'academic.examination.test-marking',
+  '/examination/marks': 'academic.examination',
+  '/examination/result-card': 'academic.result-card',
+  '/examination/marks-sheet': 'academic.marks-sheet',
+  '/examination/test-marking': 'academic.examination.test-marking',
   '/hrm/departments': 'hrm.departments',
   '/hrm/employees': 'hrm.employees',
   '/expenses/add': 'expenses.add',
