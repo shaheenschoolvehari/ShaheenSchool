@@ -262,6 +262,18 @@ Hassan - NEW ADMISSION
 
 ---
 
+## 📘 Related Deep-Dive Docs (New)
+
+For full fee-side implementation details connected to family system, read:
+
+- `doc/FAMILY_FEE_SYSTEM_IMPLEMENTATION.md`
+
+For full role/portal behavior (admin/teacher/accountant/student shared system), read:
+
+- `doc/MULTIUSER_SHARED_PORTAL_SYSTEM.md`
+
+---
+
 **Implementation Date**: February 17, 2026  
 **Status**: ✅ Complete & Tested  
 **Version**: 1.0

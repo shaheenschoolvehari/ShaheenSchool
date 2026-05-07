@@ -1060,9 +1060,9 @@ export default function NewAdmission() {
                                                 )}
                                                 <div className="input-group">
                                                     <span className="input-group-text">Rs.</span>
-                                                    <input type="number" className="form-control form-control-lg" placeholder="0.00" required
+                                                    <input type="text" className="form-control form-control-lg" placeholder="0.00" required
                                                         value={form.family_fee}
-                                                        onChange={e => setForm({ ...form, family_fee: e.target.value })} />
+                                                        onChange={e => handleNumberChange("family_fee", e.target.value)} />
                                                 </div>
                                                 <small className="text-muted">
                                                     <i className="bi bi-info-circle me-1"></i>
@@ -1073,7 +1073,7 @@ export default function NewAdmission() {
                                                 <label className="form-label fw-bold">Admission Fee (One Time)</label>
                                                 <div className="input-group">
                                                     <span className="input-group-text">Rs.</span>
-                                                    <input type="number" className="form-control" placeholder="0.00"
+                                                    <input type="text" className="form-control" placeholder="0.00"
                                                         value={form.admission_fee} onChange={e => handleNumberChange("admission_fee", e.target.value)} />
                                                 </div>
                                             </div>
@@ -1081,7 +1081,7 @@ export default function NewAdmission() {
                                                 <label className="form-label fw-bold">Other Charges</label>
                                                 <div className="input-group">
                                                     <span className="input-group-text">Rs.</span>
-                                                    <input type="number" className="form-control" placeholder="0.00"
+                                                    <input type="text" className="form-control" placeholder="0.00"
                                                         value={form.other_charges} onChange={e => handleNumberChange("other_charges", e.target.value)} />
                                                 </div>
                                             </div>
@@ -1098,7 +1098,7 @@ export default function NewAdmission() {
                                                 <label className="form-label fw-bold display-6 fs-5">Monthly Tuition Fee <span className="text-danger">*</span></label>
                                                 <div className="input-group">
                                                     <span className="input-group-text">Rs.</span>
-                                                    <input type="number" className="form-control form-control-lg" placeholder="0.00" required
+                                                    <input type="text" className="form-control form-control-lg" placeholder="0.00" required
                                                         value={form.monthly_fee} onChange={e => handleNumberChange("monthly_fee", e.target.value)} />
                                                 </div>
                                             </div>
@@ -1106,7 +1106,7 @@ export default function NewAdmission() {
                                                 <label className="form-label fw-bold">Admission Fee (One Time)</label>
                                                 <div className="input-group">
                                                     <span className="input-group-text">Rs.</span>
-                                                    <input type="number" className="form-control" placeholder="0.00"
+                                                    <input type="text" className="form-control" placeholder="0.00"
                                                         value={form.admission_fee} onChange={e => handleNumberChange("admission_fee", e.target.value)} />
                                                 </div>
                                             </div>
@@ -1114,7 +1114,7 @@ export default function NewAdmission() {
                                                 <label className="form-label fw-bold">Other Charges</label>
                                                 <div className="input-group">
                                                     <span className="input-group-text">Rs.</span>
-                                                    <input type="number" className="form-control" placeholder="0.00"
+                                                    <input type="text" className="form-control" placeholder="0.00"
                                                         value={form.other_charges} onChange={e => handleNumberChange("other_charges", e.target.value)} />
                                                 </div>
                                             </div>
@@ -1133,8 +1133,7 @@ export default function NewAdmission() {
                                     <div className="input-group">
                                         <span className="input-group-text bg-white"><i className="bi bi-wallet2" style={{ color: 'var(--accent-orange)' }} /></span>
                                         <span className="input-group-text bg-white fw-semibold">Rs.</span>
-                                        <input type="number" className="form-control" placeholder="0.00 (agar koi purana baqi ho)"
-                                            min="0" step="1"
+                                        <input type="text" className="form-control" placeholder="0.00 (agar koi purana baqi ho)"
                                             value={form.opening_balance} onChange={e => handleNumberChange("opening_balance", e.target.value)} />
                                     </div>
                                 </div>
