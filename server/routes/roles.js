@@ -82,12 +82,14 @@ router.post('/:id/clone', async (req, res) => {
         // STEP 3: Copy all permissions from original to new role
         const permsRes = await client.query("SELECT module_name, can_read, can_write, can_delete FROM role_permissions WHERE role_id = $1", [id]);
         
+        const seenModules = new Set();
         for (const perm of permsRes.rows) {
+            if (!perm.module_name || seenModules.has(perm.module_name)) continue;
+            seenModules.add(perm.module_name);
             await client.query(
                 `INSERT INTO role_permissions (role_id, module_name, can_read, can_write, can_delete)
-                 VALUES ($1, $2, $3, $4, $5)
-                 ON CONFLICT (role_id, module_name) DO UPDATE SET can_read = $3, can_write = $4, can_delete = $5`,
-                [newRoleId, perm.module_name, perm.can_read, perm.can_write, perm.can_delete]
+                 VALUES ($1, $2, $3, $4, $5)`,
+                [newRoleId, perm.module_name, !!perm.can_read, !!perm.can_write, !!perm.can_delete]
             );
         }
 
@@ -131,12 +133,13 @@ router.post('/', async (req, res) => {
 
         // 2. Insert Permissions
         if (permissions && Array.isArray(permissions) && permissions.length > 0) {
+            const seenModules = new Set();
             for (const p of permissions) {
-                if (!p.module_name) continue;
+                if (!p || !p.module_name || seenModules.has(p.module_name)) continue;
+                seenModules.add(p.module_name);
                 await client.query(
                     `INSERT INTO role_permissions (role_id, module_name, can_read, can_write, can_delete) 
-                     VALUES ($1, $2, $3, $4, $5)
-                     ON CONFLICT (role_id, module_name) DO UPDATE SET can_read = $3, can_write = $4, can_delete = $5`,
+                     VALUES ($1, $2, $3, $4, $5)`,
                     [roleId, p.module_name, !!p.can_read, !!p.can_write, !!p.can_delete]
                 );
             }
@@ -200,12 +203,13 @@ router.put('/:id', async (req, res) => {
         await client.query("DELETE FROM role_permissions WHERE role_id = $1", [id]);
 
         if (permissions && Array.isArray(permissions) && permissions.length > 0) {
+            const seenModules = new Set();
             for (const p of permissions) {
-                if (!p.module_name) continue;
+                if (!p || !p.module_name || seenModules.has(p.module_name)) continue;
+                seenModules.add(p.module_name);
                 await client.query(
                     `INSERT INTO role_permissions (role_id, module_name, can_read, can_write, can_delete) 
-                     VALUES ($1, $2, $3, $4, $5)
-                     ON CONFLICT (role_id, module_name) DO UPDATE SET can_read = $3, can_write = $4, can_delete = $5`,
+                     VALUES ($1, $2, $3, $4, $5)`,
                     [id, p.module_name, !!p.can_read, !!p.can_write, !!p.can_delete]
                 );
             }

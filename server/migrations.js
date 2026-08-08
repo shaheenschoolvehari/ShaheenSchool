@@ -205,6 +205,7 @@ async function runEssentialMigrations() {
             );
             CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);
             CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(session_token);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_role_permissions_role_module ON role_permissions(role_id, module_name);
         `);
 
         await client.query('COMMIT');
