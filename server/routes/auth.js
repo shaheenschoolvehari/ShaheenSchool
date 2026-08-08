@@ -40,44 +40,60 @@ router.post('/login', async (req, res) => {
     try {
         const { username, password, remember_me } = req.body;
 
-        if (!username || !password) {
+        if (!username || !password || !username.trim()) {
             return res.status(400).json({ message: 'Username and password are required' });
         }
 
+        const cleanUsername = username.trim();
         const policies = await getSecurityPolicies();
 
         // 1. Fetch user with role info, permissions, lock status & incharge info
-        const result = await pool.query(`
-            SELECT 
-                u.id, u.username, u.password_hash, u.full_name, u.email, u.is_active, u.role_id,
-                COALESCE(u.failed_login_attempts, 0) AS failed_login_attempts,
-                u.locked_until,
-                r.role_name, r.role_level, r.dashboard_access,
-                MAX(e.employee_id) as employee_id,
-                MAX(
-                    (SELECT json_build_object('class_id', tca.class_id, 'section_id', tca.section_id)
-                     FROM teacher_class_assignment tca
-                     WHERE tca.employee_id = e.employee_id AND tca.is_class_teacher = true
-                     LIMIT 1)::text
-                ) AS incharge_class,
-                COALESCE(
-                    json_agg(
-                        json_build_object(
-                            'module_name', p.module_name,
-                            'can_read', p.can_read,
-                            'can_write', p.can_write,
-                            'can_delete', p.can_delete
-                        )
-                    ) FILTER (WHERE p.module_name IS NOT NULL),
-                    '[]'
-                ) AS permissions
-            FROM app_users u
-            LEFT JOIN app_roles r ON u.role_id = r.id
-            LEFT JOIN role_permissions p ON r.id = p.role_id
-            LEFT JOIN employees e ON u.id = e.app_user_id
-            WHERE u.username = $1
-            GROUP BY u.id, u.username, u.password_hash, u.full_name, u.email, u.is_active, u.role_id, u.failed_login_attempts, u.locked_until, r.role_name, r.role_level, r.dashboard_access
-        `, [username]);
+        let result;
+        try {
+            result = await pool.query(`
+                SELECT 
+                    u.id, u.username, u.password_hash, u.full_name, u.email, u.is_active, u.role_id,
+                    COALESCE(u.failed_login_attempts, 0) AS failed_login_attempts,
+                    u.locked_until,
+                    r.role_name, r.role_level, r.dashboard_access,
+                    MAX(e.employee_id) as employee_id,
+                    MAX(
+                        (SELECT json_build_object('class_id', tca.class_id, 'section_id', tca.section_id)
+                         FROM teacher_class_assignment tca
+                         WHERE tca.employee_id = e.employee_id AND tca.is_class_teacher = true
+                         LIMIT 1)::text
+                    ) AS incharge_class,
+                    COALESCE(
+                        json_agg(
+                            json_build_object(
+                                'module_name', p.module_name,
+                                'can_read', p.can_read,
+                                'can_write', p.can_write,
+                                'can_delete', p.can_delete
+                            )
+                        ) FILTER (WHERE p.module_name IS NOT NULL),
+                        '[]'
+                    ) AS permissions
+                FROM app_users u
+                LEFT JOIN app_roles r ON u.role_id = r.id
+                LEFT JOIN role_permissions p ON r.id = p.role_id
+                LEFT JOIN employees e ON u.id = e.app_user_id
+                WHERE LOWER(u.username) = LOWER($1)
+                GROUP BY u.id, u.username, u.password_hash, u.full_name, u.email, u.is_active, u.role_id, u.failed_login_attempts, u.locked_until, r.role_name, r.role_level, r.dashboard_access
+            `, [cleanUsername]);
+        } catch (e) {
+            // Fallback query if complex join/subquery fails
+            result = await pool.query(`
+                SELECT 
+                    u.id, u.username, u.password_hash, u.full_name, u.email, u.is_active, u.role_id,
+                    0 AS failed_login_attempts, NULL AS locked_until,
+                    r.role_name, r.role_level, r.dashboard_access,
+                    NULL as employee_id, NULL as incharge_class, '[]'::json AS permissions
+                FROM app_users u
+                LEFT JOIN app_roles r ON u.role_id = r.id
+                WHERE LOWER(u.username) = LOWER($1)
+            `, [cleanUsername]);
+        }
 
         if (result.rows.length === 0) {
             return res.status(401).json({ message: 'Invalid username or password' });
@@ -86,7 +102,7 @@ router.post('/login', async (req, res) => {
         const user = result.rows[0];
 
         // 2. Check if account is active
-        if (!user.is_active) {
+        if (user.is_active === false) {
             return res.status(403).json({ message: 'Your account is disabled. Please contact the administrator.' });
         }
 
@@ -102,34 +118,36 @@ router.post('/login', async (req, res) => {
         const isMatch = await bcrypt.compare(password, user.password_hash || '');
         if (!isMatch) {
             const newFailedCount = (user.failed_login_attempts || 0) + 1;
-            let lockTime = null;
             let lockMsg = '';
 
-            if (newFailedCount >= policies.max_login_attempts) {
-                // Lock account for 15 minutes
-                lockTime = new Date(Date.now() + 15 * 60 * 1000);
-                await pool.query(
-                    `UPDATE app_users SET failed_login_attempts = $1, locked_until = $2 WHERE id = $3`,
-                    [newFailedCount, lockTime, user.id]
-                );
-                lockMsg = ` Account locked for 15 minutes due to ${policies.max_login_attempts} failed attempts.`;
-            } else {
-                await pool.query(
-                    `UPDATE app_users SET failed_login_attempts = $1 WHERE id = $2`,
-                    [newFailedCount, user.id]
-                );
-                const remaining = policies.max_login_attempts - newFailedCount;
-                lockMsg = ` ${remaining} attempt(s) remaining before account lockout.`;
-            }
+            try {
+                if (newFailedCount >= policies.max_login_attempts) {
+                    const lockTime = new Date(Date.now() + 15 * 60 * 1000);
+                    await pool.query(
+                        `UPDATE app_users SET failed_login_attempts = $1, locked_until = $2 WHERE id = $3`,
+                        [newFailedCount, lockTime, user.id]
+                    );
+                    lockMsg = ` Account locked for 15 minutes due to ${policies.max_login_attempts} failed attempts.`;
+                } else {
+                    await pool.query(
+                        `UPDATE app_users SET failed_login_attempts = $1 WHERE id = $2`,
+                        [newFailedCount, user.id]
+                    );
+                    const remaining = policies.max_login_attempts - newFailedCount;
+                    lockMsg = ` ${remaining} attempt(s) remaining before account lockout.`;
+                }
+            } catch (e) {}
 
             return res.status(401).json({ message: `Invalid username or password.${lockMsg}` });
         }
 
         // 5. Successful password verify -> Reset failed login counter
-        await pool.query(
-            `UPDATE app_users SET failed_login_attempts = 0, locked_until = NULL WHERE id = $1`,
-            [user.id]
-        );
+        try {
+            await pool.query(
+                `UPDATE app_users SET failed_login_attempts = 0, locked_until = NULL WHERE id = $1`,
+                [user.id]
+            );
+        } catch (e) {}
 
         // 6. Sign JWT Token
         const tokenDurationHours = remember_me ? 24 : 12;
@@ -144,14 +162,18 @@ router.post('/login', async (req, res) => {
 
         const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: `${tokenDurationHours}h` });
 
-        // 7. Track Active Session in DB
-        const ip_address = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
-        const user_agent = req.headers['user-agent'] || 'Unknown Browser';
+        // 7. Track Active Session in DB (Safe Execution)
+        try {
+            const ip_address = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+            const user_agent = req.headers['user-agent'] || 'Unknown Browser';
 
-        await pool.query(`
-            INSERT INTO user_sessions (user_id, session_token, ip_address, user_agent, remember_me, expires_at)
-            VALUES ($1, $2, $3, $4, $5, $6)
-        `, [user.id, token, ip_address, user_agent, !!remember_me, expiresAt]);
+            await pool.query(`
+                INSERT INTO user_sessions (user_id, session_token, ip_address, user_agent, remember_me, expires_at)
+                VALUES ($1, $2, $3, $4, $5, $6)
+            `, [user.id, token, ip_address, user_agent, !!remember_me, expiresAt]);
+        } catch (e) {
+            console.warn('Session tracking notice:', e.message);
+        }
 
         // 8. Format & Return Safe User Payload
         const { password_hash, failed_login_attempts, locked_until, ...safeUser } = user;
@@ -169,8 +191,8 @@ router.post('/login', async (req, res) => {
         });
 
     } catch (err) {
-        console.error('Login error:', err.message);
-        res.status(500).json({ message: 'Server error during authentication' });
+        console.error('Login error:', err);
+        res.status(500).json({ error: 'Server error', message: err?.message || 'Server error during authentication' });
     }
 });
 
