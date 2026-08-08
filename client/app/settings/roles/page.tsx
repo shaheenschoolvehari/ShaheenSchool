@@ -295,10 +295,17 @@ export default function RolesPage() {
                 setConfirmModal(null);
                 showToastMsg('success', formData.id === 0 ? 'Role created successfully' : 'Role updated successfully');
             } else {
-                const error = await res.json();
-                showToastMsg('danger', error.message || 'Failed to save role');
+                let errorMsg = 'Failed to save role';
+                try {
+                    const error = await res.json();
+                    errorMsg = error.message || error.error || errorMsg;
+                } catch (e) {
+                    const txt = await res.text().catch(() => '');
+                    if (txt) errorMsg = txt;
+                }
+                showToastMsg('danger', errorMsg);
             }
-        } catch (err) { showToastMsg('danger', 'Server error'); }
+        } catch (err: any) { showToastMsg('danger', err?.message || 'Server error'); }
         finally { setSaving(false); }
     };
 
