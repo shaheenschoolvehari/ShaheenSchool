@@ -217,20 +217,23 @@ export function NotificationBell({ role = 'all', familyId = '', userId = '' }: {
 
             {/* Notifications Dropdown Panel */}
             {open && (
-                <div style={{
-                    position: 'absolute',
-                    top: 'calc(100% + 12px)',
-                    right: 0,
-                    width: 360,
-                    maxWidth: '92vw',
-                    background: '#ffffff',
-                    borderRadius: 20,
-                    boxShadow: '0 20px 45px rgba(0,0,0,0.22), 0 6px 16px rgba(0,0,0,0.08)',
-                    border: '1px solid #e2e8f0',
-                    overflow: 'hidden',
-                    zIndex: 1000,
-                    animation: 'notifFadeIn 0.2s ease-out',
-                }}>
+                <div
+                    className="notif-dropdown-panel"
+                    style={{
+                        position: 'absolute',
+                        top: 'calc(100% + 12px)',
+                        right: 0,
+                        width: 370,
+                        maxWidth: '92vw',
+                        background: '#ffffff',
+                        borderRadius: 20,
+                        boxShadow: '0 20px 45px rgba(0,0,0,0.22), 0 6px 16px rgba(0,0,0,0.08)',
+                        border: '1px solid #e2e8f0',
+                        overflow: 'hidden',
+                        zIndex: 1000,
+                        animation: 'notifFadeIn 0.2s ease-out',
+                    }}
+                >
                     {/* Header Banner with School Logo */}
                     <div style={{
                         background: 'linear-gradient(135deg, #1e3644 0%, #195053 100%)',
@@ -430,12 +433,25 @@ export function NotificationBell({ role = 'all', familyId = '', userId = '' }: {
             <style jsx global>{`
                 @keyframes bellPulse {
                     0% { transform: scale(1); }
-                    50% { transform: scale(1.15); }
+                    50% { transform: scale(1.18); }
                     100% { transform: scale(1); }
                 }
                 @keyframes notifFadeIn {
                     from { opacity: 0; transform: translateY(-8px); }
                     to { opacity: 1; transform: translateY(0); }
+                }
+                @media (max-width: 576px) {
+                    .notif-dropdown-panel {
+                        position: fixed !important;
+                        top: 70px !important;
+                        left: 10px !important;
+                        right: 10px !important;
+                        width: calc(100vw - 20px) !important;
+                        max-width: 100vw !important;
+                        border-radius: 16px !important;
+                        box-shadow: 0 16px 40px rgba(0,0,0,0.3) !important;
+                        z-index: 9999 !important;
+                    }
                 }
             `}</style>
         </div>

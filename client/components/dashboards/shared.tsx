@@ -192,10 +192,10 @@ export function DashShell({
             </div>
           </div>
 
-          {/* Right Side: Quick Actions & Notification Bell */}
+          {/* Right Side: Quick Actions & Notification Bell (Bell Icon Most Right) */}
           <div className="dash-actions-wrapper" style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <NotificationBell />
             {actions || <QuickActionsDropdown />}
+            <NotificationBell />
           </div>
         </div>
       </div>
