@@ -1008,6 +1008,7 @@ async function runMasterSeeder() {
                     student_id INTEGER NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
                     total_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
                     paid_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+                    discount NUMERIC(10,2) DEFAULT 0,
                     discount_amount NUMERIC(10,2) DEFAULT 0,
                     status VARCHAR(20) NOT NULL DEFAULT 'unpaid',
                     admission_date DATE,
@@ -1015,6 +1016,8 @@ async function runMasterSeeder() {
                     created_at TIMESTAMP DEFAULT NOW(),
                     UNIQUE(student_id)
                 );
+                ALTER TABLE admission_fee_ledger ADD COLUMN IF NOT EXISTS discount NUMERIC(10,2) DEFAULT 0;
+                ALTER TABLE admission_fee_ledger ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(10,2) DEFAULT 0;
             `);
 
             // 8.10 admission_fee_payments Table

@@ -76,6 +76,7 @@ const CRITICAL_COLUMNS = {
     test_marks: ['test_mark_id', 'test_id', 'student_id', 'obtained_marks', 'is_absent'],
     exam_sheet_approvals: ['id', 'sheet_type', 'class_id', 'section_id', 'status', 'submitted_by', 'approved_by', 'published_by'],
     notifications: ['id', 'user_id', 'family_id', 'role', 'type', 'title', 'message', 'is_read'],
+    admission_fee_ledger: ['ledger_id', 'student_id', 'total_amount', 'paid_amount', 'discount', 'discount_amount', 'status'],
 };
 
 async function runFullCheck() {

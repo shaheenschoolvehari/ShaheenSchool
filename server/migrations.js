@@ -45,6 +45,28 @@ async function runEssentialMigrations() {
             ALTER TABLE school_settings ALTER COLUMN logo_url TYPE TEXT;
         `);
 
+        // 4.1 Admission Fee Ledger discount & discount_amount columns migration
+        console.log("   → Checking admission_fee_ledger columns...");
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS admission_fee_ledger (
+                ledger_id SERIAL PRIMARY KEY,
+                student_id INTEGER NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
+                total_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+                paid_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+                discount NUMERIC(10,2) DEFAULT 0,
+                discount_amount NUMERIC(10,2) DEFAULT 0,
+                status VARCHAR(20) NOT NULL DEFAULT 'unpaid',
+                admission_date DATE,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(student_id)
+            );
+
+            ALTER TABLE admission_fee_ledger 
+            ADD COLUMN IF NOT EXISTS discount NUMERIC(10,2) DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(10,2) DEFAULT 0;
+        `);
+
         // 5. Student Academic Records (Promotion History Table)
         console.log("   → Checking student_academic_records table...");
         await client.query(`
