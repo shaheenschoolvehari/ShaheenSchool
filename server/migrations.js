@@ -208,6 +208,9 @@ async function runEssentialMigrations() {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_role_permissions_role_module ON role_permissions(role_id, module_name);
         `);
 
+        const { syncAllSequences } = require('./utils/sequenceSync');
+        await syncAllSequences(client);
+
         await client.query('COMMIT');
         console.log("✅ All essential migrations completed successfully!");
     } catch (err) {

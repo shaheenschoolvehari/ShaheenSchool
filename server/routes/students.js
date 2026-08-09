@@ -945,6 +945,10 @@ router.post('/', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'documen
 
         await client.query('BEGIN');
 
+        // Automatically sync PostgreSQL primary key sequences to prevent duplicate ID collisions
+        const { syncAllSequences } = require('../utils/sequenceSync');
+        await syncAllSequences(client);
+
         const dateObj = admission_date ? new Date(admission_date) : new Date();
         const month = dateObj.toLocaleString('en-US', { month: 'short' }).toUpperCase();
         const day = String(dateObj.getDate()).padStart(2, '0');

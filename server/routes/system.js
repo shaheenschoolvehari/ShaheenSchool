@@ -195,6 +195,8 @@ router.get('/backups/download/:filename', async (req, res) => {
     }
 });
 
+const { syncAllSequences } = require('../utils/sequenceSync');
+
 // ── Restore Database Route ──
 router.post('/backups/restore', upload.single('backup_file'), async (req, res) => {
     if (!req.file) {
@@ -212,17 +214,34 @@ router.post('/backups/restore', upload.single('backup_file'), async (req, res) =
         try {
             await client.query(sqlContent);
             console.log('[Restore System] Database restore completed successfully.');
+            
+            // Instantly synchronize all PostgreSQL sequences with MAX(id) after restore
+            await syncAllSequences(client);
         } finally {
             client.release();
         }
 
         if (fs.existsSync(uploadedPath)) fs.unlinkSync(uploadedPath);
-        res.json({ message: "Database restored successfully. Please refresh the page." });
+        res.json({ message: "Database restored & primary key sequences synchronized successfully. Please refresh the page." });
 
     } catch (err) {
         if (fs.existsSync(uploadedPath)) fs.unlinkSync(uploadedPath);
         console.error('[Restore System] Error:', err.message);
         res.status(500).json({ error: "Restore failed: " + err.message });
+    }
+});
+
+// ── Manual Sequence Synchronization Endpoint ──
+router.post('/sync-sequences', async (req, res) => {
+    try {
+        const result = await syncAllSequences();
+        if (result.success) {
+            res.json({ message: "All PostgreSQL primary key sequences successfully synchronized with MAX(id)." });
+        } else {
+            res.status(500).json({ error: result.error || "Failed to synchronize sequences." });
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
