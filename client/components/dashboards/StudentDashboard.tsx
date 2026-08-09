@@ -5,6 +5,7 @@ import { notify } from '@/app/utils/notify';
 import { useAuth } from '@/contexts/AuthContext';
 import { API } from './shared';
 import { NotificationBell } from '../notifications/NotificationBell';
+import { OfflineStorage } from '@/utils/offlineStorage';
 
 export default function StudentDashboard({ user }: { user: any }) {
     const [currentId, setCurrentId] = useState<string | null>(null);
@@ -100,11 +101,20 @@ export default function StudentDashboard({ user }: { user: any }) {
                 const res = await fetch(`${API}/students/${currentId}`);
                 if (res.ok) {
                     const data = await res.json();
-                    setStudent(data.rows ? data.rows[0] : (Array.isArray(data) ? data[0] : data));
+                    const s = data.rows ? data.rows[0] : (Array.isArray(data) ? data[0] : data);
+                    setStudent(s);
+                    OfflineStorage.set(`student_${currentId}`, s);
+                } else {
+                    const cached = OfflineStorage.get(`student_${currentId}`);
+                    if (cached) setStudent(cached);
                 }
             } catch (err) {
-                console.error(err);
-                notify.error("Failed to load profile");
+                const cached = OfflineStorage.get(`student_${currentId}`);
+                if (cached) {
+                    setStudent(cached);
+                } else {
+                    notify.error("Failed to load profile");
+                }
             } finally {
                 setLoading(false);
             }
@@ -117,9 +127,14 @@ export default function StudentDashboard({ user }: { user: any }) {
                 if (res.ok) {
                     const data = await res.json();
                     setSiblings(data);
+                    OfflineStorage.set(`siblings_${currentId}`, data);
+                } else {
+                    const cached = OfflineStorage.get(`siblings_${currentId}`);
+                    if (cached) setSiblings(cached);
                 }
             } catch (err) {
-                console.error('Error fetching siblings:', err);
+                const cached = OfflineStorage.get(`siblings_${currentId}`);
+                if (cached) setSiblings(cached);
             } finally {
                 setLoadingSiblings(false);
             }

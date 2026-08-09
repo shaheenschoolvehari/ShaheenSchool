@@ -41,6 +41,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const SESSION_KEY = 'sms_user_session';
 const REMEMBER_KEY = 'sms_remember_session';
+const OFFLINE_SESSION_KEY = 'sms_offline_user_session';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -48,29 +49,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [isLoading, setIsLoading] = useState(true);
     const router = useRouter();
 
-    // Restore session from sessionStorage or 24H localStorage on mount
+    // Restore session from sessionStorage or persistent localStorage on mount
     useEffect(() => {
         try {
-            const storedSession = sessionStorage.getItem(SESSION_KEY);
+            const storedSession = sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(OFFLINE_SESSION_KEY) || localStorage.getItem(REMEMBER_KEY);
             if (storedSession) {
                 const parsed = JSON.parse(storedSession);
                 setUser(parsed);
-            } else {
-                const storedRemember = localStorage.getItem(REMEMBER_KEY);
-                if (storedRemember) {
-                    const parsed = JSON.parse(storedRemember);
-                    const expiresAt = parsed.expires_at ? new Date(parsed.expires_at).getTime() : 0;
-                    if (expiresAt > Date.now()) {
-                        setUser(parsed);
-                        sessionStorage.setItem(SESSION_KEY, JSON.stringify(parsed));
-                    } else {
-                        localStorage.removeItem(REMEMBER_KEY);
-                    }
-                }
+                sessionStorage.setItem(SESSION_KEY, JSON.stringify(parsed));
+                localStorage.setItem(OFFLINE_SESSION_KEY, JSON.stringify(parsed));
             }
         } catch {
             sessionStorage.removeItem(SESSION_KEY);
             localStorage.removeItem(REMEMBER_KEY);
+            localStorage.removeItem(OFFLINE_SESSION_KEY);
         } finally {
             setIsLoading(false);
         }
@@ -92,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             setUser(data);
             sessionStorage.setItem(SESSION_KEY, JSON.stringify(data));
+            localStorage.setItem(OFFLINE_SESSION_KEY, JSON.stringify(data));
 
             if (rememberMe) {
                 localStorage.setItem(REMEMBER_KEY, JSON.stringify(data));
@@ -101,7 +94,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             return { success: true };
         } catch (err) {
-            return { success: false, message: 'Cannot connect to server. Please try again.' };
+            // Check if there is an offline cached session matching this user
+            const cached = localStorage.getItem(OFFLINE_SESSION_KEY);
+            if (cached) {
+                const parsed = JSON.parse(cached);
+                if (parsed.username && parsed.username.toLowerCase() === username.toLowerCase()) {
+                    setUser(parsed);
+                    sessionStorage.setItem(SESSION_KEY, JSON.stringify(parsed));
+                    return { success: true, message: 'Logged in using offline cached credentials.' };
+                }
+            }
+            return { success: false, message: 'Cannot connect to server. Please check your internet connection.' };
         }
     }, []);
 
@@ -121,6 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
         sessionStorage.removeItem(SESSION_KEY);
         localStorage.removeItem(REMEMBER_KEY);
+        localStorage.removeItem(OFFLINE_SESSION_KEY);
         router.push('/login');
     }, [user, router]);
 
