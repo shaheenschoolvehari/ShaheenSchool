@@ -1211,6 +1211,45 @@ async function runMasterSeeder() {
         }
     })();
 
+    // =========================================================================
+    // 11. NOTIFICATIONS MODULE TABLE & SEQUENCE SYNC
+    // =========================================================================
+    await (async () => {
+        try {
+            console.log("🔔 Setting up Notifications Table & Indexes...");
+
+            await pool.query(`
+                CREATE TABLE IF NOT EXISTS notifications (
+                    id SERIAL PRIMARY KEY,
+                    user_id INT REFERENCES app_users(id) ON DELETE CASCADE,
+                    family_id VARCHAR(50),
+                    student_id INT REFERENCES students(student_id) ON DELETE CASCADE,
+                    role VARCHAR(50),
+                    type VARCHAR(50) NOT NULL,
+                    title VARCHAR(255) NOT NULL,
+                    message TEXT NOT NULL,
+                    link VARCHAR(255),
+                    is_read BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_notif_family ON notifications(family_id);
+                CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id);
+                CREATE INDEX IF NOT EXISTS idx_notif_role ON notifications(role);
+                CREATE INDEX IF NOT EXISTS idx_notif_read ON notifications(is_read);
+            `);
+
+            console.log("   ✅ Notifications Table & Indexes created successfully.");
+
+            // Synchronize all primary key sequences
+            const { syncAllSequences } = require('./utils/sequenceSync');
+            await syncAllSequences(pool);
+
+        } catch (err) {
+            console.error("   ❌ Notifications table setup error:", err.message);
+        }
+    })();
+
     console.log('\n======================================================');
     console.log('   MASTER SEEDER COMPLETED SUCCESSFULLY               ');
     console.log('======================================================\n');

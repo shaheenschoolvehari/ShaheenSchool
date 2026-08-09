@@ -53,6 +53,8 @@ const EXPECTED_TABLES = [
     { name: 'exam_sheet_approvals', critical: false, desc: 'Exam & test sheet approval workflow' },
     { name: 'user_direct_permissions', critical: false, desc: 'Direct user permission overrides' },
     { name: 'role_audit_log', critical: false, desc: 'Role & permission change audit logs' },
+    // Notifications & Mobile Engine
+    { name: 'notifications', critical: true, desc: 'Persistent multi-role & mobile notifications' },
 ];
 
 // Critical columns to verify on key tables
@@ -72,6 +74,7 @@ const CRITICAL_COLUMNS = {
     exam_marks: ['mark_id', 'student_id', 'subject_id', 'term_id', 'total_marks', 'obtained_marks'],
     test_papers: ['test_id', 'test_name', 'class_id', 'total_marks'],
     test_marks: ['test_mark_id', 'test_id', 'student_id', 'obtained_marks', 'is_absent'],
+    notifications: ['id', 'user_id', 'family_id', 'role', 'type', 'title', 'message', 'is_read'],
 };
 
 async function runFullCheck() {
