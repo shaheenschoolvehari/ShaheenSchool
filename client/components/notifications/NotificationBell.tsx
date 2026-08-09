@@ -1,6 +1,7 @@
 'use client';
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { requestMobileNotificationPermissions, triggerNativeDeviceNotification } from '../../utils/nativeNotifications';
 
 const API = process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com";
 
@@ -27,8 +28,11 @@ export function NotificationBell({ role = 'all', familyId = '', userId = '' }: {
     const [schoolLogo, setSchoolLogo] = useState<string>('');
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    // Fetch School Logo
+    // Fetch School Logo & Request Mobile Notification Permissions
+    const notifiedSetRef = useRef<Set<number>>(new Set());
+
     useEffect(() => {
+        requestMobileNotificationPermissions();
         fetch(`${API}/settings`)
             .then(res => res.json())
             .then(data => {
@@ -53,8 +57,17 @@ export function NotificationBell({ role = 'all', familyId = '', userId = '' }: {
             const res = await fetch(`${API}/notifications?${params.toString()}`);
             if (res.ok) {
                 const data = await res.json();
-                setNotifications(data.notifications || []);
+                const list: NotificationItem[] = data.notifications || [];
+                setNotifications(list);
                 setUnreadCount(data.unread_count || 0);
+
+                // Trigger Mobile OS Native Notification for newly arrived unread alerts
+                list.forEach(n => {
+                    if (!n.is_read && !notifiedSetRef.current.has(n.id)) {
+                        notifiedSetRef.current.add(n.id);
+                        triggerNativeDeviceNotification(n.id, n.title, n.message, n.link);
+                    }
+                });
             }
         } catch (err) {
             console.error("Error loading notifications:", err);
