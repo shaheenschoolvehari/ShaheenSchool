@@ -33,23 +33,26 @@ export function QuickActionsDropdown() {
   ];
 
   return (
-    <div ref={dropdownRef} style={{ position: 'relative', zIndex: 200 }}>
+    <div ref={dropdownRef} className="quick-actions-root" style={{ position: 'relative', zIndex: 200 }}>
       <button
         onClick={() => setOpen(!open)}
+        className="quick-actions-btn"
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 9,
+          justifyContent: 'center',
+          gap: 8,
           background: 'linear-gradient(135deg, #FE7F2D 0%, #f97316 100%)',
           color: '#ffffff',
           border: 'none',
           borderRadius: 14,
-          padding: '11px 22px',
+          padding: '11px 18px',
           fontWeight: 700,
           fontSize: 13,
           cursor: 'pointer',
           boxShadow: '0 4px 16px rgba(254,127,45,0.4)',
           transition: 'all 0.2s ease',
+          whiteSpace: 'nowrap',
         }}
         onMouseEnter={e => (e.currentTarget.style.transform = 'translateY(-1px)')}
         onMouseLeave={e => (e.currentTarget.style.transform = 'none')}
@@ -60,11 +63,12 @@ export function QuickActionsDropdown() {
       </button>
 
       {open && (
-        <div style={{
+        <div className="quick-actions-menu" style={{
           position: 'absolute',
           top: 'calc(100% + 10px)',
           right: 0,
           width: 290,
+          maxWidth: 'calc(100vw - 32px)',
           background: '#ffffff',
           borderRadius: 16,
           boxShadow: '0 12px 35px rgba(0,0,0,0.18), 0 4px 12px rgba(0,0,0,0.08)',
@@ -283,11 +287,39 @@ export function DashShell({
 
         @media (max-width: 640px) {
           .dash-hero {
-            padding: 18px 16px !important;
-            border-radius: 0 0 16px 16px !important;
+            padding: 16px 14px !important;
+            border-radius: 0 0 18px 18px !important;
+          }
+          .dash-hero-container {
+            gap: 12px !important;
+          }
+          .dash-actions-wrapper {
+            width: 100% !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            gap: 10px !important;
+          }
+          .quick-actions-root {
+            flex: 1 !important;
+            min-width: 0 !important;
+          }
+          .quick-actions-btn {
+            width: 100% !important;
+            justify-content: center !important;
+            padding: 10px 14px !important;
+          }
+          .quick-actions-menu {
+            position: absolute !important;
+            top: calc(100% + 8px) !important;
+            left: 0 !important;
+            right: auto !important;
+            width: min(310px, calc(100vw - 28px)) !important;
+            max-width: calc(100vw - 28px) !important;
+            box-shadow: 0 16px 40px rgba(0,0,0,0.25) !important;
           }
           .dash-content {
-            padding: 0 14px !important;
+            padding: 0 12px !important;
             margin-top: 16px !important;
           }
           .dash-header-logo-avatar {

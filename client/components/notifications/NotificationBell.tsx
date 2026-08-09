@@ -168,10 +168,11 @@ export function NotificationBell({ role = 'all', familyId = '', userId = '', stu
     });
 
     return (
-        <div ref={dropdownRef} style={{ position: 'relative', zIndex: 250 }}>
+        <div ref={dropdownRef} className="notif-bell-root" style={{ position: 'relative', zIndex: 250 }}>
             {/* Sleek Bell Toggle Button */}
             <button
                 onClick={() => setOpen(!open)}
+                className="notif-bell-btn"
                 title="Notifications"
                 style={{
                     position: 'relative',
@@ -188,6 +189,7 @@ export function NotificationBell({ role = 'all', familyId = '', userId = '', stu
                     backdropFilter: 'blur(8px)',
                     boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
                     transition: 'all 0.2s ease',
+                    flexShrink: 0,
                 }}
                 onMouseEnter={e => (e.currentTarget.style.transform = 'translateY(-1px)')}
                 onMouseLeave={e => (e.currentTarget.style.transform = 'none')}
@@ -445,7 +447,16 @@ export function NotificationBell({ role = 'all', familyId = '', userId = '', stu
                     from { opacity: 0; transform: translateY(-8px); }
                     to { opacity: 1; transform: translateY(0); }
                 }
-                @media (max-width: 576px) {
+                @media (max-width: 640px) {
+                    .notif-bell-root {
+                        flex-shrink: 0 !important;
+                    }
+                    .notif-bell-btn {
+                        width: 42px !important;
+                        height: 42px !important;
+                        flex-shrink: 0 !important;
+                        padding: 0 !important;
+                    }
                     .notif-dropdown-panel {
                         position: fixed !important;
                         top: 70px !important;
