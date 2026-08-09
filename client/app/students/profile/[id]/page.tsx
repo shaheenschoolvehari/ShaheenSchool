@@ -335,11 +335,12 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
             )}
 
             {/* HERO SECTION */}
-            <div className="position-relative profile-hero" style={{ minHeight: '220px', background: 'linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-teal) 100%)' }}>
+            <div className="position-relative profile-hero py-4" style={{ background: 'linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-teal) 100%)', borderRadius: '0 0 24px 24px' }}>
                 <div className="position-absolute top-0 start-0 w-100 h-100 opacity-10"
                     style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
 
-                <div className="container position-relative py-4 px-3 px-sm-4">
+                <div className="container position-relative px-3 px-sm-4">
+                    {/* Top Header Bar */}
                     <div className="d-flex justify-content-between align-items-center mb-3">
                         <button className="btn btn-outline-light rounded-circle shadow-sm" onClick={() => router.back()} style={{ width: 42, height: 42 }}>
                             <i className="bi bi-arrow-left fs-5"></i>
@@ -349,22 +350,33 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                         </div>
                     </div>
 
-                    <div className="d-flex flex-column flex-sm-row align-items-center align-items-sm-end gap-3 gap-sm-4 pb-2">
-                        <div className="position-relative flex-shrink-0" style={{ marginBottom: '-45px' }}>
+                    {/* Student Hero Header Block */}
+                    <div className="d-flex flex-column flex-md-row align-items-center align-items-md-center gap-3 gap-md-4 py-2 text-center text-md-start">
+                        {/* Avatar */}
+                        <div className="position-relative flex-shrink-0">
                             <img
-                                src={student.image_url ? `${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/${student.image_url}` : "https://ui-avatars.com/api/?name=" + (student.first_name || 'Student') + "&background=random&size=150"}
+                                src={student.image_url ? `${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/${student.image_url}` : "https://ui-avatars.com/api/?name=" + encodeURIComponent(student.first_name || 'Student') + "&background=195053&color=fff&size=150"}
                                 className="rounded-circle border border-4 border-white shadow-lg bg-white"
-                                style={{ width: '130px', height: '130px', objectFit: 'cover' }}
+                                style={{ width: '110px', height: '110px', objectFit: 'cover' }}
+                                alt={student.first_name}
                             />
-                            <span className={`position-absolute bottom-0 end-0 p-2.5 border border-4 border-white rounded-circle ${student.status === 'Active' ? 'bg-success' : 'bg-secondary'}`}></span>
+                            <span className={`position-absolute bottom-0 end-0 p-2 border border-3 border-white rounded-circle ${student.status === 'Active' ? 'bg-success' : 'bg-secondary'}`} title={student.status || 'Active'}></span>
                         </div>
-                        <div className="text-center text-sm-start text-white animate__animated animate__fadeInUp pb-2">
-                            <h2 className="fw-bold mb-1 fs-3 fs-md-2">{student.first_name} {student.last_name}</h2>
-                            <div className="d-flex flex-wrap justify-content-center justify-content-sm-start gap-2 align-items-center opacity-90">
-                                <span className="badge bg-white bg-opacity-25 border border-white border-opacity-25 backdrop-blur px-2.5 py-1.5">
+
+                        {/* Title & Info */}
+                        <div className="text-white animate__animated animate__fadeInUp">
+                            <h2 className="fw-bold mb-1 fs-3 fs-md-2 text-white" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.15)' }}>
+                                {student.first_name} {student.last_name}
+                            </h2>
+                            <div className="d-flex flex-wrap justify-content-center justify-content-md-start gap-2 align-items-center mt-2 opacity-95">
+                                <span className="badge bg-white bg-opacity-20 text-white border border-white border-opacity-30 backdrop-blur px-3 py-1.5 rounded-pill fw-semibold">
+                                    <i className="bi bi-mortarboard-fill me-1.5"></i>
                                     {student.class_name} • {student.section_name}
                                 </span>
-                                <span className="small text-white-50"><i className="bi bi-upc-scan me-1"></i>{student.admission_no}</span>
+                                <span className="badge bg-black bg-opacity-20 text-white-50 border border-white border-opacity-20 px-2.5 py-1.5 rounded-pill font-monospace small">
+                                    <i className="bi bi-upc-scan me-1"></i>
+                                    {student.admission_no}
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -372,7 +384,7 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
             </div>
 
             {/* CONTENT SECTION */}
-            <div className="container pt-4 mt-3 mt-sm-4 pb-5 px-3 px-sm-4">
+            <div className="container pt-4 mt-1 pb-5 px-3 px-sm-4">
                 <div className="row g-4 profile-side-grid">
                     {/* LEFT SIDEBAR */}
                     <div className="col-lg-3 animate__animated animate__fadeInLeft">
@@ -385,48 +397,48 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                                         
                                         {/* Credentials Block */}
                                         <div className="mb-3">
-                                            <small className="text-muted d-block text-uppercase mb-1.5" style={{ fontSize: '0.68rem', letterSpacing: '0.8px' }}>
+                                            <small className="text-muted d-block text-uppercase fw-bold mb-2" style={{ fontSize: '0.68rem', letterSpacing: '0.8px' }}>
                                                 <i className="bi bi-shield-lock me-1"></i>System Credentials
                                             </small>
                                             {student.username ? (
-                                                <div className="bg-light p-2.5 rounded-3 border">
+                                                <div className="bg-light p-3 rounded-3 border">
                                                     {/* Username Row */}
                                                     <div className="d-flex align-items-center justify-content-between gap-2 mb-2 pb-2 border-bottom border-secondary border-opacity-10">
-                                                        <div className="d-flex align-items-center gap-1.5 min-w-0">
-                                                            <small className="text-muted text-uppercase fw-semibold" style={{ fontSize: '0.65rem', letterSpacing: '0.5px' }}>User:</small>
-                                                            <span className="font-monospace text-primary fw-bold small text-truncate" style={{ fontSize: '0.82rem' }}>
+                                                        <div className="min-w-0 flex-grow-1">
+                                                            <small className="text-muted text-uppercase fw-semibold d-block" style={{ fontSize: '0.62rem', letterSpacing: '0.5px' }}>User ID</small>
+                                                            <span className="font-monospace text-primary fw-bold small text-truncate d-block" style={{ fontSize: '0.82rem' }}>
                                                                 {student.username}
                                                             </span>
                                                         </div>
                                                         <div className="d-flex align-items-center gap-1 flex-shrink-0">
-                                                            <button className="btn btn-sm btn-white border shadow-xs text-secondary p-1 rounded-2" title="Copy Username" onClick={() => { navigator.clipboard.writeText(student.username); notify.success('Username copied'); }}>
-                                                                <i className="bi bi-copy" style={{ fontSize: '0.8rem' }}></i>
+                                                            <button className="btn btn-sm btn-white border shadow-xs text-secondary p-1.5 rounded-2" title="Copy Username" onClick={() => { navigator.clipboard.writeText(student.username); notify.success('Username copied'); }}>
+                                                                <i className="bi bi-copy" style={{ fontSize: '0.85rem' }}></i>
                                                             </button>
-                                                            <button className="btn btn-sm btn-white border shadow-xs text-primary p-1 rounded-2" title="Change Password" onClick={() => setChangePwdModalOpen(true)}>
-                                                                <i className="bi bi-key-fill" style={{ fontSize: '0.8rem' }}></i>
+                                                            <button className="btn btn-sm btn-white border shadow-xs text-primary p-1.5 rounded-2" title="Change Password" onClick={() => setChangePwdModalOpen(true)}>
+                                                                <i className="bi bi-key-fill" style={{ fontSize: '0.85rem' }}></i>
                                                             </button>
                                                         </div>
                                                     </div>
                                                     {/* Password Row */}
                                                     <div className="d-flex align-items-center justify-content-between gap-2">
-                                                        <div className="d-flex align-items-center gap-1.5 min-w-0">
-                                                            <small className="text-muted text-uppercase fw-semibold" style={{ fontSize: '0.65rem', letterSpacing: '0.5px' }}>Pwd:</small>
-                                                            <span className="font-monospace text-dark small text-truncate" style={{ fontSize: '0.78rem' }}>
+                                                        <div className="min-w-0 flex-grow-1">
+                                                            <small className="text-muted text-uppercase fw-semibold d-block" style={{ fontSize: '0.62rem', letterSpacing: '0.5px' }}>Password</small>
+                                                            <span className="font-monospace text-dark fw-bold small text-truncate d-block" style={{ fontSize: '0.8rem' }}>
                                                                 {showPwd ? (student.system_pwd || 'student123') : '••••••••'}
                                                             </span>
                                                         </div>
                                                         <div className="d-flex align-items-center gap-1 flex-shrink-0">
-                                                            <button className="btn btn-sm btn-white border shadow-xs text-secondary p-1 rounded-2" title={showPwd ? 'Hide Password' : 'Show Password'} onClick={() => setShowPwd(!showPwd)}>
-                                                                <i className={`bi bi-eye${showPwd ? '-slash' : ''}`} style={{ fontSize: '0.8rem' }}></i>
+                                                            <button className="btn btn-sm btn-white border shadow-xs text-secondary p-1.5 rounded-2" title={showPwd ? 'Hide Password' : 'Show Password'} onClick={() => setShowPwd(!showPwd)}>
+                                                                <i className={`bi bi-eye${showPwd ? '-slash' : ''}`} style={{ fontSize: '0.85rem' }}></i>
                                                             </button>
-                                                            <button className="btn btn-sm btn-white border shadow-xs text-secondary p-1 rounded-2" title="Copy Password" onClick={() => { navigator.clipboard.writeText(student.system_pwd || 'student123'); notify.success('Password copied'); }}>
-                                                                <i className="bi bi-copy" style={{ fontSize: '0.8rem' }}></i>
+                                                            <button className="btn btn-sm btn-white border shadow-xs text-secondary p-1.5 rounded-2" title="Copy Password" onClick={() => { navigator.clipboard.writeText(student.system_pwd || 'student123'); notify.success('Password copied'); }}>
+                                                                <i className="bi bi-copy" style={{ fontSize: '0.85rem' }}></i>
                                                             </button>
                                                         </div>
                                                     </div>
                                                 </div>
                                             ) : (
-                                                <button className="btn btn-sm btn-outline-primary w-100 py-1.5 rounded-3" style={{ fontSize: '0.78rem' }} onClick={handleGenerateCredentials}>
+                                                <button className="btn btn-sm btn-outline-primary w-100 py-2 rounded-3 fw-bold" style={{ fontSize: '0.78rem' }} onClick={handleGenerateCredentials}>
                                                     <i className="bi bi-key me-1"></i>Generate Login Credentials
                                                 </button>
                                             )}
@@ -450,18 +462,8 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                                             </div>
                                         )}
                                         <hr className="text-secondary opacity-25" />
-                                        <div className="d-grid gap-2">
-                                            {hasPermission('students', 'write') && (
-                                                <button className="btn btn-primary" onClick={() => router.push(`/students/edit/${student.student_id}`)} style={{ backgroundColor: 'var(--primary-dark)' }}>
-                                                    <i className="bi bi-pencil-square me-2"></i>Edit Profile
-                                                </button>
-                                            )}
-                                            {hasPermission('students', 'write') && (
-                                                <button className={`btn btn-outline-${student.status === 'Active' ? 'danger' : 'success'}`} onClick={handleToggleStatus}>
-                                                    <i className={`bi bi-${student.status === 'Active' ? 'slash-circle' : 'check-circle'} me-2`}></i>
-                                                    {student.status === 'Active' ? 'Mark Inactive' : 'Mark Active'}
-                                                </button>
-                                            )}
+                                        <div className="text-center text-success fw-bold py-2">
+                                            <i className="bi bi-shield-check me-2"></i>Student Profile Verified
                                         </div>
                                     </div>
                                 </div>
@@ -498,8 +500,16 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                     {/* MAIN CONTENT */}
                     <div className="col-lg-9 animate__animated animate__fadeInUp">
                         <div className="card border-0 shadow-sm rounded-4 overflow-hidden" style={{ minHeight: '600px' }}>
-                            <div className="card-header bg-white border-bottom p-2.5 overflow-x-auto text-nowrap scrollbar-none" style={{ WebkitOverflowScrolling: 'touch' }}>
-                                <ul className="nav nav-pills flex-nowrap gap-2 p-1" role="tablist">
+                            {/* Sleek Modern Horizontal Scrollable Tab Bar */}
+                            <div className="card-header bg-white border-bottom p-2.5">
+                                <div
+                                    className="d-flex align-items-center gap-2 overflow-x-auto text-nowrap scrollbar-none"
+                                    style={{
+                                        WebkitOverflowScrolling: 'touch',
+                                        scrollbarWidth: 'none',
+                                        msOverflowStyle: 'none'
+                                    }}
+                                >
                                     {[
                                         { id: 'overview', label: 'Overview', icon: 'bi-person-badge-fill' },
                                         { id: 'academic', label: 'Academics', icon: 'bi-journal-bookmark-fill' },
@@ -507,24 +517,28 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                                         { id: 'fees', label: 'Fee History', icon: 'bi-receipt-cutoff' },
                                         { id: 'attendance', label: 'Attendance', icon: 'bi-calendar-check-fill' },
                                         { id: 'documents', label: 'Documents', icon: 'bi-folder2-open' }
-                                    ].map(tab => (
-                                        <li className="nav-item" key={tab.id}>
+                                    ].map(tab => {
+                                        const isActive = activeTab === tab.id;
+                                        return (
                                             <button
-                                                className={`nav-link py-2 px-3 fw-bold rounded-3 border-0 transition-all ${activeTab === tab.id ? 'shadow-sm' : ''}`}
+                                                key={tab.id}
                                                 onClick={() => setActiveTab(tab.id)}
+                                                className="btn btn-sm d-inline-flex align-items-center gap-2 px-3 py-2 rounded-3 fw-bold transition-all border-0"
                                                 style={{
                                                     fontSize: '0.85rem',
-                                                    whiteSpace: 'nowrap',
-                                                    backgroundColor: activeTab === tab.id ? 'var(--primary-teal)' : '#f1f5f9',
-                                                    color: activeTab === tab.id ? '#ffffff' : '#475569',
+                                                    letterSpacing: '0.2px',
+                                                    backgroundColor: isActive ? 'var(--primary-teal)' : '#f8fafc',
+                                                    color: isActive ? '#ffffff' : '#64748b',
+                                                    boxShadow: isActive ? '0 4px 12px rgba(25, 80, 83, 0.25)' : 'none',
+                                                    border: isActive ? '1px solid var(--primary-teal)' : '1px solid #e2e8f0',
                                                 }}
                                             >
-                                                <i className={`bi ${tab.icon} me-1.5`}></i>
-                                                {tab.label}
+                                                <i className={`bi ${tab.icon}`} style={{ fontSize: '0.95rem', color: isActive ? '#ffffff' : '#64748b' }}></i>
+                                                <span>{tab.label}</span>
                                             </button>
-                                        </li>
-                                    ))}
-                                </ul>
+                                        );
+                                    })}
+                                </div>
                             </div>
 
                             <div className="card-body p-4 p-lg-5 bg-light bg-opacity-50">
