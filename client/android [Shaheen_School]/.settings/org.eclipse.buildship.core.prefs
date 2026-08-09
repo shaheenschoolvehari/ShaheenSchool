@@ -1,0 +1,6 @@
+# Eclipse Buildship Gradle Preferences
+connection.project.dir=
+offline.mode=false
+build.scans.enabled=false
+auto.sync=true
+override.workspace.settings=false
