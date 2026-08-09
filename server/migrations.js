@@ -67,6 +67,15 @@ async function runEssentialMigrations() {
             ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(10,2) DEFAULT 0;
         `);
 
+        // 4.2 Expense tables updated_at column migration
+        console.log("   → Checking expense_categories and expenses columns...");
+        await client.query(`
+            ALTER TABLE expense_categories ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+            ALTER TABLE expenses ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+        `).catch(() => { /* Tables may not exist yet on fresh install, seeder will create them */ });
+
+
+
         // 5. Student Academic Records (Promotion History Table)
         console.log("   → Checking student_academic_records table...");
         await client.query(`

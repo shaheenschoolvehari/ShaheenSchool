@@ -770,8 +770,10 @@ async function runMasterSeeder() {
                     category_name VARCHAR(100) UNIQUE NOT NULL,
                     description TEXT,
                     is_active BOOLEAN DEFAULT TRUE,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
+                ALTER TABLE expense_categories ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
             `);
 
             // Seed default expense categories
@@ -807,8 +809,10 @@ async function runMasterSeeder() {
                     description TEXT,
                     receipt_url TEXT,
                     created_by INTEGER REFERENCES app_users(id) ON DELETE SET NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
+                ALTER TABLE expenses ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
 
                 CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(expense_date);
             `);

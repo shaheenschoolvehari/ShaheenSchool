@@ -59,24 +59,36 @@ const EXPECTED_TABLES = [
 
 // Critical columns to verify on key tables
 const CRITICAL_COLUMNS = {
-    app_roles: ['id', 'role_name', 'role_level', 'is_custom', 'is_system_default'],
+    // Auth
+    app_roles: ['id', 'role_name', 'role_level', 'is_custom', 'is_system_default', 'dashboard_access'],
     app_users: ['id', 'username', 'password_hash', 'role_id', 'is_active', 'failed_login_attempts', 'locked_until'],
     user_sessions: ['session_id', 'user_id', 'session_token', 'remember_me', 'expires_at', 'is_revoked'],
-    students: ['student_id', 'first_name', 'class_id', 'section_id'],
+    // Students
+    students: ['student_id', 'first_name', 'class_id', 'section_id', 'family_id', 'status'],
     families: ['family_id', 'family_fee', 'opening_balance', 'opening_balance_paid'],
-    monthly_fee_slips: ['slip_id', 'is_printed', 'printed_at', 'is_family_slip', 'has_multi_months'],
-    fee_payments: ['payment_id', 'slip_id', 'amount_paid', 'is_printed', 'printed_at'],
-    academic_years: ['id', 'year_name', 'is_active', 'status'],
+    student_academic_records: ['id', 'student_id', 'academic_year_id', 'class_id', 'promotion_target_year_id', 'promoted_at'],
+    // Academic
+    academic_years: ['id', 'year_name', 'is_active', 'status', 'is_configured'],
     academic_terms: ['id', 'academic_year_id', 'has_summer_work', 'has_winter_work'],
-    fee_plans: ['plan_id', 'applies_to_all'],
-    expense_categories: ['category_id', 'category_name', 'is_active'],
-    expenses: ['expense_id', 'category_id', 'expense_title', 'amount'],
-    exam_marks: ['mark_id', 'student_id', 'subject_id', 'term_id', 'total_marks', 'obtained_marks', 'status'],
+    // HRM
+    employees: ['employee_id', 'first_name', 'last_name', 'cnic', 'status', 'app_user_id'],
+    // Expenses
+    expense_categories: ['category_id', 'category_name', 'is_active', 'updated_at'],
+    expenses: ['expense_id', 'category_id', 'expense_title', 'amount', 'status', 'updated_at'],
+    // Fees
+    fee_heads: ['head_id', 'head_name', 'head_type', 'frequency', 'is_active'],
+    fee_plans: ['plan_id', 'plan_name', 'applies_to_all'],
+    monthly_fee_slips: ['slip_id', 'is_printed', 'printed_at', 'is_family_slip', 'has_multi_months', 'months_list'],
+    fee_payments: ['payment_id', 'slip_id', 'amount_paid', 'is_printed', 'printed_at'],
+    admission_fee_ledger: ['ledger_id', 'student_id', 'total_amount', 'paid_amount', 'discount', 'discount_amount', 'status'],
+    admission_fee_payments: ['payment_id', 'ledger_id', 'amount_paid', 'discount_amount'],
+    // Examinations
+    exam_marks: ['mark_id', 'student_id', 'subject_id', 'term_id', 'total_marks', 'obtained_marks', 'status', 'updated_at'],
     test_papers: ['test_id', 'test_name', 'class_id', 'total_marks', 'status', 'approved_by', 'published_by'],
     test_marks: ['test_mark_id', 'test_id', 'student_id', 'obtained_marks', 'is_absent'],
-    exam_sheet_approvals: ['id', 'sheet_type', 'class_id', 'section_id', 'status', 'submitted_by', 'approved_by', 'published_by'],
+    exam_sheet_approvals: ['id', 'sheet_type', 'class_id', 'section_id', 'status', 'submitted_by', 'approved_by', 'published_by', 'updated_at'],
+    // Notifications
     notifications: ['id', 'user_id', 'family_id', 'role', 'type', 'title', 'message', 'is_read'],
-    admission_fee_ledger: ['ledger_id', 'student_id', 'total_amount', 'paid_amount', 'discount', 'discount_amount', 'status'],
 };
 
 async function runFullCheck() {
