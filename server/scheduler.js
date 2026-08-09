@@ -248,10 +248,100 @@ async function checkMissedBackupsOnStartup(isEnabled) {
     }
 }
 
-// Initialize Scheduler (Configured for 2 Times Daily Backup)
+const { createNotification } = require('./utils/notify');
+
+/**
+ * Automated Fee Reminder Notification Scheduler
+ * Normal Pending: 7 notifications per day (Bilingual Urdu & English)
+ * Urgent / Overdue (<=3 days or past due): 10 notifications per day (Bilingual Urdu & English)
+ */
+async function dispatchFeeReminderNotifications(isUrgentSlot = false) {
+    try {
+        console.log(`[Fee Reminder Scheduler] Running ${isUrgentSlot ? 'URGENT (10x Daily)' : 'Normal (7x Daily)'} fee reminder check...`);
+        const client = await pool.connect();
+        try {
+            // Fetch all unpaid or partial monthly fee slips
+            const res = await client.query(`
+                SELECT 
+                    mfs.slip_id,
+                    mfs.student_id,
+                    mfs.family_id,
+                    mfs.month,
+                    mfs.year,
+                    mfs.due_date,
+                    mfs.total_amount,
+                    mfs.paid_amount,
+                    mfs.status,
+                    (mfs.total_amount - mfs.paid_amount) AS remaining_balance,
+                    CONCAT(s.first_name, ' ', s.last_name) AS student_name,
+                    s.family_id AS student_family_id
+                FROM monthly_fee_slips mfs
+                JOIN students s ON mfs.student_id = s.student_id
+                WHERE mfs.status IN ('unpaid', 'partial')
+                  AND (mfs.total_amount - mfs.paid_amount) > 0
+                  AND s.status = 'Active'
+            `);
+
+            const today = new Date();
+
+            for (const row of res.rows) {
+                const famId = (row.family_id || row.student_family_id || '').trim();
+                if (!famId) continue;
+
+                const balance = parseFloat(row.remaining_balance || 0);
+                if (balance <= 0) continue;
+
+                const dueDate = row.due_date ? new Date(row.due_date) : null;
+                let daysToDue = 999;
+                if (dueDate) {
+                    const diffTime = dueDate.getTime() - today.getTime();
+                    daysToDue = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                }
+
+                const isUrgent = daysToDue <= 3 || daysToDue < 0; // Near due date or overdue
+
+                // Match slot type
+                if (isUrgentSlot && !isUrgent) continue;
+                if (!isUrgentSlot && isUrgent) continue;
+
+                const monthName = new Date(row.year, row.month - 1).toLocaleString('en-US', { month: 'short' });
+                const formattedBalance = balance.toLocaleString('en-PK');
+
+                let title = '';
+                let message = '';
+
+                if (isUrgent) {
+                    title = `URGENT: Fee Overdue Alert | فوری: فیس کی یاد دہانی ⚠️`;
+                    message = `URGENT: Due date for ${row.student_name} (${monthName} ${row.year}) is near/passed! Remaining: PKR ${formattedBalance}. Please clear immediately. فوری نوٹس: ${row.student_name} کی فیس PKR ${formattedBalance} کی آخری تاریخ قریب یا گزر چکی ہے۔ برائے مہربانی فوراً جمع کروائیں۔`;
+                } else {
+                    title = `Fee Reminder | فیس کی ادائیگی کی اطلاع 💳`;
+                    message = `Dear Parent, fee for ${row.student_name} (${monthName} ${row.year}) is pending: PKR ${formattedBalance}. Please clear dues. محترم والدین، ${row.student_name} کی فیس PKR ${formattedBalance} واجب الادا ہے۔ برائے مہربانی بروقت فیس جمع کروائیں۔`;
+                }
+
+                await createNotification({
+                    familyId: famId,
+                    studentId: row.student_id,
+                    type: isUrgent ? 'fee_urgent' : 'fee_reminder',
+                    title,
+                    message,
+                    link: '/fees/collect',
+                    clientOrPool: client
+                });
+            }
+
+            console.log(`[Fee Reminder Scheduler] Processed fee reminders for ${res.rows.length} pending records.`);
+        } finally {
+            client.release();
+        }
+    } catch (err) {
+        console.error('[Fee Reminder Scheduler] Error dispatching reminders:', err.message);
+    }
+}
+
+// Initialize Scheduler (Configured for 2 Times Daily Backup + Fee Reminder Schedules)
 const initScheduler = async () => {
     try {
-        console.log('[Backup System] Initializing Backup Scheduler...');
+        console.log('[Backup & Reminder System] Initializing Schedulers...');
 
         // Stop existing tasks
         activeTasks.forEach(task => task.stop());
@@ -267,37 +357,48 @@ const initScheduler = async () => {
         // Check for missed backups during system downtime
         await checkMissedBackupsOnStartup(isEnabled);
 
-        if (!isEnabled) {
-            console.log('[Backup System] Auto backup is DISABLED in settings.');
-            return;
+        if (isEnabled) {
+            // Configure 2 Daily Backup Times (Default: 08:00 AM & 08:00 PM)
+            const time1 = settings['backup_time_1'] || settings['backup_time'] || '08:00';
+            const time2 = settings['backup_time_2'] || '20:00';
+
+            const times = [time1, time2].filter(Boolean);
+
+            times.forEach(t => {
+                const parts = t.split(':');
+                if (parts.length === 2) {
+                    const hour = parseInt(parts[0], 10);
+                    const minute = parseInt(parts[1], 10);
+                    if (!isNaN(hour) && !isNaN(minute)) {
+                        const cronExp = `${minute} ${hour} * * *`;
+                        console.log(`[Backup System] Scheduled 2-Time Daily Job set for: ${cronExp} (${t})`);
+                        const task = cron.schedule(cronExp, () => {
+                            console.log(`[Backup System] Triggering scheduled backup for ${t}...`);
+                            performBackup(`Scheduled Daily (${t})`).catch(err => console.error('[Backup System] Scheduled backup error:', err));
+                        });
+                        activeTasks.push(task);
+                    }
+                }
+            });
         }
 
-        // Configure 2 Daily Backup Times (Default: 08:00 AM & 08:00 PM)
-        const time1 = settings['backup_time_1'] || settings['backup_time'] || '08:00';
-        const time2 = settings['backup_time_2'] || '20:00';
-
-        const times = [time1, time2].filter(Boolean);
-
-        times.forEach(t => {
-            const parts = t.split(':');
-            if (parts.length === 2) {
-                const hour = parseInt(parts[0], 10);
-                const minute = parseInt(parts[1], 10);
-                if (!isNaN(hour) && !isNaN(minute)) {
-                    const cronExp = `${minute} ${hour} * * *`;
-                    console.log(`[Backup System] Scheduled 2-Time Daily Job set for: ${cronExp} (${t})`);
-                    const task = cron.schedule(cronExp, () => {
-                        console.log(`[Backup System] Triggering scheduled backup for ${t}...`);
-                        performBackup(`Scheduled Daily (${t})`).catch(err => console.error('[Backup System] Scheduled backup error:', err));
-                    });
-                    activeTasks.push(task);
-                }
-            }
+        // 2. Configure 7x Daily Fee Reminders (Normal Pending: 8:00, 10:00, 13:00, 15:00, 18:00, 20:00, 22:00)
+        const normalFeeTask = cron.schedule('0 8,10,13,15,18,20,22 * * *', () => {
+            dispatchFeeReminderNotifications(false);
         });
+        activeTasks.push(normalFeeTask);
+        console.log('[Fee Reminder System] 7x Daily Fee Reminder schedule initialized.');
+
+        // 3. Configure 10x Daily Urgent Fee Reminders (Overdue/Near Due: 8:00, 9:00, 11:00, 12:00, 14:00, 15:00, 17:00, 18:00, 20:00, 21:00)
+        const urgentFeeTask = cron.schedule('0 8,9,11,12,14,15,17,18,20,21 * * *', () => {
+            dispatchFeeReminderNotifications(true);
+        });
+        activeTasks.push(urgentFeeTask);
+        console.log('[Fee Reminder System] 10x Daily Urgent Fee Reminder schedule initialized.');
 
     } catch (err) {
-        console.error('[Backup System] Error initializing backup scheduler:', err.message);
+        console.error('[Scheduler System] Error initializing schedulers:', err.message);
     }
 };
 
-module.exports = { initScheduler, performBackup };
+module.exports = { initScheduler, performBackup, dispatchFeeReminderNotifications };

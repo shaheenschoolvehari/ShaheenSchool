@@ -338,6 +338,15 @@ router.post('/generate', async (req, res) => {
         const coveredByIndividual = soloStudents.length;
 
         await client.query('COMMIT');
+
+        // Trigger instant initial fee notification delivery to families
+        try {
+            const { dispatchFeeReminderNotifications } = require('../scheduler');
+            dispatchFeeReminderNotifications(false);
+        } catch (schedErr) {
+            console.error("Initial fee reminder trigger error:", schedErr.message);
+        }
+
         res.status(201).json({
             message: 'Fee slips generated',
             generated: generatedCount,
