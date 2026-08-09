@@ -19,7 +19,7 @@ interface NotificationItem {
     created_at: string;
 }
 
-export function NotificationBell({ role = 'all', familyId = '', userId = '' }: { role?: string; familyId?: string; userId?: string }) {
+export function NotificationBell({ role = 'all', familyId = '', userId = '', studentId = '' }: { role?: string; familyId?: string; userId?: string; studentId?: number | string }) {
     const router = useRouter();
     const [open, setOpen] = useState(false);
     const [notifications, setNotifications] = useState<NotificationItem[]>([]);

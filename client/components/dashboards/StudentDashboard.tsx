@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { notify } from '@/app/utils/notify';
 import { useAuth } from '@/contexts/AuthContext';
 import { API } from './shared';
+import { NotificationBell } from '../notifications/NotificationBell';
 
 export default function StudentDashboard({ user }: { user: any }) {
     const [currentId, setCurrentId] = useState<string | null>(null);
@@ -333,9 +334,14 @@ export default function StudentDashboard({ user }: { user: any }) {
                     style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
 
                 <div className="container position-relative py-4 px-3 px-sm-4">
-                    <button className="btn btn-outline-light rounded-circle shadow-sm mb-3" onClick={() => router.back()} style={{ width: 42, height: 42 }}>
-                        <i className="bi bi-arrow-left fs-5"></i>
-                    </button>
+                    <div className="d-flex justify-content-between align-items-center mb-3">
+                        <button className="btn btn-outline-light rounded-circle shadow-sm" onClick={() => router.back()} style={{ width: 42, height: 42 }}>
+                            <i className="bi bi-arrow-left fs-5"></i>
+                        </button>
+                        <div className="d-flex align-items-center gap-2">
+                            <NotificationBell familyId={student?.family_id} studentId={student?.student_id} role="student" />
+                        </div>
+                    </div>
 
                     <div className="d-flex flex-column flex-sm-row align-items-center align-items-sm-end gap-3 gap-sm-4 pb-2">
                         <div className="position-relative flex-shrink-0" style={{ marginBottom: '-45px' }}>
@@ -476,23 +482,29 @@ export default function StudentDashboard({ user }: { user: any }) {
                     {/* MAIN CONTENT */}
                     <div className="col-lg-9 animate__animated animate__fadeInUp">
                         <div className="card border-0 shadow-sm rounded-4 overflow-hidden" style={{ minHeight: '600px' }}>
-                            <div className="card-header bg-white border-bottom p-0 overflow-x-auto text-nowrap scrollbar-none" style={{ WebkitOverflowScrolling: 'touch' }}>
-                                <ul className="nav nav-tabs border-0 flex-nowrap" role="tablist">
+                            <div className="card-header bg-white border-bottom p-2.5 overflow-x-auto text-nowrap scrollbar-none" style={{ WebkitOverflowScrolling: 'touch' }}>
+                                <ul className="nav nav-pills flex-nowrap gap-2 p-1" role="tablist">
                                     {[
-                                        hasPermission('dash.student_kpi', 'read') ? 'overview' : null,
-                                        'academic',
-                                        'family',
-                                        hasPermission('dash.student_fees', 'read') ? 'fees' : null,
-                                        hasPermission('dash.student_att', 'read') ? 'attendance' : null,
-                                        'documents'
-                                    ].filter((t): t is string => Boolean(t)).map(tab => (
-                                        <li className="nav-item" key={tab}>
+                                        { id: 'overview', label: 'Overview', icon: 'bi-person-badge-fill', perm: hasPermission('dash.student_kpi', 'read') },
+                                        { id: 'academic', label: 'Academics', icon: 'bi-journal-bookmark-fill', perm: true },
+                                        { id: 'family', label: 'Siblings', icon: 'bi-people-fill', perm: true },
+                                        { id: 'fees', label: 'Fee History', icon: 'bi-receipt-cutoff', perm: hasPermission('dash.student_fees', 'read') },
+                                        { id: 'attendance', label: 'Attendance', icon: 'bi-calendar-check-fill', perm: hasPermission('dash.student_att', 'read') },
+                                        { id: 'documents', label: 'Documents', icon: 'bi-folder2-open', perm: true }
+                                    ].filter(t => t.perm).map(tab => (
+                                        <li className="nav-item" key={tab.id}>
                                             <button
-                                                className={`nav-link py-3 px-3 px-md-4 fw-bold text-uppercase border-0 rounded-0 ${activeTab === tab ? 'active border-bottom border-primary border-3 text-primary bg-transparent' : 'text-muted'}`}
-                                                onClick={() => setActiveTab(tab)}
-                                                style={{ fontSize: '0.82rem', letterSpacing: '0.8px', whiteSpace: 'nowrap' }}
+                                                className={`nav-link py-2 px-3 fw-bold rounded-3 border-0 transition-all ${activeTab === tab.id ? 'shadow-sm' : ''}`}
+                                                onClick={() => setActiveTab(tab.id)}
+                                                style={{
+                                                    fontSize: '0.85rem',
+                                                    whiteSpace: 'nowrap',
+                                                    backgroundColor: activeTab === tab.id ? 'var(--primary-teal)' : '#f1f5f9',
+                                                    color: activeTab === tab.id ? '#ffffff' : '#475569',
+                                                }}
                                             >
-                                                {tab}
+                                                <i className={`bi ${tab.icon} me-1.5`}></i>
+                                                {tab.label}
                                             </button>
                                         </li>
                                     ))}
