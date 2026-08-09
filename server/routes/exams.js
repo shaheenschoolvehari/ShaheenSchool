@@ -654,6 +654,48 @@ router.post('/marks/save', async (req, res) => {
 
         await client.query('COMMIT');
 
+        // Dispatch Exam Approval & Published Result Notifications
+        try {
+            const { createNotification } = require('../utils/notify');
+            const classInfo = await pool.query(`SELECT class_name FROM classes WHERE class_id = $1`, [classId]);
+            const subInfo = await pool.query(`SELECT subject_name FROM subjects WHERE subject_id = $1`, [subjectId]);
+            const className = classInfo.rows[0]?.class_name || `Class #${classId}`;
+            const subName = subInfo.rows[0]?.subject_name || `Subject #${subjectId}`;
+
+            // 1. Notify Higher Roles (Admin, Principal, Vice Principal, Coordinator)
+            const rolesToNotify = ['admin', 'principal', 'vice_principal', 'coordinator'];
+            for (const rName of rolesToNotify) {
+                await createNotification({
+                    role: rName,
+                    type: 'exam_approval',
+                    title: 'Exam Marks Submitted for Approval 📝',
+                    message: `Exam/Test marks for ${className} (${subName}) have been recorded & locked by staff. Click to review and approve.`,
+                    link: '/examination/marks'
+                });
+            }
+
+            // 2. Notify Families of students
+            for (const row of marks) {
+                const sId = Number(row.student_id);
+                const sInfo = await pool.query(
+                    `SELECT CONCAT(first_name, ' ', last_name) AS full_name, family_id FROM students WHERE student_id = $1`,
+                    [sId]
+                );
+                if (sInfo.rows[0]) {
+                    await createNotification({
+                        familyId: sInfo.rows[0].family_id,
+                        studentId: sId,
+                        type: 'test_marks',
+                        title: 'New Exam / Test Marks Entered 📊',
+                        message: `New marks recorded for ${sInfo.rows[0].full_name} in ${className} (${subName}): ${row.obtained_marks}/${totalMarks}.`,
+                        link: `/students/profile/${sId}`
+                    });
+                }
+            }
+        } catch (notifErr) {
+            console.error("Exam notification error:", notifErr.message);
+        }
+
         res.json({
             message: ctx.isAdmin
                 ? 'Marks saved successfully.'

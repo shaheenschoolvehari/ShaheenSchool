@@ -57,6 +57,8 @@ app.use('/attendance', require('./routes/attendance'));
 app.use('/exams', require('./routes/exams'));
 // Reports Module Routes
 app.use('/reports', require('./routes/reports'));
+// Notifications Module Route
+app.use('/notifications', require('./routes/notifications'));
 
 app.get('/', (req, res) => {
     res.send('Smart School System API is running');

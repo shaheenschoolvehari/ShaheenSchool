@@ -206,6 +206,24 @@ async function runEssentialMigrations() {
             CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);
             CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(session_token);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_role_permissions_role_module ON role_permissions(role_id, module_name);
+
+            CREATE TABLE IF NOT EXISTS notifications (
+                id SERIAL PRIMARY KEY,
+                user_id INT NULL,
+                family_id VARCHAR(50) NULL,
+                student_id INT NULL,
+                role VARCHAR(50) NULL,
+                type VARCHAR(50) NOT NULL,
+                title VARCHAR(255) NOT NULL,
+                message TEXT NOT NULL,
+                link VARCHAR(255) NULL,
+                is_read BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_notifications_family ON notifications(family_id);
+            CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
+            CREATE INDEX IF NOT EXISTS idx_notifications_role ON notifications(role);
+            CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read);
         `);
 
         const { syncAllSequences } = require('./utils/sequenceSync');

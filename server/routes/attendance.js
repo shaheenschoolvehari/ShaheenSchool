@@ -179,6 +179,32 @@ router.post('/students/daily', async (req, res) => {
             saved++;
         }
         await client.query('COMMIT');
+
+        // Dispatch notifications for marked students to their family_ids
+        try {
+            const { createNotification } = require('../utils/notify');
+            for (const r of records) {
+                const sInfo = await pool.query(
+                    `SELECT CONCAT(first_name, ' ', last_name) AS full_name, family_id FROM students WHERE student_id = $1`,
+                    [r.student_id]
+                );
+                const sName = sInfo.rows[0]?.full_name || `Student #${r.student_id}`;
+                const famId = sInfo.rows[0]?.family_id;
+                const statusStr = (r.status || 'Present').toUpperCase();
+
+                await createNotification({
+                    familyId: famId,
+                    studentId: r.student_id,
+                    type: 'attendance',
+                    title: `Attendance Update 📅`,
+                    message: `${sName} was marked ${statusStr} for date ${date}.`,
+                    link: `/students/profile/${r.student_id}`
+                });
+            }
+        } catch (notifErr) {
+            console.error("Attendance notification error:", notifErr.message);
+        }
+
         res.json({ message: `${saved} attendance record(s) saved`, saved });
     } catch (err) {
         await client.query('ROLLBACK');

@@ -939,6 +939,29 @@ router.post('/:id/pay', async (req, res) => {
             [newPaid, newStatus, id]
         );
 
+        // Dispatch notification to Family Unit
+        try {
+            const { createNotification } = require('../utils/notify');
+            const slipObj = updated.rows[0];
+            if (slipObj) {
+                const stuRes = await client.query(`SELECT CONCAT(first_name, ' ', last_name) AS full_name, family_id FROM students WHERE student_id = $1`, [slipObj.student_id]);
+                const stuName = stuRes.rows[0]?.full_name || 'Student';
+                const famId = slipObj.family_id || stuRes.rows[0]?.family_id;
+
+                await createNotification({
+                    familyId: famId,
+                    studentId: slipObj.student_id,
+                    type: 'fee_payment',
+                    title: 'Fee Payment Received 💳',
+                    message: `Payment of PKR ${parseFloat(paidNow).toLocaleString('en-PK')} received for ${stuName} (Family ID: ${famId || 'N/A'}). Status: ${newStatus.toUpperCase()}.`,
+                    link: '/fees/collect',
+                    clientOrPool: client
+                });
+            }
+        } catch (notifErr) {
+            console.error("Notification dispatch error:", notifErr.message);
+        }
+
         if (head_breakdown && typeof head_breakdown === 'object') {
             for (const [itemId, amount] of Object.entries(head_breakdown)) {
                 if (parseFloat(amount) > 0) {
