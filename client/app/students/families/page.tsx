@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import * as XLSX from 'xlsx';
 
 const API = process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com";
@@ -41,6 +42,10 @@ interface FamilyData {
     sections_list: string[];
     family_fee: number;
     opening_balance: number;
+    total_billed?: number;
+    total_paid?: number;
+    total_balance?: number;
+    fee_status?: 'unpaid' | 'partial' | 'paid' | string;
     members: StudentMember[];
 }
 
@@ -54,6 +59,7 @@ interface SchoolInfo {
 }
 
 export default function FamilyListPage() {
+    const router = useRouter();
     const [families, setFamilies] = useState<FamilyData[]>([]);
     const [classes, setClasses] = useState<{ class_id: number; class_name: string }[]>([]);
     const [stats, setStats] = useState<{ total_families: number; total_students: number; average_family_size: number | string } | null>(null);
@@ -63,6 +69,7 @@ export default function FamilyListPage() {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedClass, setSelectedClass] = useState('');
+    const [showFeeColumns, setShowFeeColumns] = useState(false);
 
     // Fetch families, classes, and school settings
     useEffect(() => {
@@ -111,9 +118,10 @@ export default function FamilyListPage() {
         loadData();
     }, []);
 
-    // Filter families based on search term & class filter
+    // Filter & Sort families based on search term, class filter, and sequence status
+    // Sequence order: Unpaid (1 - Top), Partial (2 - Middle), Paid (3 - Bottom)
     const filteredFamilies = useMemo(() => {
-        return families.filter(fam => {
+        const list = families.filter(fam => {
             const s = searchTerm.toLowerCase().trim();
             const matchesSearch = !s || (
                 fam.family_id.toLowerCase().includes(s) ||
@@ -129,6 +137,15 @@ export default function FamilyListPage() {
             const matchesClass = !selectedClass || fam.members.some(m => m.class_id?.toString() === selectedClass || m.class_name.toLowerCase() === selectedClass.toLowerCase());
 
             return matchesSearch && matchesClass;
+        });
+
+        const statusPriority: Record<string, number> = { unpaid: 1, partial: 2, paid: 3 };
+
+        return list.sort((a, b) => {
+            const pA = statusPriority[a.fee_status || 'paid'] || 3;
+            const pB = statusPriority[b.fee_status || 'paid'] || 3;
+            if (pA !== pB) return pA - pB;
+            return a.family_id.localeCompare(b.family_id, undefined, { numeric: true });
         });
     }, [families, searchTerm, selectedClass]);
 
@@ -160,6 +177,10 @@ export default function FamilyListPage() {
                     "Sr.#": sr,
                     "Family Name": f.family_name,
                     "Family ID": f.family_id,
+                    "Fee Status": f.fee_status ? f.fee_status.toUpperCase() : "PAID",
+                    "Total Bill (PKR)": f.total_billed || 0,
+                    "Paid (PKR)": f.total_paid || 0,
+                    "Balance (PKR)": f.total_balance || 0,
                     "Student Name": m.full_name,
                     "Admission No": m.admission_no,
                     "Class": m.class_name,
@@ -178,6 +199,10 @@ export default function FamilyListPage() {
             { wch: 6 },  // Sr
             { wch: 22 }, // Family Name
             { wch: 16 }, // Family ID
+            { wch: 12 }, // Fee Status
+            { wch: 16 }, // Total Bill
+            { wch: 14 }, // Paid
+            { wch: 14 }, // Balance
             { wch: 25 }, // Student Name
             { wch: 15 }, // Admission No
             { wch: 14 }, // Class
@@ -198,7 +223,7 @@ export default function FamilyListPage() {
     const exportCSV = () => {
         if (filteredFamilies.length === 0) return;
 
-        const headers = ["Sr.#", "Family Name", "Family ID", "Student Name", "Admission No", "Class", "Section", "Father Name", "Mother Name", "Father Phone", "Mother Phone"];
+        const headers = ["Sr.#", "Family Name", "Family ID", "Fee Status", "Total Bill", "Paid", "Balance", "Student Name", "Admission No", "Class", "Section", "Father Name", "Mother Name", "Father Phone", "Mother Phone"];
         const rows: string[][] = [];
         let sr = 1;
 
@@ -208,6 +233,10 @@ export default function FamilyListPage() {
                     sr.toString(),
                     `"${(f.family_name || '').replace(/"/g, '""')}"`,
                     `"${(f.family_id || '').replace(/"/g, '""')}"`,
+                    `"${(f.fee_status || 'paid').toUpperCase()}"`,
+                    `"${f.total_billed || 0}"`,
+                    `"${f.total_paid || 0}"`,
+                    `"${f.total_balance || 0}"`,
                     `"${(m.full_name || '').replace(/"/g, '""')}"`,
                     `"${(m.admission_no || '').replace(/"/g, '""')}"`,
                     `"${(m.class_name || '').replace(/"/g, '""')}"`,
@@ -244,16 +273,25 @@ export default function FamilyListPage() {
 
         const tableRowsHtml = filteredFamilies.map((f, idx) => {
             const M = f.members.length;
+            const feeStatusStr = f.fee_status ? f.fee_status.toUpperCase() : 'PAID';
+            const statusColor = f.fee_status === 'unpaid' ? '#dc3545' : f.fee_status === 'partial' ? '#fd7e14' : '#198754';
+
             return f.members.map((m, mIdx) => {
                 if (mIdx === 0) {
                     return `
                         <tr style="border-top: 2px solid #215E61;">
                             <td rowspan="${M}" style="text-align: center; border: 1px solid #333; padding: 6px; font-weight: bold; vertical-align: middle; background-color: #fafafa;">${idx + 1}</td>
                             <td rowspan="${M}" style="border: 1px solid #333; padding: 6px; font-weight: bold; vertical-align: middle;">
-                                <div style="font-size: 10pt; color: #233D4D;">${f.family_name}</div>
+                                <div style="font-size: 10pt; color: ${statusColor};">${f.family_name}</div>
                                 <div style="font-size: 8pt; color: #666; font-weight: normal;">${f.total_children} Child${f.total_children > 1 ? 'ren' : ''}</div>
+                                <div style="font-size: 7.5pt; font-weight: bold; color: ${statusColor}; margin-top: 2px;">Status: ${feeStatusStr}</div>
                             </td>
                             <td rowspan="${M}" style="text-align: center; border: 1px solid #333; padding: 6px; font-weight: bold; vertical-align: middle; background-color: #f8f9fa;">${f.family_id}</td>
+                            ${showFeeColumns ? `
+                                <td rowspan="${M}" style="text-align: right; border: 1px solid #333; padding: 6px; font-weight: bold; vertical-align: middle;">PKR ${(f.total_billed || 0).toLocaleString('en-PK')}</td>
+                                <td rowspan="${M}" style="text-align: right; border: 1px solid #333; padding: 6px; font-weight: bold; color: #198754; vertical-align: middle;">PKR ${(f.total_paid || 0).toLocaleString('en-PK')}</td>
+                                <td rowspan="${M}" style="text-align: right; border: 1px solid #333; padding: 6px; font-weight: bold; color: ${(f.total_balance || 0) > 0 ? '#dc3545' : '#198754'}; vertical-align: middle;">PKR ${(f.total_balance || 0).toLocaleString('en-PK')}</td>
+                            ` : ''}
                             <td style="border: 1px solid #333; padding: 6px; font-weight: bold; color: #111;">
                                 ${m.full_name} <span style="font-size: 8pt; color: #555; font-weight: normal;">(${m.admission_no})</span>
                             </td>
@@ -318,11 +356,16 @@ export default function FamilyListPage() {
                     <thead>
                         <tr>
                             <th style="width: 4%;">Sr.#</th>
-                            <th style="width: 18%;">Family Name</th>
-                            <th style="width: 12%;">Family ID</th>
-                            <th style="width: 22%;">Student / Child Name</th>
-                            <th style="width: 10%;">Class</th>
-                            <th style="width: 8%;">Section</th>
+                            <th style="width: 16%;">Family Name</th>
+                            <th style="width: 10%;">Family ID</th>
+                            ${showFeeColumns ? `
+                                <th style="width: 9%;">Total Bill</th>
+                                <th style="width: 9%;">Paid</th>
+                                <th style="width: 9%;">Balance</th>
+                            ` : ''}
+                            <th style="width: 20%;">Student / Child Name</th>
+                            <th style="width: 8%;">Class</th>
+                            <th style="width: 7%;">Section</th>
                             <th style="width: 14%;">Parents Name</th>
                             <th style="width: 12%;">Phone Numbers</th>
                         </tr>
@@ -355,7 +398,7 @@ export default function FamilyListPage() {
                         Family Directory
                     </h2>
                     <p className="text-muted small mb-0">
-                        Complete family units directory with primary father names, child sub-rows, classes, sections, and parent contact options.
+                        Complete family units directory with fee statuses, fee history toggle, parents info, and direct student profile navigation.
                     </p>
                 </div>
             </div>
@@ -404,16 +447,16 @@ export default function FamilyListPage() {
                 <div className="card-header bg-white border-bottom py-3 px-3">
                     <div className="row g-3 align-items-center justify-content-between">
                         {/* Search & Class Filter */}
-                        <div className="col-12 col-md-8 col-lg-7">
+                        <div className="col-12 col-md-7 col-lg-6">
                             <div className="d-flex flex-wrap gap-2">
-                                <div className="input-group flex-grow-1" style={{ minWidth: '220px' }}>
+                                <div className="input-group flex-grow-1" style={{ minWidth: '200px' }}>
                                     <span className="input-group-text bg-light border-end-0">
                                         <i className="bi bi-search text-muted"></i>
                                     </span>
                                     <input
                                         type="text"
                                         className="form-control border-start-0 ps-0 bg-light"
-                                        placeholder="Search Family Name, ID, Child Name, Phone..."
+                                        placeholder="Search Family Name, ID, Child, Phone..."
                                         value={searchTerm}
                                         onChange={e => setSearchTerm(e.target.value)}
                                     />
@@ -425,7 +468,7 @@ export default function FamilyListPage() {
                                 </div>
                                 <select
                                     className="form-select bg-light"
-                                    style={{ width: 'auto', minWidth: '180px' }}
+                                    style={{ width: 'auto', minWidth: '160px' }}
                                     value={selectedClass}
                                     onChange={e => setSelectedClass(e.target.value)}
                                 >
@@ -439,47 +482,72 @@ export default function FamilyListPage() {
                             </div>
                         </div>
 
-                        {/* Top-Right Sleek Export Icon Buttons */}
-                        <div className="col-12 col-md-4 col-lg-5 d-flex justify-content-md-end align-items-center gap-2">
-                            <div className="btn-group shadow-sm rounded-3" role="group" aria-label="Export Actions">
+                        {/* Top-Right Sleek Export & Fee Icon Toggle Buttons */}
+                        <div className="col-12 col-md-5 col-lg-6 d-flex justify-content-md-end align-items-center gap-2">
+                            {/* Sequence Legend Indicator */}
+                            <div className="d-none d-lg-flex align-items-center gap-2 me-2 small">
+                                <span className="badge bg-danger bg-opacity-10 text-danger border border-danger-subtle">Unpaid</span>
+                                <span className="badge bg-warning bg-opacity-15 text-dark border border-warning">Partial</span>
+                                <span className="badge bg-light text-dark border">Paid</span>
+                            </div>
+
+                            <div className="btn-group shadow-sm rounded-3" role="group" aria-label="Export & Fee Actions">
+                                {/* Fee Toggle Icon Button */}
                                 <button
-                                    className="btn btn-sm btn-light border text-danger fw-semibold px-3 d-inline-flex align-items-center gap-1"
-                                    onClick={exportPDF}
-                                    title="Export or Save as PDF"
+                                    type="button"
+                                    className={`btn btn-sm ${showFeeColumns ? 'btn-teal text-white' : 'btn-light border'} px-2.5 d-inline-flex align-items-center justify-content-center`}
+                                    style={{ width: '36px', height: '34px', color: showFeeColumns ? '#fff' : 'var(--primary-teal)', backgroundColor: showFeeColumns ? 'var(--primary-teal)' : undefined }}
+                                    onClick={() => setShowFeeColumns(!showFeeColumns)}
+                                    title={showFeeColumns ? "Hide Fee Summary Columns" : "Show Fee Summary Columns (Total Bill, Paid, Balance)"}
                                 >
-                                    <i className="bi bi-file-earmark-pdf-fill fs-6"></i>
-                                    <span className="d-none d-sm-inline">PDF</span>
+                                    <i className={`bi ${showFeeColumns ? 'bi-cash-stack' : 'bi-currency-dollar'} fs-5`}></i>
                                 </button>
+                                {/* PDF Icon Button */}
                                 <button
-                                    className="btn btn-sm btn-light border text-success fw-semibold px-3 d-inline-flex align-items-center gap-1"
+                                    type="button"
+                                    className="btn btn-sm btn-light border text-danger px-2.5 d-inline-flex align-items-center justify-content-center"
+                                    style={{ width: '36px', height: '34px' }}
+                                    onClick={exportPDF}
+                                    title="Export PDF / Print Document"
+                                >
+                                    <i className="bi bi-file-earmark-pdf-fill fs-5"></i>
+                                </button>
+                                {/* Excel Icon Button */}
+                                <button
+                                    type="button"
+                                    className="btn btn-sm btn-light border text-success px-2.5 d-inline-flex align-items-center justify-content-center"
+                                    style={{ width: '36px', height: '34px' }}
                                     onClick={exportExcel}
                                     title="Export to Excel Spreadsheet"
                                 >
-                                    <i className="bi bi-file-earmark-excel-fill fs-6"></i>
-                                    <span className="d-none d-sm-inline">Excel</span>
+                                    <i className="bi bi-file-earmark-excel-fill fs-5"></i>
                                 </button>
+                                {/* CSV Icon Button */}
                                 <button
-                                    className="btn btn-sm btn-light border text-primary fw-semibold px-3 d-inline-flex align-items-center gap-1"
+                                    type="button"
+                                    className="btn btn-sm btn-light border text-primary px-2.5 d-inline-flex align-items-center justify-content-center"
+                                    style={{ width: '36px', height: '34px' }}
                                     onClick={exportCSV}
                                     title="Export to CSV File"
                                 >
-                                    <i className="bi bi-file-earmark-text-fill fs-6"></i>
-                                    <span className="d-none d-sm-inline">CSV</span>
+                                    <i className="bi bi-file-earmark-text-fill fs-5"></i>
                                 </button>
+                                {/* Print Icon Button */}
                                 <button
-                                    className="btn btn-sm btn-light border text-dark fw-semibold px-3 d-inline-flex align-items-center gap-1"
+                                    type="button"
+                                    className="btn btn-sm btn-light border text-dark px-2.5 d-inline-flex align-items-center justify-content-center"
+                                    style={{ width: '36px', height: '34px' }}
                                     onClick={exportPDF}
                                     title="Print Family Directory"
                                 >
-                                    <i className="bi bi-printer-fill fs-6"></i>
-                                    <span className="d-none d-sm-inline">Print</span>
+                                    <i className="bi bi-printer-fill fs-5"></i>
                                 </button>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                {/* Table Body with Hierarchical Child Rows */}
+                {/* Table Body with Hierarchical Child Rows & Clickable Profile Navigation */}
                 <div className="card-body p-0">
                     {loading ? (
                         <div className="text-center py-5">
@@ -493,24 +561,34 @@ export default function FamilyListPage() {
                         </div>
                     ) : (
                         <div className="table-responsive">
-                            <table className="table align-middle mb-0" style={{ fontSize: '0.88rem' }}>
+                            <table className="table table-hover align-middle mb-0" style={{ fontSize: '0.88rem' }}>
                                 <thead style={{ backgroundColor: 'var(--primary-dark)', color: '#fff' }}>
                                     <tr>
-                                        <th className="text-center" style={{ width: '4%', padding: '10px 8px' }}>Sr.#</th>
-                                        <th style={{ width: '18%', padding: '10px 8px' }}>Family Name</th>
-                                        <th style={{ width: '12%', padding: '10px 8px' }}>Family ID</th>
-                                        <th style={{ width: '22%', padding: '10px 8px' }}>Student / Child Name</th>
-                                        <th style={{ width: '10%', padding: '10px 8px' }}>Class</th>
-                                        <th style={{ width: '8%', padding: '10px 8px' }}>Section</th>
-                                        <th style={{ width: '14%', padding: '10px 8px' }}>Parents Name</th>
-                                        <th style={{ width: '10%', padding: '10px 8px' }}>Contact Numbers</th>
-                                        <th className="text-center" style={{ width: '6%', padding: '10px 8px' }}>WhatsApp</th>
+                                        <th className="text-center" style={{ width: '3%', padding: '10px 8px' }}>Sr.#</th>
+                                        <th style={{ width: showFeeColumns ? '15%' : '18%', padding: '10px 8px' }}>Family Name</th>
+                                        <th style={{ width: showFeeColumns ? '10%' : '12%', padding: '10px 8px' }}>Family ID</th>
+                                        {showFeeColumns && (
+                                            <>
+                                                <th className="text-end" style={{ width: '9%', padding: '10px 8px', backgroundColor: '#1e3a8a' }}>Total Bill</th>
+                                                <th className="text-end" style={{ width: '9%', padding: '10px 8px', backgroundColor: '#065f46' }}>Paid</th>
+                                                <th className="text-end" style={{ width: '9%', padding: '10px 8px', backgroundColor: '#991b1b' }}>Balance</th>
+                                            </>
+                                        )}
+                                        <th style={{ width: showFeeColumns ? '17%' : '22%', padding: '10px 8px' }}>Student / Child Name</th>
+                                        <th style={{ width: '8%', padding: '10px 8px' }}>Class</th>
+                                        <th style={{ width: '6%', padding: '10px 8px' }}>Section</th>
+                                        <th style={{ width: '12%', padding: '10px 8px' }}>Parents Name</th>
+                                        <th style={{ width: '9%', padding: '10px 8px' }}>Contact Numbers</th>
+                                        <th className="text-center" style={{ width: '5%', padding: '10px 8px' }}>WhatsApp</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {filteredFamilies.map((fam, famIdx) => {
                                         const waNumber = formatWhatsAppNumber(fam.primary_phone);
                                         const M = fam.members.length;
+                                        const feeStatus = fam.fee_status || 'paid';
+                                        const isUnpaid = feeStatus === 'unpaid';
+                                        const isPartial = feeStatus === 'partial';
 
                                         return fam.members.map((m, mIdx) => {
                                             const isFirst = mIdx === 0;
@@ -518,9 +596,12 @@ export default function FamilyListPage() {
                                             return (
                                                 <tr
                                                     key={`${fam.family_id}-${m.student_id}`}
+                                                    onClick={() => router.push(`/students/profile/${m.student_id}`)}
+                                                    title={`Click to view ${m.full_name}'s profile`}
                                                     style={{
                                                         backgroundColor: famIdx % 2 === 0 ? '#ffffff' : '#fafafa',
-                                                        borderTop: isFirst ? '2px solid #dee2e6' : '1px dashed #e9ecef'
+                                                        borderTop: isFirst ? '2px solid #dee2e6' : '1px dashed #e9ecef',
+                                                        cursor: 'pointer'
                                                     }}
                                                 >
                                                     {/* 1. Sr.# (Rowspan) */}
@@ -533,27 +614,67 @@ export default function FamilyListPage() {
                                                         </td>
                                                     )}
 
-                                                    {/* 2. Family Name (Rowspan) */}
+                                                    {/* 2. Family Name (Rowspan) with Status Colorization */}
                                                     {isFirst && (
                                                         <td rowSpan={M} className="align-middle border-end">
-                                                            <div className="fw-bold text-dark d-flex align-items-center gap-1">
-                                                                <i className="bi bi-house-door-fill me-1" style={{ color: 'var(--primary-teal)' }}></i>
-                                                                {fam.family_name}
+                                                            <div className="d-flex align-items-center gap-1">
+                                                                {isUnpaid ? (
+                                                                    <i className="bi bi-exclamation-triangle-fill text-danger me-1"></i>
+                                                                ) : isPartial ? (
+                                                                    <i className="bi bi-pie-chart-fill me-1" style={{ color: '#fd7e14' }}></i>
+                                                                ) : (
+                                                                    <i className="bi bi-house-door-fill me-1 text-teal" style={{ color: 'var(--primary-teal)' }}></i>
+                                                                )}
+                                                                <span
+                                                                    className="fw-bold"
+                                                                    style={{
+                                                                        color: isUnpaid ? '#dc3545' : isPartial ? '#fd7e14' : '#212529'
+                                                                    }}
+                                                                >
+                                                                    {fam.family_name}
+                                                                </span>
                                                             </div>
-                                                            <small className="text-muted" style={{ fontSize: '0.75rem' }}>
+                                                            <small className="text-muted d-block mt-0.5" style={{ fontSize: '0.75rem' }}>
                                                                 {fam.total_children} child{fam.total_children > 1 ? 'ren' : ''} in family
                                                             </small>
                                                         </td>
                                                     )}
 
-                                                    {/* 3. Family ID (Rowspan) */}
+                                                    {/* 3. Family ID (Rowspan) with Status Colorization */}
                                                     {isFirst && (
                                                         <td rowSpan={M} className="align-middle border-end">
-                                                            <span className="badge rounded-pill text-dark border px-2 py-1" style={{ backgroundColor: '#f1f5f9', fontSize: '0.78rem' }}>
-                                                                <i className="bi bi-tag-fill me-1 text-secondary"></i>
-                                                                {fam.family_id}
-                                                            </span>
+                                                            {isUnpaid ? (
+                                                                <span className="badge rounded-pill bg-danger bg-opacity-10 text-danger border border-danger-subtle px-2 py-1" style={{ fontSize: '0.78rem' }}>
+                                                                    <i className="bi bi-tag-fill me-1 text-danger"></i>
+                                                                    {fam.family_id}
+                                                                </span>
+                                                            ) : isPartial ? (
+                                                                <span className="badge rounded-pill text-dark border border-warning px-2 py-1" style={{ backgroundColor: '#fff3cd', color: '#856404', fontSize: '0.78rem' }}>
+                                                                    <i className="bi bi-tag-fill me-1" style={{ color: '#fd7e14' }}></i>
+                                                                    {fam.family_id}
+                                                                </span>
+                                                            ) : (
+                                                                <span className="badge rounded-pill text-dark border px-2 py-1" style={{ backgroundColor: '#f1f5f9', fontSize: '0.78rem' }}>
+                                                                    <i className="bi bi-tag-fill me-1 text-secondary"></i>
+                                                                    {fam.family_id}
+                                                                </span>
+                                                            )}
                                                         </td>
+                                                    )}
+
+                                                    {/* Optional Fee Columns: Total Bill, Paid, Balance */}
+                                                    {showFeeColumns && isFirst && (
+                                                        <>
+                                                            <td rowSpan={M} className="align-middle text-end border-end fw-bold text-dark" style={{ backgroundColor: '#f8fafc' }}>
+                                                                PKR {(fam.total_billed || 0).toLocaleString('en-PK')}
+                                                            </td>
+                                                            <td rowSpan={M} className="align-middle text-end border-end fw-bold text-success" style={{ backgroundColor: '#f0fdf4' }}>
+                                                                PKR {(fam.total_paid || 0).toLocaleString('en-PK')}
+                                                            </td>
+                                                            <td rowSpan={M} className="align-middle text-end border-end fw-bold" style={{ backgroundColor: (fam.total_balance || 0) > 0 ? '#fef2f2' : '#f0fdf4', color: (fam.total_balance || 0) > 0 ? '#dc3545' : '#166534' }}>
+                                                                PKR {(fam.total_balance || 0).toLocaleString('en-PK')}
+                                                            </td>
+                                                        </>
                                                     )}
 
                                                     {/* 4. Student / Child Sub-Row Name */}
@@ -609,14 +730,22 @@ export default function FamilyListPage() {
                                                             <div className="small">
                                                                 {fam.father_phone ? (
                                                                     <div>
-                                                                        <a href={`tel:${fam.father_phone}`} className="text-decoration-none text-dark fw-semibold">
+                                                                        <a
+                                                                            href={`tel:${fam.father_phone}`}
+                                                                            onClick={e => e.stopPropagation()}
+                                                                            className="text-decoration-none text-dark fw-semibold"
+                                                                        >
                                                                             <i className="bi bi-telephone-fill me-1 text-success" style={{ fontSize: '0.75rem' }}></i>
                                                                             {fam.father_phone}
                                                                         </a>
                                                                     </div>
                                                                 ) : fam.mother_phone ? (
                                                                     <div>
-                                                                        <a href={`tel:${fam.mother_phone}`} className="text-decoration-none text-dark fw-semibold">
+                                                                        <a
+                                                                            href={`tel:${fam.mother_phone}`}
+                                                                            onClick={e => e.stopPropagation()}
+                                                                            className="text-decoration-none text-dark fw-semibold"
+                                                                        >
                                                                             <i className="bi bi-telephone-fill me-1 text-success" style={{ fontSize: '0.75rem' }}></i>
                                                                             {fam.mother_phone}
                                                                         </a>
@@ -641,6 +770,7 @@ export default function FamilyListPage() {
                                                                     href={`https://wa.me/${waNumber}`}
                                                                     target="_blank"
                                                                     rel="noopener noreferrer"
+                                                                    onClick={e => e.stopPropagation()}
                                                                     className="btn btn-success btn-sm rounded-circle d-inline-flex align-items-center justify-content-center shadow-sm"
                                                                     style={{ width: '34px', height: '34px', backgroundColor: '#25D366', borderColor: '#25D366' }}
                                                                     title={`Send WhatsApp message to ${fam.primary_phone}`}

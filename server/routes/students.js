@@ -747,13 +747,42 @@ router.get('/families-directory', async (req, res) => {
             });
         }
 
+        // Query overall fee statistics per family across all generated monthly fee slips
+        const feeStatsRes = await pool.query(`
+            SELECT 
+                f.family_id,
+                COALESCE(SUM(ms.total_amount), 0) + COALESCE(f.opening_balance, 0) AS total_billed,
+                COALESCE(SUM(ms.paid_amount), 0) AS total_paid,
+                GREATEST(0, (COALESCE(SUM(ms.total_amount), 0) + COALESCE(f.opening_balance, 0)) - COALESCE(SUM(ms.paid_amount), 0)) AS total_balance
+            FROM families f
+            LEFT JOIN monthly_fee_slips ms ON (ms.family_id = f.family_id OR ms.student_id IN (SELECT student_id FROM students WHERE family_id = f.family_id))
+            GROUP BY f.family_id, f.opening_balance
+        `);
+
+        const feeStatsMap = {};
+        for (const r of feeStatsRes.rows) {
+            const fid = (r.family_id || '').trim();
+            const billed = parseFloat(r.total_billed || 0);
+            const paid = parseFloat(r.total_paid || 0);
+            const balance = parseFloat(r.total_balance || 0);
+            let status = 'paid';
+            if (balance > 0 && paid > 0) {
+                status = 'partial';
+            } else if (balance > 0) {
+                status = 'unpaid';
+            }
+            feeStatsMap[fid] = {
+                total_billed: billed,
+                total_paid: paid,
+                total_balance: balance,
+                fee_status: status
+            };
+        }
+
         const familiesList = Object.values(familiesMap).map(fam => {
             const members = fam.members;
 
             // Majority Father Name logic:
-            // Counts occurrences of father_name among siblings in this family.
-            // If 2 siblings have father "Ahmad Hassan" and 1 cousin has father "Waqas Hassan",
-            // "Ahmad Hassan" has count=2 > count=1, so primaryFatherName = "Ahmad Hassan".
             const fatherCounts = {};
             members.forEach(m => {
                 if (m.father_name) {
@@ -806,6 +835,8 @@ router.get('/families-directory', async (req, res) => {
             const classesList = members.map(m => m.class_name);
             const sectionsList = members.map(m => m.section_name);
 
+            const feeStat = feeStatsMap[fam.family_id] || { total_billed: 0, total_paid: 0, total_balance: 0, fee_status: 'paid' };
+
             return {
                 family_id: fam.family_id,
                 family_name: primaryFatherName,
@@ -821,12 +852,23 @@ router.get('/families-directory', async (req, res) => {
                 sections_list: sectionsList,
                 family_fee: fam.family_fee,
                 opening_balance: fam.opening_balance,
+                total_billed: feeStat.total_billed,
+                total_paid: feeStat.total_paid,
+                total_balance: feeStat.total_balance,
+                fee_status: feeStat.fee_status,
                 members: members
             };
         });
 
-        // Sort families by family_id
-        familiesList.sort((a, b) => a.family_id.localeCompare(b.family_id, undefined, { numeric: true }));
+        // Sequence Sort: Unpaid (1) -> Partial (2) -> Paid (3)
+        const statusPriority = { unpaid: 1, partial: 2, paid: 3 };
+
+        familiesList.sort((a, b) => {
+            const pA = statusPriority[a.fee_status] || 3;
+            const pB = statusPriority[b.fee_status] || 3;
+            if (pA !== pB) return pA - pB;
+            return a.family_id.localeCompare(b.family_id, undefined, { numeric: true });
+        });
 
         const totalStudents = result.rows.length;
         const totalFamilies = familiesList.length;
