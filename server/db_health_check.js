@@ -71,9 +71,10 @@ const CRITICAL_COLUMNS = {
     fee_plans: ['plan_id', 'applies_to_all'],
     expense_categories: ['category_id', 'category_name', 'is_active'],
     expenses: ['expense_id', 'category_id', 'expense_title', 'amount'],
-    exam_marks: ['mark_id', 'student_id', 'subject_id', 'term_id', 'total_marks', 'obtained_marks'],
-    test_papers: ['test_id', 'test_name', 'class_id', 'total_marks'],
+    exam_marks: ['mark_id', 'student_id', 'subject_id', 'term_id', 'total_marks', 'obtained_marks', 'status'],
+    test_papers: ['test_id', 'test_name', 'class_id', 'total_marks', 'status', 'approved_by', 'published_by'],
     test_marks: ['test_mark_id', 'test_id', 'student_id', 'obtained_marks', 'is_absent'],
+    exam_sheet_approvals: ['id', 'sheet_type', 'class_id', 'section_id', 'status', 'submitted_by', 'approved_by', 'published_by'],
     notifications: ['id', 'user_id', 'family_id', 'role', 'type', 'title', 'message', 'is_read'],
 };
 
