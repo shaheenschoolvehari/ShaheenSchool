@@ -1,6 +1,7 @@
 'use client';
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 import { requestMobileNotificationPermissions, triggerNativeDeviceNotification } from '../../utils/nativeNotifications';
 
 const API = process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com";
@@ -21,6 +22,7 @@ interface NotificationItem {
 
 export function NotificationBell({ role = 'all', familyId = '', userId = '', studentId = '' }: { role?: string; familyId?: string; userId?: string; studentId?: number | string }) {
     const router = useRouter();
+    const { user } = useAuth() || {};
     const [open, setOpen] = useState(false);
     const [notifications, setNotifications] = useState<NotificationItem[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
@@ -49,10 +51,13 @@ export function NotificationBell({ role = 'all', familyId = '', userId = '', stu
     // Load Notifications
     const fetchNotifications = async () => {
         try {
+            const activeRole = (role && role !== 'all') ? role : (user?.role_name || user?.dashboard_access || 'all');
+            const activeUserId = userId || user?.id || '';
+
             const params = new URLSearchParams();
-            if (role) params.append('role', role);
+            if (activeRole) params.append('role', activeRole);
             if (familyId) params.append('family_id', familyId);
-            if (userId) params.append('user_id', userId);
+            if (activeUserId) params.append('user_id', String(activeUserId));
 
             const res = await fetch(`${API}/notifications?${params.toString()}`);
             if (res.ok) {

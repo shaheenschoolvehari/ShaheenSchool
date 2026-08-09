@@ -26,16 +26,19 @@ router.get('/', async (req, res) => {
         }
         if (role && role.trim()) {
             const normalizedRole = role.trim().toLowerCase();
-            conditions.push(`LOWER(role) = $${paramIdx++} OR LOWER(role) = 'all'`);
-            params.push(normalizedRole);
+            if (['admin', 'principal', 'coordinator', 'vice_principal'].includes(normalizedRole)) {
+                conditions.push(`(LOWER(role) IN ('admin', 'principal', 'coordinator', 'vice_principal', 'all') AND family_id IS NULL)`);
+            } else {
+                conditions.push(`(LOWER(role) = $${paramIdx++} OR (LOWER(role) = 'all' AND family_id IS NULL))`);
+                params.push(normalizedRole);
+            }
         }
 
-        // If no filter is provided, default to role = 'all'
         if (conditions.length === 0) {
-            conditions.push(`LOWER(role) = 'all'`);
+            conditions.push(`(LOWER(role) = 'all' AND family_id IS NULL)`);
         }
 
-        const whereClause = `WHERE ${conditions.join(' OR ')}`;
+        const whereClause = `WHERE ${conditions.map(c => `(${c})`).join(' OR ')}`;
 
         const query = `
             SELECT * FROM notifications 
@@ -47,7 +50,6 @@ router.get('/', async (req, res) => {
 
         const result = await pool.query(query, params);
 
-        // Count unread
         const unreadCountRes = await pool.query(`
             SELECT COUNT(*) AS unread_count 
             FROM notifications 
