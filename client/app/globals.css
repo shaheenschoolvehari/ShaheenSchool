@@ -664,13 +664,32 @@ html, body { overflow-x: hidden; }
   }
   .dash-actions-wrapper {
     width: 100% !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 10px !important;
   }
-  .dash-actions-wrapper > div {
-    width: 100% !important;
+  .dash-actions-wrapper .quick-actions-root {
+    flex: 1 !important;
+    width: auto !important;
+    min-width: 0 !important;
   }
-  .dash-actions-wrapper button {
+  .dash-actions-wrapper .quick-actions-btn {
     width: 100% !important;
     justify-content: center !important;
+  }
+  .dash-actions-wrapper .notif-bell-root {
+    flex-shrink: 0 !important;
+    width: auto !important;
+  }
+  .dash-actions-wrapper .notif-bell-btn {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    flex-shrink: 0 !important;
+    border-radius: 14px !important;
+    padding: 0 !important;
   }
 }
 
