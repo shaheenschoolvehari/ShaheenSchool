@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.smartschool.app',
-  appName: 'Smart School',
+  appName: 'Shaheen School',
   webDir: 'public',
   server: {
     url: 'https://shaheenschool.vercel.app',

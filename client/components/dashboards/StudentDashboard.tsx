@@ -362,13 +362,13 @@ export default function StudentDashboard({ user }: { user: any }) {
                             <h2 className="fw-bold mb-1 fs-3 fs-md-2 text-white" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.15)' }}>
                                 {student.first_name} {student.last_name}
                             </h2>
-                            <div className="d-flex flex-wrap justify-content-center justify-content-md-start gap-2 align-items-center mt-2 opacity-95">
-                                <span className="badge bg-white bg-opacity-20 text-white border border-white border-opacity-30 backdrop-blur px-3 py-1.5 rounded-pill fw-semibold">
-                                    <i className="bi bi-mortarboard-fill me-1.5"></i>
-                                    {student.class_name} • {student.section_name}
+                            <div className="d-flex flex-wrap justify-content-center justify-content-md-start gap-2 align-items-center mt-2">
+                                <span className="badge px-3 py-1.5 rounded-pill fw-bold text-white shadow-sm" style={{ backgroundColor: 'rgba(0, 0, 0, 0.45)', border: '1px solid rgba(255, 255, 255, 0.4)', fontSize: '0.85rem' }}>
+                                    <i className="bi bi-mortarboard-fill me-1.5 text-warning"></i>
+                                    {student.class_name || 'N/A'}{student.section_name ? ` • ${student.section_name}` : ''}
                                 </span>
-                                <span className="badge bg-black bg-opacity-20 text-white-50 border border-white border-opacity-20 px-2.5 py-1.5 rounded-pill font-monospace small">
-                                    <i className="bi bi-upc-scan me-1"></i>
+                                <span className="badge bg-white px-3 py-1.5 rounded-pill font-monospace fw-bold shadow-sm" style={{ border: '1px solid rgba(255, 255, 255, 0.8)', fontSize: '0.82rem', color: '#195053' }}>
+                                    <i className="bi bi-upc-scan me-1 text-primary"></i>
                                     {student.admission_no}
                                 </span>
                             </div>
