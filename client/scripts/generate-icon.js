@@ -217,7 +217,13 @@ function writePng(rgba, width, height) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 const SOURCE  = path.join(__dirname, 'appicon.png');
-const RES_DIR = path.join(__dirname, '../android/app/src/main/res');
+
+const candidateResDirs = [
+  path.join(__dirname, '../android [Shaheen_School]/app/src/main/res'),
+  path.join(__dirname, '../android/app/src/main/res')
+];
+
+const resDirs = candidateResDirs.filter(d => fs.existsSync(path.dirname(d)));
 
 if (!fs.existsSync(SOURCE)) {
   console.error('❌  appicon.png not found in scripts/ folder.');
@@ -240,20 +246,23 @@ if (srcW !== srcH) {
   console.warn('⚠️   Warning: appicon.png is not square — icons may appear stretched.');
 }
 console.log('');
-console.log('🤖  Generating Android launcher icons...');
+console.log('🤖  Generating Android launcher icons for target res directories...');
 
-for (const { dir, size } of mipmaps) {
-  const folder = path.join(RES_DIR, dir);
-  fs.mkdirSync(folder, { recursive: true });
+for (const targetResDir of resDirs) {
+  console.log(`   ➔ Output target: ${targetResDir}`);
+  for (const { dir, size } of mipmaps) {
+    const folder = path.join(targetResDir, dir);
+    fs.mkdirSync(folder, { recursive: true });
 
-  const scaled  = resizeRgba(srcRgba, srcW, srcH, size, size);
-  const rounded = applyCircleMask(Buffer.from(scaled), size);
+    const scaled  = resizeRgba(srcRgba, srcW, srcH, size, size);
+    const rounded = applyCircleMask(Buffer.from(scaled), size);
 
-  fs.writeFileSync(path.join(folder, 'ic_launcher.png'),           writePng(scaled,  size, size));
-  fs.writeFileSync(path.join(folder, 'ic_launcher_round.png'),     writePng(rounded, size, size));
-  fs.writeFileSync(path.join(folder, 'ic_launcher_foreground.png'),writePng(scaled,  size, size));
+    fs.writeFileSync(path.join(folder, 'ic_launcher.png'),           writePng(scaled,  size, size));
+    fs.writeFileSync(path.join(folder, 'ic_launcher_round.png'),     writePng(rounded, size, size));
+    fs.writeFileSync(path.join(folder, 'ic_launcher_foreground.png'),writePng(scaled,  size, size));
 
-  console.log(`   ✓  ${dir} — ${size}×${size}px`);
+    console.log(`      ✓  ${dir} — ${size}×${size}px`);
+  }
 }
 
 // ─── PWA / Web icons ──────────────────────────────────────────────────────────
