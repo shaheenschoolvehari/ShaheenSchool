@@ -198,10 +198,20 @@ export default function EditStudent({ params }: { params: { id: string } }) {
         try {
             const formData = new FormData();
 
-            // Append Text Fields
+            // Append Text Fields - Handle optional fields properly
             Object.keys(form).forEach(key => {
-                const value = (form as any)[key];
-                // Exclude system fields or nulls if needed, but backend update handles it
+                let value = (form as any)[key];
+                
+                // Skip empty date fields (dob, admission_date) if empty string to avoid date syntax errors
+                if ((key === 'dob' || key === 'admission_date') && (!value || String(value).trim() === '')) {
+                    return;
+                }
+
+                // Skip empty integer fields (class_id, section_id) if empty string
+                if ((key === 'class_id' || key === 'section_id') && (!value || String(value).trim() === '')) {
+                    return;
+                }
+
                 if (value !== null && value !== undefined) {
                     formData.append(key, value);
                 }
@@ -504,19 +514,19 @@ export default function EditStudent({ params }: { params: { id: string } }) {
                                     </div>
                                     <div className="col-md-4">
                                         <label className="form-label fw-bold">Guardian Phone</label>
-                                        <input type="text" className="form-control" required
+                                        <input type="text" className="form-control"
                                             readOnly={guardianType !== 'Other'}
                                             value={form.guardian_phone} onChange={e => setForm({ ...form, guardian_phone: e.target.value })} />
                                     </div>
                                     <div className="col-md-4">
                                         <label className="form-label fw-bold">Guardian CNIC</label>
-                                        <input type="text" className="form-control" required
+                                        <input type="text" className="form-control"
                                             readOnly={guardianType !== 'Other'}
                                             value={form.guardian_cnic} onChange={e => setForm({ ...form, guardian_cnic: e.target.value })} />
                                     </div>
                                     <div className="col-md-8">
                                         <label className="form-label fw-bold">Guardian Address</label>
-                                        <input type="text" className="form-control" required
+                                        <input type="text" className="form-control"
                                             readOnly={guardianType !== 'Other'}
                                             value={form.guardian_address} onChange={e => setForm({ ...form, guardian_address: e.target.value })} />
                                     </div>

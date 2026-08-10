@@ -1703,15 +1703,44 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
             WHERE student_id=$39 RETURNING user_id, family_id`;
 
         const vals = [
-            roll_no, class_id, section_id, admission_date, category,
-            first_name, last_name, gender, dob, cnic_bform,
-            religion, blood_group, has_disability === 'true' || has_disability === true, disability_details,
-            mobile_no, email, current_address, permanent_address, city,
-            father_name, father_phone, father_cnic, father_occupation,
-            mother_name, mother_phone, mother_cnic, mother_occupation,
-            is_orphan === 'true' || is_orphan === true, guardian_name, guardian_relation, guardian_phone, guardian_cnic, guardian_address,
-            monthly_fee || 0, admission_fee || 0, other_charges || 0,
-            image_url, JSON.stringify(documents),
+            roll_no && String(roll_no).trim() !== '' ? String(roll_no).trim() : null,
+            class_id && !isNaN(parseInt(class_id, 10)) ? parseInt(class_id, 10) : null,
+            section_id && !isNaN(parseInt(section_id, 10)) ? parseInt(section_id, 10) : null,
+            admission_date && String(admission_date).trim() !== '' ? String(admission_date).trim() : null,
+            category || 'Normal',
+            first_name ? String(first_name).trim() : '',
+            last_name && String(last_name).trim() !== '' ? String(last_name).trim() : null,
+            gender && String(gender).trim() !== '' ? String(gender).trim() : null,
+            dob && String(dob).trim() !== '' ? String(dob).trim() : null,
+            cnic_bform && String(cnic_bform).trim() !== '' ? String(cnic_bform).trim() : null,
+            religion && String(religion).trim() !== '' ? String(religion).trim() : null,
+            blood_group && String(blood_group).trim() !== '' ? String(blood_group).trim() : null,
+            has_disability === 'true' || has_disability === true,
+            disability_details && String(disability_details).trim() !== '' ? String(disability_details).trim() : null,
+            mobile_no && String(mobile_no).trim() !== '' ? String(mobile_no).trim() : null,
+            email && String(email).trim() !== '' ? String(email).trim() : null,
+            current_address && String(current_address).trim() !== '' ? String(current_address).trim() : null,
+            permanent_address && String(permanent_address).trim() !== '' ? String(permanent_address).trim() : null,
+            city && String(city).trim() !== '' ? String(city).trim() : null,
+            father_name && String(father_name).trim() !== '' ? String(father_name).trim() : null,
+            father_phone && String(father_phone).trim() !== '' ? String(father_phone).trim() : null,
+            father_cnic && String(father_cnic).trim() !== '' ? String(father_cnic).trim() : null,
+            father_occupation && String(father_occupation).trim() !== '' ? String(father_occupation).trim() : null,
+            mother_name && String(mother_name).trim() !== '' ? String(mother_name).trim() : null,
+            mother_phone && String(mother_phone).trim() !== '' ? String(mother_phone).trim() : null,
+            mother_cnic && String(mother_cnic).trim() !== '' ? String(mother_cnic).trim() : null,
+            mother_occupation && String(mother_occupation).trim() !== '' ? String(mother_occupation).trim() : null,
+            is_orphan === 'true' || is_orphan === true,
+            guardian_name && String(guardian_name).trim() !== '' ? String(guardian_name).trim() : null,
+            guardian_relation && String(guardian_relation).trim() !== '' ? String(guardian_relation).trim() : null,
+            guardian_phone && String(guardian_phone).trim() !== '' ? String(guardian_phone).trim() : null,
+            guardian_cnic && String(guardian_cnic).trim() !== '' ? String(guardian_cnic).trim() : null,
+            guardian_address && String(guardian_address).trim() !== '' ? String(guardian_address).trim() : null,
+            !isNaN(parseFloat(monthly_fee)) ? parseFloat(monthly_fee) : 0,
+            !isNaN(parseFloat(admission_fee)) ? parseFloat(admission_fee) : 0,
+            !isNaN(parseFloat(other_charges)) ? parseFloat(other_charges) : 0,
+            image_url || null,
+            JSON.stringify(documents),
             id
         ];
 
@@ -1757,14 +1786,16 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
 
         // Update User
         if (user_id) {
+            const fullName = `${first_name || ''} ${last_name || ''}`.trim() || 'Student';
             await client.query(
                 "UPDATE app_users SET full_name = $1, email = $2 WHERE id = $3",
-                [`${first_name} ${last_name}`, email, user_id]
+                [fullName, email && String(email).trim() !== '' ? String(email).trim() : null, user_id]
             );
         }
 
         // Create or Update Admission Fee Ledger on Edit
         const admFeeVal = parseFloat(admission_fee) || 0;
+        const validAdmDate = (admission_date && String(admission_date).trim() !== '') ? String(admission_date).trim() : new Date();
         if (admFeeVal > 0) {
             await client.query(`
                 INSERT INTO admission_fee_ledger 
@@ -1777,7 +1808,7 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
                             WHEN admission_fee_ledger.paid_amount > 0 THEN 'partial'
                             ELSE 'unpaid'
                         END
-            `, [id, admFeeVal, admission_date || new Date()]);
+            `, [id, admFeeVal, validAdmDate]);
         } else {
             await client.query(`
                 UPDATE admission_fee_ledger
