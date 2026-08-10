@@ -63,6 +63,7 @@ Mounted route modules under `server/routes`:
 - `attendance.js`
 - `exams.js`
 - `reports.js`
+- `notifications.js`
 - `fix_sql.js`
 - `exam-fees-temp.js`
 
@@ -316,7 +317,25 @@ Typical functionality:
 - result card data APIs
 - marks sheet APIs
 - test paper and test marking endpoints
-- lock/unlock behavior for controlled submissions
+- multi-tier marks sheet approval & publication APIs (`GET /exams/approvals`, `PUT /exams/approvals/status`)
+- automatic mark lock & test paper lock persistence (`exam_mark_locks`, `test_paper_locks`)
+
+---
+
+## Notifications (`/notifications`)
+
+Primary role:
+
+- in-app real-time notification engine & notification dropdown APIs
+
+Typical functionality:
+
+- `GET /notifications`: fetch targeted notifications with unread count filterable by `user_id`, `family_id`, `student_id`, `role`
+- `PUT /notifications/:id/read`: mark single notification as read
+- `PUT /notifications/mark-all-read`: mark all targeted notifications as read
+- `DELETE /notifications/:id`: delete notification record
+- `POST /notifications/create`: manually create announcement notification
+- helper utility `server/utils/notify.js`: `createNotification()` helper for backend event triggers
 
 ---
 
@@ -434,12 +453,14 @@ Major table groups include:
 
 ## 6) Boot and Maintenance Scripts
 
+- `server/master-seeder.js`: Full DDL schema creation and initial seeding script covering all 36+ database tables and columns across all 11 core modules.
+- `server/db_health_check.js`: Full database schema diagnostic and verification script ensuring 100% column parity between SQL queries in `routes/*.js` and Postgres table definitions.
 - server startup path runs migration and seeding helpers.
-- backup scheduler functionality is referenced in runtime.
-- repo also includes old scripts for:
-  - table creation
-  - schema patching
-  - repair and diagnostics
+- backup scheduler functionality is referenced in runtime (`server/scheduler.js`).
+- repo also includes scripts for:
+  - table creation & schema patching
+  - sequence synchronization (`server/utils/sequenceSync.js`)
+  - caching utility (`server/utils/cache.js`)
   - seed/reset/check operations
 
 ---

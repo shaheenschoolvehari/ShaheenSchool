@@ -135,6 +135,7 @@ Routes:
 - `/examination/result-card`
 - `/examination/marks-sheet`
 - `/examination/test-marking`
+- `/examination/approvals`
 
 Functionality:
 
@@ -142,6 +143,7 @@ Functionality:
 - Result card generation/view.
 - Marks sheet viewing and reporting.
 - Test-level marking workflows.
+- Multi-tier marks approval & publication workflow (pending -> approved -> published with sound chimes and mark sheet locking).
 
 ---
 
@@ -258,15 +260,17 @@ Functionality:
 
 ---
 
-## 5) Dashboard Components
+## 5) Dashboard & Layout Components
 
-Dashboard components used by root route:
+Dashboard and header components:
 
 - `components/dashboards/AdminDashboard.tsx`
 - `components/dashboards/TeacherDashboard.tsx`
 - `components/dashboards/AccountantDashboard.tsx`
 - `components/dashboards/StudentDashboard.tsx`
 - `components/dashboards/GenericDashboard.tsx`
+- `components/dashboards/shared.tsx` (includes `QuickActionsDropdown` with emerald theme and portal integration)
+- `components/notifications/NotificationBell.tsx` (real-time notification bell dropdown, unread counter badge, mark-as-read, delete)
 
 Each dashboard provides role-tailored data cards, charts, summaries, and quick actions.
 
@@ -279,6 +283,8 @@ Each dashboard provides role-tailored data cards, charts, summaries, and quick a
   - `client/app/utils/notify.ts`
 - Animated/login experience component:
   - `client/components/AnimatedBackground.tsx`
+- Mobile responsive CSS rules:
+  - `client/app/globals.css` (custom max-width 640px flex rules preserving compact bell button layout)
 
 ---
 

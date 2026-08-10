@@ -87,17 +87,19 @@ Primary runtime shape:
 Project is organized in functional slices:
 
 - Dashboard and analytics
-- Students and admissions
+- Students, admissions, profile credentials & Quick Info management
 - Family and sibling relations
 - Academics (classes/sections/subjects/teachers/promotion)
 - Attendance (students/staff + history)
 - Fees (heads/plans/generation/collection/printing/opening balance/admission/exam)
-- Exams and results
+- Exams, results, **mark sheet approvals & lock workflows**
 - HRM (departments/employees)
 - Expenses and categories
 - Reports
+- Real-time Notifications Engine & Notification Bell dropdown
 - Settings and system administration
 - Authentication and RBAC
+- Master Seeder & Schema Health Diagnostics (`master-seeder.js` & `db_health_check.js`)
 
 Each module has corresponding frontend route pages and backend route handlers.
 

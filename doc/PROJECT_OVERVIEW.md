@@ -86,12 +86,22 @@
 - User login with encrypted passwords
 - Per-role customized dashboards
 
-### 10. **Dashboard Analytics**
-- **Admin Dashboard** - System overview, key metrics
-- **Teacher Dashboard** - Class attendance, exam data, student list
-- **Accountant Dashboard** - Fee collection, pending payments, expense summary
-- **Student Dashboard** - Personal profile, fee status, results
-- Real-time data visualization with Recharts
+### 11. **Notifications & System Alerts**
+- Real-time in-app notification engine with `NotificationBell` header dropdown
+- Event-driven notifications (Fee payments, attendance, exam approvals, staff attendance)
+- Role, family, user, and student-targeted alert routing
+- Mark as read, mark all read, and notification deletion
+
+### 12. **Examination Approvals & Mark Sheet Locks**
+- Multi-tier mark sheet approval workflow (`pending` -> `approved` -> `published`)
+- Audio sound chime feedback on approval/publication actions
+- Automatic sheet locking (`exam_mark_locks`, `test_paper_locks`) post-publication to prevent tampering
+
+### 13. **Student Profile Credentials & Quick Info**
+- Password visibility toggle (Show/Hide) and one-click copy buttons for credentials
+- Change password modal for student portal accounts
+- Auto-generate login credentials button for unlinked students
+- Styled "Edit Student Profile" button integrated into Quick Info sidebar card
 
 ---
 
@@ -122,7 +132,9 @@
 - **Attendance Records** - Daily tracking for staff & students
 - **Employee Database** - Staff details with departments
 - **User Accounts** - Login credentials with role assignments
-- **Audit Logs** - Transaction history tracking
+- **Notifications Table** - Real-time alerts targeting users, roles, families, and students
+- **Exam Approvals & Locks** - Mark sheet approval tracking (`exam_sheet_approvals`) and tamper locks (`exam_mark_locks`, `test_paper_locks`)
+- **Master Seeder & Health Diagnostics** - Automated DDL schema seeder (`master-seeder.js`) and diagnostics tool (`db_health_check.js`)
 
 ---
 

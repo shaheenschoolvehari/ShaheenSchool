@@ -178,10 +178,43 @@ Is testing checklist file mein software ke tamam modules, key concepts, business
   - [ ] School Logo upload aur Fee Slip/Report Header par Logo render hona.
 - [ ] **Data Backup & Restore**
   - [ ] Database Backup download option verify karna.
+- [ ] **Database Master Seeder & Health Checker**
+  - [ ] `node master-seeder.js` run karne par bina kisi error ke tamaam 36+ tables aur default seed data populate hona.
+  - [ ] `node db_health_check.js` run karne par routes aur database columns mein 100% verification match milna.
 
 ---
 
-## 13. Form Input & UI/UX Validation (Global Standards)
+## 13. Examination Approvals & Locks Module
+- [ ] **Mark Sheet Approvals (`/examination/approvals`)**
+  - [ ] Status filter (`pending`, `approved`, `published`) aur Type filter (`term_exam`, `class_test`) verify karna.
+  - [ ] Sheet Modal Review mein student marks view aur edit karna.
+  - [ ] Approve action par status `approved` hona aur sound chime play hona.
+  - [ ] Publish action par status `published` hona, sheet lock lagna, aur alert notification generate hona.
+- [ ] **Mark Locks & Tamper Protection**
+  - [ ] Published mark sheets par further marks modification block hona.
+
+---
+
+## 14. Real-Time Notifications Module
+- [ ] **Notification Bell & Header Dropdown**
+  - [ ] Header Notification Bell par unread notification count badge display hona.
+  - [ ] Mobile view par Bell button stetch hone se prevent rehna (`width: 42px`).
+  - [ ] Dropdown mein notifications view karna, Mark as Read, Mark All Read, aur Delete verify karna.
+  - [ ] Notification action link click karne par destination page open hona.
+
+---
+
+## 15. Student Credentials & Profile Quick Info
+- [ ] **Quick Info Credentials Block**
+  - [ ] Student profile mein User ID (Username) aur Password show/hide eye toggle test karna.
+  - [ ] Copy Username aur Copy Password buttons clipboard copy toast notification render kar rahe hain.
+  - [ ] Change Password Modal se new password save karna.
+  - [ ] Account Na hone par "Generate Login Credentials" button click karne par student account auto-create hona.
+  - [ ] Quick Info card ke bottom par styled "Edit Student Profile" button click karne par edit page redirect verify karna.
+
+---
+
+## 16. Form Input & UI/UX Validation (Global Standards)
 - [ ] **Numeric Field Validation**
   - [ ] All numeric inputs (`type="number"`) se browser counter spinner arrows (up/down buttons) removed hain.
   - [ ] Invalid characters (e.g., `e`, `E`, `+`, `-`) keydown par block hotay hain.

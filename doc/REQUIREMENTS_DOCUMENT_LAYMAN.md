@@ -347,7 +347,49 @@ Data consistency required in:
 
 ---
 
-## 18) Validation and UX Requirements
+---
+
+## 19) Real-Time Notifications & Alerts Requirements
+
+System me ek automatic alert engine hona chahiye jahan:
+
+- jab bhi koi important action ho (jaise fee collect hona, attendance lagna, exam sheet approve/publish hona), system automated notification generate kare
+- header bar par Notification Bell dropdown active ho jahan unread badge counter dikhe
+- user target roles, families, ya specific students ke mutabiq alerts filter kar sake aur mark-as-read kar sake
+
+---
+
+## 20) Examination Sheet Approval & Lock Requirements
+
+Exam marks and tests safety ke liye:
+
+- teacher ke submit kiye hue marks pehle `pending` approval state me hon
+- Principal / Coordinator `/examination/approvals` page par sheets ko review, edit aur approve kar saken
+- Publish hone par sheet auto-lock ho jaye (`exam_mark_locks` / `test_paper_locks`) taake publishing ke baad koi marks me illegal alteration na kar sake
+
+---
+
+## 21) Student Credentials & Quick Info Requirements
+
+Student Profile (`/students/profile/[id]`) me:
+
+- User ID (Username) aur Password system credentials block me direct visible/toggleable hon
+- One-click copy buttons se username/password copy ho sake
+- Password change modal se portal credentials update kiye ja saken
+- Quick Info card ke bottom par styled **Edit Student Profile** button available ho
+
+---
+
+## 22) Database Master Seeder & Diagnostics Requirements
+
+System installation aur maintenance ke liye:
+
+- `node master-seeder.js` script bina kisi failure ke tamaam 36+ tables aur default system roles/data initialize kare
+- `node db_health_check.js` script route queries aur database schema columns ki 100% diagnostic verification report de
+
+---
+
+## 23) Validation and UX Requirements
 
 System must provide:
 
@@ -360,7 +402,7 @@ System must provide:
 
 ---
 
-## 19) Non-Functional Requirements (Layman)
+## 24) Non-Functional Requirements (Layman)
 
 System should be:
 
@@ -372,30 +414,31 @@ System should be:
 
 ---
 
-## 20) Complete Module Checklist
+## 25) Complete Module Checklist
 
 - [x] Auth/Login
 - [x] Role/Permission/User management
 - [x] Dashboards
-- [x] Students
+- [x] Students (profile, credentials, edit, admission, family link)
 - [x] Family/Sibling
 - [x] Academic setup
 - [x] Promotion
-- [x] Attendance
-- [x] Fees (full cycle)
+- [x] Attendance (students & staff)
+- [x] Fees (full cycle, opening balance, admission & exam collection)
 - [x] Admission fee ledger
 - [x] Opening balance
 - [x] Exam fee collection
-- [x] Exams/marks/result cards
+- [x] Exams/marks/result cards & **approvals/locks**
 - [x] HRM
 - [x] Expenses
 - [x] Reports
+- [x] Notifications (bell dropdown & real-time alerts)
 - [x] Settings
-- [x] System operations/backups
+- [x] System operations/backups & **Master Seeder / Health Diagnostics**
 
 ---
 
-## 21) Final Requirement Summary
+## 26) Final Requirement Summary
 
 School ko is project me ek **complete end-to-end management system** milta hai jahan:
 

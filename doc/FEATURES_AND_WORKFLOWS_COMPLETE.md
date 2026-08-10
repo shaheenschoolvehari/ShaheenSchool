@@ -25,6 +25,11 @@ This document is a full feature and workflow explanation covering major user jou
   - exam fee collection
 - Examination/marks/result workflows
 - HRM (departments, employees)
+- Real-time Notifications Engine & Notification Bell dropdown (fee payment, attendance, exam approval alerts)
+- Examination sheet multi-tier approval & publication workflow (pending -> approved -> published with mark locks)
+- Student Profile Credentials Management (login creation, copy user/pwd, password reset modal)
+- Quick Actions hero bar & mobile-responsive dashboard UI
+- Full Database Schema Initialization & Health Check Diagnostics (`master-seeder.js` & `db_health_check.js`)
 - Expense categories and expense records
 - Reports (student/results/expenses/family-fee/admission)
 - School settings and system settings
@@ -213,6 +218,60 @@ These report views rely on backend aggregated query endpoints.
 
 ---
 
+## M) Real-Time Notifications Workflow
+
+1. System triggers automated notifications via `createNotification` utility on key events:
+   - fee payment collected / reversed
+   - student attendance marked
+   - staff attendance checked-in/out
+   - exam marks submitted for approval / published
+   - custom announcements created by Admin
+2. Notifications target specific contexts (`user_id`, `family_id`, `student_id`, `role`, or `all`).
+3. `NotificationBell` component in navigation header renders unread badge counter.
+4. Clicking notification dropdown allows:
+   - filtering by status (All / Unread)
+   - marking individual or all items as read
+   - navigating directly to target feature page via action link
+   - deleting notifications
+
+---
+
+## N) Examination Sheet Approval & Lock Workflow
+
+1. Teacher/Staff enters marks in Examination Module.
+2. Submitted mark sheets transition to `pending` approval status.
+3. Principals / Coordinators navigate to `/examination/approvals`:
+   - Filter by status (`pending`, `approved`, `published`), type (Term Exam vs Class Test), or search query.
+   - Review mark details in modal, edit marks if authorized, with audio sound chiming feedback.
+   - Approve single or bulk sheets (`pending` -> `approved`).
+   - Publish approved sheets (`approved` -> `published`), triggering automatic mark sheet lock (`exam_mark_locks` / `test_paper_locks`).
+4. Once published, locks prevent unauthorized tampering and generate notification alerts to students/parents.
+
+---
+
+## O) Student Credentials & Profile Quick Info Workflow
+
+1. Open Student Profile page (`/students/profile/[id]`).
+2. Left sidebar **Quick Info** card displays student credentials block:
+   - If user account exists: displays User ID (Username) and masked/unmasked System Password.
+   - Copy buttons allow one-click clipboard copying of credentials with toast feedback.
+   - Key icon opens **Change Password Modal** to update credentials.
+   - If no account exists: **Generate Login Credentials** button auto-creates student portal login.
+3. Styled **Edit Student Profile** button placed at bottom of Quick Info card directs user to `/students/edit/[id]` with emerald theme hover effects.
+
+---
+
+## P) Database Master Seeder & Diagnostic Health Check Workflow
+
+1. Run `node master-seeder.js`:
+   - DDL schema initialization creates/verifies all 36+ database tables and columns across all 11 system modules.
+   - Seeds initial system default roles, root administrator user, expense categories, and system configuration records.
+2. Run `node db_health_check.js`:
+   - Performs thorough diagnostics scanning all database tables and required route columns.
+   - Reports missing columns, broken foreign keys, or database health warnings.
+
+---
+
 ## 4) Architecture-to-Feature Mapping
 
 - UI modules in `client/app` map directly to backend routes in `server/routes`.
@@ -226,17 +285,18 @@ These report views rely on backend aggregated query endpoints.
 
 - [x] Dashboard
 - [x] Auth / login
-- [x] Students
+- [x] Students (profile, credentials, edit, admission, family link)
 - [x] Family and sibling
 - [x] Academic (classes/sections/subjects/teachers/promotion)
-- [x] Attendance
-- [x] Fees (all submodules)
-- [x] Examination
-- [x] HRM
-- [x] Expenses
+- [x] Attendance (students & staff)
+- [x] Fees (all submodules, opening balance, admission & exam collection)
+- [x] Examination (marks entry, result cards, test marking, **approvals & locks**)
+- [x] HRM (departments, employees)
+- [x] Expenses (categories & records)
 - [x] Reports
+- [x] Notifications (bell dropdown, real-time alerts, mark as read)
 - [x] Settings
-- [x] System/backup operations
+- [x] System/backup operations & Database seeder/health diagnostics
 
 ---
 
