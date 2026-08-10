@@ -307,19 +307,19 @@ export default function EditStudent({ params }: { params: { id: string } }) {
                                             </div>
                                             <div className="col-md-3">
                                                 <label className="form-label fw-bold">Admission Date</label>
-                                                <input type="date" className="form-control" required
+                                                <input type="date" className="form-control"
                                                     value={form.admission_date} onChange={e => setForm({ ...form, admission_date: e.target.value })} />
                                             </div>
                                             <div className="col-md-3">
                                                 <label className="form-label fw-bold">Class</label>
-                                                <select className="form-select" required value={form.class_id} onChange={handleClassChange}>
+                                                <select className="form-select" value={form.class_id} onChange={handleClassChange}>
                                                     <option value="">Select Class</option>
                                                     {classes.map((c: any) => <option key={c.class_id} value={c.class_id}>{c.class_name}</option>)}
                                                 </select>
                                             </div>
                                             <div className="col-md-3">
                                                 <label className="form-label fw-bold">Section</label>
-                                                <select className="form-select" required value={form.section_id} onChange={e => setForm({ ...form, section_id: e.target.value })}>
+                                                <select className="form-select" value={form.section_id} onChange={e => setForm({ ...form, section_id: e.target.value })}>
                                                     <option value="">Select Section</option>
                                                     {sections.map((s: any) => <option key={s.section_id} value={s.section_id}>{s.section_name}</option>)}
                                                 </select>
@@ -463,7 +463,7 @@ export default function EditStudent({ params }: { params: { id: string } }) {
                                     {/* MOTHER */}
                                     <div className="col-md-3">
                                         <label className="form-label fw-bold">Mother Name</label>
-                                        <input type="text" className="form-control" required={!form.is_orphan}
+                                        <input type="text" className="form-control"
                                             value={form.mother_name} onChange={e => setForm({ ...form, mother_name: e.target.value })} />
                                     </div>
                                     <div className="col-md-3">
@@ -604,7 +604,7 @@ export default function EditStudent({ params }: { params: { id: string } }) {
                                                 </div>
                                                 <div className="input-group">
                                                     <span className="input-group-text">Rs.</span>
-                                                    <input type="number" className="form-control form-control-lg" placeholder="0.00" required
+                                                    <input type="number" className="form-control form-control-lg" placeholder="0.00"
                                                         onKeyDown={e => ['e', 'E', '+', '-'].includes(e.key) && e.preventDefault()}
                                                         value={form.family_fee}
                                                         onChange={e => setForm({ ...form, family_fee: e.target.value })} />
@@ -641,7 +641,7 @@ export default function EditStudent({ params }: { params: { id: string } }) {
                                             <label className="form-label fw-bold display-6 fs-5">Monthly Tuition Fee</label>
                                             <div className="input-group">
                                                 <span className="input-group-text">Rs.</span>
-                                                <input type="number" className="form-control form-control-lg" placeholder="0.00" required
+                                                <input type="number" className="form-control form-control-lg" placeholder="0.00"
                                                     onKeyDown={e => ['e', 'E', '+', '-'].includes(e.key) && e.preventDefault()}
                                                     value={form.monthly_fee} onChange={e => setForm({ ...form, monthly_fee: e.target.value })} />
                                             </div>
