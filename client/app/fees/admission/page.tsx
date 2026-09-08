@@ -20,6 +20,9 @@ interface Ledger {
   remaining_amount: number;
   status: "unpaid" | "partial" | "paid";
   admission_date: string;
+  academic_year_id?: number;
+  academic_year_name?: string;
+  is_active_year?: boolean;
 }
 
 interface Stats {
@@ -41,7 +44,7 @@ interface PaymentForm {
   payment_date: string;
 }
 
-const API = `${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}"}`;
+const API = process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com";
 
 interface SchoolInfo {
   school_name: string;
@@ -59,6 +62,9 @@ export default function AdmissionFeePage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState(""); // '' = unpaid+partial (default)
+  const [academicYears, setAcademicYears] = useState<{ id: number; year_name: string; is_active: boolean }[]>([]);
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('all');
+  const [activeYear, setActiveYear] = useState<{ id: number; year_name: string; is_active: boolean } | null>(null);
   const [search, setSearch] = useState("");
 
   // Payment Modal
@@ -91,7 +97,23 @@ export default function AdmissionFeePage() {
   });
 
   useEffect(() => {
-    fetchData();
+    fetch(`${API}/academic/years`).then(r => r.json()).then(data => {
+      if (Array.isArray(data)) {
+        setAcademicYears(data);
+        const active = data.find(y => y.is_active);
+        if (active) {
+          setActiveYear(active);
+          setSelectedAcademicYear(active.id.toString());
+        }
+      }
+    }).catch(() => {});
+    fetch(`${API}/academic/active-year`).then(r => r.json()).then(data => {
+      if (data && data.id) {
+        setActiveYear(data);
+        setSelectedAcademicYear(prev => (prev === 'all' || !prev) ? data.id.toString() : prev);
+      }
+    }).catch(() => {});
+
     fetch(`${API}/settings`)
       .then((r) => r.json())
       .then((data: any) => {
@@ -107,12 +129,19 @@ export default function AdmissionFeePage() {
         }
       })
       .catch(() => { });
-  }, [filterStatus]);
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [filterStatus, selectedAcademicYear]);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const q = filterStatus ? `?status=${filterStatus}` : "";
+      const params = new URLSearchParams();
+      if (filterStatus) params.append("status", filterStatus);
+      if (selectedAcademicYear && selectedAcademicYear !== "all") params.append("academic_year_id", selectedAcademicYear);
+      const q = params.toString() ? `?${params.toString()}` : "";
       const r = await fetch(`${API}/fee-slips/admission-fees${q}`);
       const data = await r.json();
       setLedgers(data.ledgers || []);
@@ -376,11 +405,13 @@ export default function AdmissionFeePage() {
   return (
     <div className="container-fluid p-4 animate__animated animate__fadeIn">
       {/* Header */}
-      <div className="d-flex justify-content-between align-items-center mb-4">
+      <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center align-items-start gap-3 mb-4">
         <div>
-          <h2 className="fw-bold mb-1" style={{ color: "var(--primary-dark)" }}>
-            <i className="bi bi-credit-card-2-front me-2"></i>Admission Fee
-            Ledger
+          <h2 className="fw-bold mb-1 d-flex align-items-center flex-wrap gap-2" style={{ color: "var(--primary-dark)" }}>
+            <i className="bi bi-credit-card-2-front me-1"></i>Admission Fee Ledger
+            <span className="badge rounded-pill bg-light text-dark border ms-2" style={{ fontSize: "0.85rem", fontWeight: 500 }}>
+              Academic Year: {activeYear?.year_name || "—"}
+            </span>
           </h2>
           <p className="text-muted small mb-0">
             Track one-time admission fee outstanding per student auto-linked
@@ -464,7 +495,7 @@ export default function AdmissionFeePage() {
       <div className="card border-0 shadow-sm mb-4">
         <div className="card-body py-3 px-4">
           <div className="row g-2 align-items-center">
-            <div className="col-md-5">
+            <div className="col-md-6">
               <div className="input-group">
                 <span className="input-group-text bg-light border-end-0">
                   <i className="bi bi-search text-muted"></i>
@@ -478,7 +509,7 @@ export default function AdmissionFeePage() {
                 />
               </div>
             </div>
-            <div className="col-md-3">
+            <div className="col-md-4">
               <select
                 className="form-select"
                 value={filterStatus}
@@ -488,7 +519,7 @@ export default function AdmissionFeePage() {
                 <option value="unpaid">Unpaid Only</option>
                 <option value="partial">Partial Only</option>
                 <option value="paid">Paid Only</option>
-                <option value="all">All Students</option>
+                <option value="all">All Statuses</option>
               </select>
             </div>
             <div className="col-md-2">
@@ -608,7 +639,16 @@ export default function AdmissionFeePage() {
                           </span>
                         )}
                       </td>
-                      <td>{statusBadge(ledger.status)}</td>
+                      <td>
+                        <div className="d-flex flex-column align-items-center gap-1">
+                          {statusBadge(ledger.status)}
+                          {ledger.is_active_year === false && (
+                            <span className="badge bg-secondary" style={{ fontSize: "0.62rem" }}>
+                              <i className="bi bi-lock-fill me-1"></i>Closed
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="pe-4 text-end">
                         <button
                           className="btn btn-sm btn-light me-1"
@@ -622,7 +662,8 @@ export default function AdmissionFeePage() {
                           <i className="bi bi-person text-secondary"></i>
                         </button>
                         {ledger.status !== "paid" &&
-                          hasPermission("fees", "write") && (
+                          hasPermission("fees", "write") &&
+                          ledger.is_active_year !== false && (
                             <button
                               className="btn btn-sm btn-primary-custom"
                               onClick={() => openPayModal(ledger)}
@@ -631,6 +672,11 @@ export default function AdmissionFeePage() {
                               <i className="bi bi-cash-coin me-1"></i>Receive
                             </button>
                           )}
+                        {ledger.status !== "paid" && ledger.is_active_year === false && (
+                          <span className="badge bg-secondary px-2 py-1" style={{ fontSize: "0.72rem" }}>
+                            <i className="bi bi-lock-fill me-1"></i>Locked
+                          </span>
+                        )}
                         {ledger.status === "paid" && (
                           <div className="d-flex align-items-center gap-2 justify-content-end">
                             <span className="badge rounded-pill bg-success bg-opacity-10 text-success border border-success small px-3 py-2">
@@ -650,7 +696,7 @@ export default function AdmissionFeePage() {
                                 )
                               }
                             >
-                              <i className="bi bi-printer text-primary"></i>
+                              <i className="bi bi-printer text-secondary"></i>
                             </button>
                           </div>
                         )}
@@ -685,6 +731,14 @@ export default function AdmissionFeePage() {
                   ></button>
                 </div>
                 <div className="modal-body p-4">
+                  {selectedLedger.is_active_year === false && (
+                    <div className="alert alert-warning border-0 shadow-sm d-flex align-items-center gap-2 mb-3 py-2">
+                      <i className="bi bi-lock-fill fs-5"></i>
+                      <div className="small">
+                        <strong>Fiscal Year Closed (Read-Only):</strong> This admission fee record belongs to a closed academic session ({selectedLedger.academic_year_name || 'Closed'}). Payment collection is locked.
+                      </div>
+                    </div>
+                  )}
                   {/* Student Summary */}
                   <div
                     className="rounded-3 p-3 mb-4"
@@ -940,7 +994,7 @@ export default function AdmissionFeePage() {
                       >
                         Cancel
                       </button>
-                      {hasPermission("fees", "write") && (
+                      {hasPermission("fees", "write") && selectedLedger.is_active_year !== false && (
                         <div className="btn-group">
                           <button
                             type="submit"

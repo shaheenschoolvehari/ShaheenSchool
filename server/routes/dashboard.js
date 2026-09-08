@@ -17,10 +17,22 @@ router.get('/teacher', async (req, res) => {
     if (!user_id) return res.status(400).json({ error: 'user_id required' });
 
     try {
-        // Find employee record linked to this app_user
+        // Find employee record linked to this app_user with multi-level fallback
         const empRes = await pool.query(
             `SELECT e.employee_id, e.first_name, e.last_name, e.designation
-             FROM employees e WHERE e.app_user_id = $1 LIMIT 1`,
+             FROM employees e
+             WHERE e.app_user_id = $1
+                OR (e.email IS NOT NULL AND e.email <> '' AND LOWER(e.email) = (SELECT LOWER(email) FROM app_users WHERE id = $1))
+                OR (e.employee_id = $1)
+                OR (LOWER(TRIM(e.first_name || ' ' || COALESCE(e.last_name, ''))) = (SELECT LOWER(TRIM(full_name)) FROM app_users WHERE id = $1))
+             ORDER BY 
+                CASE 
+                    WHEN e.app_user_id = $1 THEN 1
+                    WHEN e.email IS NOT NULL AND LOWER(e.email) = (SELECT LOWER(email) FROM app_users WHERE id = $1) THEN 2
+                    WHEN e.employee_id = $1 THEN 3
+                    ELSE 4
+                END ASC
+             LIMIT 1`,
             [user_id]
         );
         const employee = empRes.rows[0] || null;
@@ -34,19 +46,23 @@ router.get('/teacher', async (req, res) => {
             recentMarkedRes,
             upcomingExamsRes,
         ] = await Promise.all([
-            // Assigned classes + student counts
+            // Assigned classes + student counts (including coordinator assignments)
             emp_id ? pool.query(`
+                WITH combined_classes AS (
+                    SELECT class_id, section_id, is_class_teacher FROM teacher_class_assignment WHERE employee_id = $1
+                    UNION
+                    SELECT class_id, section_id, false AS is_class_teacher FROM attendance_coordinator_assignments WHERE employee_id = $1
+                )
                 SELECT c.class_id, c.class_name,
                        sec.section_id, sec.section_name,
-                       tca.is_class_teacher,
-                       COUNT(s.student_id) FILTER (WHERE s.status='Active') AS student_count
-                FROM teacher_class_assignment tca
+                       COALESCE(bool_or(tca.is_class_teacher), false) AS is_class_teacher,
+                       COUNT(DISTINCT s.student_id) FILTER (WHERE s.status='Active') AS student_count
+                FROM combined_classes tca
                 JOIN classes c ON tca.class_id = c.class_id
                 LEFT JOIN sections sec ON tca.section_id = sec.section_id
                 LEFT JOIN students s ON s.class_id = c.class_id AND s.section_id = sec.section_id
-                WHERE tca.employee_id = $1
-                GROUP BY c.class_id, c.class_name, sec.section_id, sec.section_name, tca.is_class_teacher
-                ORDER BY c.class_name`, [emp_id])
+                GROUP BY c.class_id, c.class_name, sec.section_id, sec.section_name
+                ORDER BY c.class_name, sec.section_name`, [emp_id])
                 : Promise.resolve({ rows: [] }),
 
             // Assigned subjects
@@ -61,20 +77,24 @@ router.get('/teacher', async (req, res) => {
                 ORDER BY c.class_name, sec.section_name, s.subject_name`, [emp_id])
                 : Promise.resolve({ rows: [] }),
 
-            // Today's attendance summary for teacher's classes
+            // Today's attendance summary for teacher's classes (including coordinator delegations)
             emp_id ? pool.query(`
+                WITH combined_classes AS (
+                    SELECT class_id, section_id FROM teacher_class_assignment WHERE employee_id = $1
+                    UNION
+                    SELECT class_id, section_id FROM attendance_coordinator_assignments WHERE employee_id = $1
+                )
                 SELECT c.class_name, c.class_id, sec.section_name, sec.section_id,
-                       COUNT(s.student_id) FILTER (WHERE s.status='Active') AS total_students,
-                       COUNT(sa.attendance_id) FILTER (WHERE sa.attendance_date = CURRENT_DATE AND sa.status='Present') AS present,
-                       COUNT(sa.attendance_id) FILTER (WHERE sa.attendance_date = CURRENT_DATE AND sa.status='Absent')  AS absent,
-                       COUNT(sa.attendance_id) FILTER (WHERE sa.attendance_date = CURRENT_DATE AND sa.status='Late')    AS late,
-                       COUNT(sa.attendance_id) FILTER (WHERE sa.attendance_date = CURRENT_DATE)                         AS marked
-                FROM teacher_class_assignment tca
+                       COUNT(DISTINCT s.student_id) FILTER (WHERE s.status='Active') AS total_students,
+                       COUNT(DISTINCT sa.attendance_id) FILTER (WHERE sa.attendance_date = CURRENT_DATE AND sa.status='Present') AS present,
+                       COUNT(DISTINCT sa.attendance_id) FILTER (WHERE sa.attendance_date = CURRENT_DATE AND sa.status='Absent')  AS absent,
+                       COUNT(DISTINCT sa.attendance_id) FILTER (WHERE sa.attendance_date = CURRENT_DATE AND sa.status='Late')    AS late,
+                       COUNT(DISTINCT sa.attendance_id) FILTER (WHERE sa.attendance_date = CURRENT_DATE)                         AS marked
+                FROM combined_classes tca
                 JOIN classes c ON tca.class_id = c.class_id
                 JOIN sections sec ON tca.section_id = sec.section_id
                 LEFT JOIN students s ON s.class_id = c.class_id AND s.section_id = sec.section_id
                 LEFT JOIN student_attendance sa ON sa.student_id = s.student_id AND sa.attendance_date = CURRENT_DATE
-                WHERE tca.employee_id = $1
                 GROUP BY c.class_id, c.class_name, sec.section_id, sec.section_name
                 ORDER BY c.class_name, sec.section_name`, [emp_id])
                 : Promise.resolve({ rows: [] }),
@@ -88,16 +108,21 @@ router.get('/teacher', async (req, res) => {
 
             // Last 10 attendance entries made
             emp_id ? pool.query(`
+                WITH combined_classes AS (
+                    SELECT class_id, section_id FROM teacher_class_assignment WHERE employee_id = $1
+                    UNION
+                    SELECT class_id, section_id FROM attendance_coordinator_assignments WHERE employee_id = $1
+                )
                 SELECT sa.attendance_date, c.class_name, sec.section_name,
-                       COUNT(sa.attendance_id) FILTER (WHERE sa.status='Present') AS present,
-                       COUNT(sa.attendance_id) FILTER (WHERE sa.status='Absent')  AS absent,
-                       COUNT(sa.attendance_id)                                     AS total
-                FROM teacher_class_assignment tca
+                       COUNT(DISTINCT sa.attendance_id) FILTER (WHERE sa.status='Present') AS present,
+                       COUNT(DISTINCT sa.attendance_id) FILTER (WHERE sa.status='Absent')  AS absent,
+                       COUNT(DISTINCT sa.attendance_id)                                     AS total
+                FROM combined_classes tca
                 JOIN classes c ON tca.class_id = c.class_id
                 JOIN sections sec ON tca.section_id = sec.section_id
                 JOIN students st ON st.class_id = c.class_id AND st.section_id = sec.section_id
                 JOIN student_attendance sa ON sa.student_id = st.student_id
-                WHERE tca.employee_id = $1
+                WHERE sa.attendance_date IS NOT NULL
                 GROUP BY sa.attendance_date, c.class_name, sec.section_name
                 ORDER BY sa.attendance_date DESC, c.class_name, sec.section_name LIMIT 10`, [emp_id])
                 : Promise.resolve({ rows: [] }),

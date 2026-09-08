@@ -812,7 +812,12 @@ async function runMasterSeeder() {
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
-                ALTER TABLE expenses ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+                ALTER TABLE expenses 
+                    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    ADD COLUMN IF NOT EXISTS attachment VARCHAR(255),
+                    ADD COLUMN IF NOT EXISTS approved_by INTEGER REFERENCES app_users(id) ON DELETE SET NULL,
+                    ADD COLUMN IF NOT EXISTS receipt_url TEXT,
+                    ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
 
                 CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(expense_date);
             `);
@@ -838,9 +843,11 @@ async function runMasterSeeder() {
                     head_type VARCHAR(30) NOT NULL DEFAULT 'regular',
                     frequency VARCHAR(20) NOT NULL DEFAULT 'monthly',
                     description TEXT,
+                    track_arrears BOOLEAN NOT NULL DEFAULT TRUE,
                     is_active BOOLEAN DEFAULT TRUE,
                     created_at TIMESTAMP DEFAULT NOW()
                 );
+                ALTER TABLE fee_heads ADD COLUMN IF NOT EXISTS track_arrears BOOLEAN NOT NULL DEFAULT TRUE;
             `);
 
             // Cleanup duplicate fee_heads if table existed with duplicates
@@ -856,23 +863,23 @@ async function runMasterSeeder() {
 
             // Seed default fee heads idempotently
             const defaultFeeHeads = [
-                ['Tuition Fee', 'regular', 'monthly', 'Monthly tuition charges'],
-                ['Transport Fee', 'regular', 'monthly', 'School bus / transport service'],
-                ['Exam Fee', 'extra', 'once', 'Examination charges per term'],
-                ['Annual Fund', 'extra', 'yearly', 'Annual school development fund'],
-                ['Sports Fee', 'regular', 'monthly', 'Sports activities & PE charges'],
-                ['Lab Charges', 'regular', 'monthly', 'Science/Computer lab usage'],
-                ['Library Fee', 'regular', 'monthly', 'Library access & maintenance'],
-                ['Late Fine', 'extra', 'once', 'Fine for late fee payment'],
-                ['Previous Balance', 'prev_balance', 'monthly', 'Previous dues carried forward']
+                ['Tuition Fee', 'regular', 'monthly', false, 'Monthly tuition charges'],
+                ['Transport Fee', 'regular', 'monthly', true, 'School bus / transport service'],
+                ['Exam Fee', 'extra', 'once', true, 'Examination charges per term'],
+                ['Annual Fund', 'extra', 'yearly', true, 'Annual school development fund'],
+                ['Sports Fee', 'regular', 'monthly', true, 'Sports activities & PE charges'],
+                ['Lab Charges', 'regular', 'monthly', true, 'Science/Computer lab usage'],
+                ['Library Fee', 'regular', 'monthly', true, 'Library access & maintenance'],
+                ['Late Fine', 'extra', 'once', true, 'Fine for late fee payment'],
+                ['Previous Balance', 'prev_balance', 'monthly', false, 'Previous dues carried forward']
             ];
 
-            for (const [hName, hType, hFreq, hDesc] of defaultFeeHeads) {
+            for (const [hName, hType, hFreq, hTrack, hDesc] of defaultFeeHeads) {
                 await pool.query(`
-                    INSERT INTO fee_heads (head_name, head_type, frequency, description)
-                    VALUES ($1, $2, $3, $4)
-                    ON CONFLICT (head_name) DO UPDATE SET head_type = $2, frequency = $3, description = $4
-                `, [hName, hType, hFreq, hDesc]);
+                    INSERT INTO fee_heads (head_name, head_type, frequency, track_arrears, description)
+                    VALUES ($1, $2, $3, $4, $5)
+                    ON CONFLICT (head_name) DO UPDATE SET head_type = $2, frequency = $3, track_arrears = $4, description = $5
+                `, [hName, hType, hFreq, hTrack, hDesc]);
             }
 
             // 8.2 fee_plans Table
@@ -907,8 +914,10 @@ async function runMasterSeeder() {
                     plan_id INTEGER NOT NULL REFERENCES fee_plans(plan_id) ON DELETE CASCADE,
                     head_id INTEGER NOT NULL REFERENCES fee_heads(head_id) ON DELETE CASCADE,
                     amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+                    fine_after_day INTEGER DEFAULT NULL,
                     UNIQUE(plan_id, head_id)
                 );
+                ALTER TABLE fee_plan_heads ADD COLUMN IF NOT EXISTS fine_after_day INTEGER DEFAULT NULL;
             `);
 
             // 8.5 monthly_fee_slips Table
@@ -930,6 +939,7 @@ async function runMasterSeeder() {
                     total_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
                     paid_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
                     status VARCHAR(20) NOT NULL DEFAULT 'unpaid',
+                    academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL,
                     generated_at TIMESTAMP DEFAULT NOW(),
                     UNIQUE(student_id, month, year)
                 );
@@ -941,7 +951,8 @@ async function runMasterSeeder() {
                 "ALTER TABLE monthly_fee_slips ADD COLUMN IF NOT EXISTS has_multi_months BOOLEAN DEFAULT FALSE",
                 "ALTER TABLE monthly_fee_slips ADD COLUMN IF NOT EXISTS months_list INTEGER[]",
                 "ALTER TABLE monthly_fee_slips ADD COLUMN IF NOT EXISTS is_printed BOOLEAN DEFAULT FALSE",
-                "ALTER TABLE monthly_fee_slips ADD COLUMN IF NOT EXISTS printed_at TIMESTAMP"
+                "ALTER TABLE monthly_fee_slips ADD COLUMN IF NOT EXISTS printed_at TIMESTAMP",
+                "ALTER TABLE monthly_fee_slips ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL"
             ];
             for (const q of slipAlters) {
                 await pool.query(q);
@@ -953,6 +964,7 @@ async function runMasterSeeder() {
                 CREATE INDEX IF NOT EXISTS idx_mfs_months_list ON monthly_fee_slips USING GIN (months_list);
                 CREATE INDEX IF NOT EXISTS idx_mfs_family ON monthly_fee_slips(family_id);
                 CREATE INDEX IF NOT EXISTS idx_mfs_student_month_year ON monthly_fee_slips(student_id, year, month);
+                CREATE INDEX IF NOT EXISTS idx_mfs_academic_year ON monthly_fee_slips(academic_year_id);
             `);
 
             // 8.6 slip_line_items Table
@@ -964,10 +976,19 @@ async function runMasterSeeder() {
                     head_name VARCHAR(100) NOT NULL,
                     amount NUMERIC(10,2) NOT NULL DEFAULT 0,
                     paid_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+                    is_carried_forward BOOLEAN NOT NULL DEFAULT FALSE,
+                    arrears_head_id INTEGER REFERENCES fee_heads(head_id) ON DELETE SET NULL,
+                    source_slip_id INTEGER REFERENCES monthly_fee_slips(slip_id) ON DELETE SET NULL,
                     note TEXT
                 );
+                ALTER TABLE slip_line_items ADD COLUMN IF NOT EXISTS is_carried_forward BOOLEAN NOT NULL DEFAULT FALSE;
+                ALTER TABLE slip_line_items ADD COLUMN IF NOT EXISTS arrears_head_id INTEGER REFERENCES fee_heads(head_id) ON DELETE SET NULL;
+                ALTER TABLE slip_line_items ADD COLUMN IF NOT EXISTS source_slip_id INTEGER REFERENCES monthly_fee_slips(slip_id) ON DELETE SET NULL;
+                ALTER TABLE slip_line_items ADD COLUMN IF NOT EXISTS is_waived BOOLEAN NOT NULL DEFAULT FALSE;
+                ALTER TABLE slip_line_items ADD COLUMN IF NOT EXISTS waived_at TIMESTAMP;
                 CREATE INDEX IF NOT EXISTS idx_sli_slip_id ON slip_line_items(slip_id);
                 CREATE INDEX IF NOT EXISTS idx_sli_head_id ON slip_line_items(head_id);
+                CREATE INDEX IF NOT EXISTS idx_sli_arrears ON slip_line_items(arrears_head_id, is_carried_forward);
             `);
 
             // 8.7 fee_payments Table
@@ -987,6 +1008,7 @@ async function runMasterSeeder() {
                 );
                 ALTER TABLE fee_payments ADD COLUMN IF NOT EXISTS is_printed BOOLEAN DEFAULT FALSE;
                 ALTER TABLE fee_payments ADD COLUMN IF NOT EXISTS printed_at TIMESTAMP;
+                ALTER TABLE fee_payments ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
             `);
 
             // 8.8 family_opb_payments Table
@@ -1002,6 +1024,7 @@ async function runMasterSeeder() {
                     notes TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
+                ALTER TABLE family_opb_payments ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
                 CREATE INDEX IF NOT EXISTS idx_opb_payments_family ON family_opb_payments(family_id);
             `);
 
@@ -1022,6 +1045,7 @@ async function runMasterSeeder() {
                 );
                 ALTER TABLE admission_fee_ledger ADD COLUMN IF NOT EXISTS discount NUMERIC(10,2) DEFAULT 0;
                 ALTER TABLE admission_fee_ledger ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(10,2) DEFAULT 0;
+                ALTER TABLE admission_fee_ledger ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
             `);
 
             // 8.10 admission_fee_payments Table
@@ -1038,6 +1062,7 @@ async function runMasterSeeder() {
                     notes TEXT,
                     created_at TIMESTAMP DEFAULT NOW()
                 );
+                ALTER TABLE admission_fee_payments ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
             `);
 
             // 8.11 exam_fee_collections Table
@@ -1051,10 +1076,12 @@ async function runMasterSeeder() {
                     amount NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (amount >= 0),
                     remarks TEXT,
                     collected_by INTEGER REFERENCES app_users(id) ON DELETE SET NULL,
+                    academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL,
                     collection_date DATE DEFAULT CURRENT_DATE,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(collection_name, student_id)
                 );
+                ALTER TABLE exam_fee_collections ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
             `);
 
             console.log("   ✅ Fee Management Module Tables set up successfully.");
@@ -1127,6 +1154,7 @@ async function runMasterSeeder() {
                 ALTER TABLE test_papers ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'pending';
                 ALTER TABLE test_papers ADD COLUMN IF NOT EXISTS approved_by INTEGER REFERENCES app_users(id) ON DELETE SET NULL;
                 ALTER TABLE test_papers ADD COLUMN IF NOT EXISTS published_by INTEGER REFERENCES app_users(id) ON DELETE SET NULL;
+                ALTER TABLE test_papers ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
             `);
 
             // 9.4 test_marks Table

@@ -70,6 +70,7 @@ export default function TestMarkingPage() {
     // ── tests list ───────────────────────────────────────────────────────────
     const [loadingTests, setLoadingTests] = useState(false);
     const [tests, setTests] = useState<TestPaper[]>([]);
+    const [activeYear, setActiveYear] = useState<{ id: number; year_name: string } | null>(null);
 
     // ── create-test form ─────────────────────────────────────────────────────
     const [showCreateForm, setShowCreateForm] = useState(false);
@@ -151,6 +152,7 @@ export default function TestMarkingPage() {
             const p = new URLSearchParams({ user_id: String(user.id), class_id: selClass, section_id: selSection, subject_id: selSubject });
             const d = await fetchJson(`${API}/exams/tests?${p}`);
             setTests(d.tests || []);
+            if (d.active_year) setActiveYear(d.active_year);
         } catch (e: any) {
             const errText = e.message || 'Failed to load tests';
             setMsg({ type: 'danger', text: errText });
@@ -329,12 +331,17 @@ export default function TestMarkingPage() {
         <div className="page-wrap" style={{ backgroundColor: 'var(--bg-main)', minHeight: '100vh', padding: '1.5rem' }}>
             {/* Standard Theme Page Header */}
             <div className="d-flex align-items-center justify-content-between mb-4">
-                <div>
-                    <h4 className="mb-1 fw-bold" style={{ color: 'var(--primary-dark)' }}>
-                        <i className="bi bi-journal-check me-2" style={{ color: 'var(--accent-orange)' }} />
-                        Test Marking
-                    </h4>
-                    <div className="text-muted small">Create and mark class tests for selected subject</div>
+                <div className="d-flex align-items-center gap-2">
+                    <div>
+                        <h4 className="mb-1 fw-bold" style={{ color: 'var(--primary-dark)' }}>
+                            <i className="bi bi-journal-check me-2" style={{ color: 'var(--accent-orange)' }} />
+                            Test Marking
+                        </h4>
+                        <div className="text-muted small">Create and mark class tests for selected subject</div>
+                    </div>
+                    <span className="badge rounded-pill bg-light text-dark border ms-2">
+                        Academic Year: {activeYear?.year_name || '—'}
+                    </span>
                 </div>
 
                 {readyToList && hasPermission('academic', 'write') && (

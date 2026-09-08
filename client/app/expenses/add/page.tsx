@@ -37,9 +37,27 @@ export default function AddExpensePage() {
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
+    const [activeYearName, setActiveYearName] = useState('');
+
     useEffect(() => {
         fetchCategories();
+        fetchActiveYear();
     }, []);
+
+    const fetchActiveYear = async () => {
+        try {
+            let response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/academic/active-year`);
+            let data = await response.json();
+            if (!data?.year_name) {
+                response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/expenses?limit=1`);
+                data = await response.json();
+                data = data.active_year;
+            }
+            if (data?.year_name) setActiveYearName(data.year_name);
+        } catch (err) {
+            console.error('Failed to fetch active academic year', err);
+        }
+    };
 
     const fetchCategories = async () => {
         try {
@@ -85,15 +103,20 @@ export default function AddExpensePage() {
     };
 
     return (
-        <div className="container-fluid p-4 animate__animated animate__fadeIn">
+        <div className="container-fluid p-2 p-sm-3 p-md-4 animate__animated animate__fadeIn">
             <div className="row justify-content-center">
-                <div className="col-lg-8">
+                <div className="col-12 col-lg-8">
 
                     {/* Header */}
-                    <div className="d-flex justify-content-between align-items-center mb-4">
-                        <h2 className="fw-bold" style={{ color: 'var(--primary-dark)' }}>
-                            <i className="bi bi-plus-circle me-2"></i>Add New Expense
-                        </h2>
+                    <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-3 mb-3 mb-md-4">
+                        <div className="d-flex align-items-center gap-2 flex-wrap">
+                            <h2 className="fw-bold mb-0" style={{ color: 'var(--primary-dark)', fontSize: 'clamp(1.3rem, 3vw, 1.75rem)' }}>
+                                <i className="bi bi-plus-circle me-2"></i>Add New Expense
+                            </h2>
+                            <span className="badge rounded-pill bg-light text-dark border">
+                                Academic Year: {activeYearName || '—'}
+                            </span>
+                        </div>
                         <button
                             className="btn btn-secondary-custom shadow-sm d-flex align-items-center"
                             onClick={() => router.push('/expenses/list')}
@@ -103,9 +126,9 @@ export default function AddExpensePage() {
                     </div>
 
                     {/* Form Card */}
-                    <div className="card shadow-lg border-0 animate__animated animate__fadeInUp">
+                    <div className="card shadow-lg border-0 animate__animated animate__fadeInUp" style={{ borderRadius: 16, overflow: 'hidden' }}>
                         {/* Decorative Top Border */}
-                        <div className="card-body p-5 position-relative" style={{ borderTop: '5px solid var(--primary-teal)' }}>
+                        <div className="card-body p-3 p-sm-4 p-md-5 position-relative" style={{ borderTop: '5px solid var(--primary-teal)' }}>
 
                             {error && (
                                 <div className="alert alert-danger d-flex align-items-center mb-4 animate__animated animate__headShake" role="alert">
@@ -114,7 +137,7 @@ export default function AddExpensePage() {
                                 </div>
                             )}
 
-                            <form onSubmit={handleSubmit} className="row g-4">
+                            <form onSubmit={handleSubmit} className="row g-3 g-md-4">
                                 <h5 className="text-muted border-bottom pb-2 mb-3">
                                     <i className="bi bi-info-circle me-2"></i>Basic Information
                                 </h5>

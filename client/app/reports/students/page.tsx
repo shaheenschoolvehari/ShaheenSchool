@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 
+type AcademicYear = { id: number; year_name: string; is_active: boolean; status: string; start_date?: string; end_date?: string };
 type Class = { class_id: number; class_name: string };
 type Section = { section_id: number; section_name: string; class_id: number };
 type Student = {
@@ -12,6 +13,8 @@ type Student = {
 type Summary = { total: number; active: number; inactive: number };
 
 export default function StudentReportPage() {
+    const [years, setYears] = useState<AcademicYear[]>([]);
+    const [academicYearId, setAcademicYearId] = useState<string>('');
     const [classes, setClasses] = useState<Class[]>([]);
     const [sections, setSections] = useState<Section[]>([]);
     const [filteredSections, setFilteredSections] = useState<Section[]>([]);
@@ -24,6 +27,18 @@ export default function StudentReportPage() {
     const printRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
+        // Fetch academic years
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/academic/years`)
+            .then(r => r.json())
+            .then((data: AcademicYear[]) => {
+                if (Array.isArray(data) && data.length > 0) {
+                    setYears(data);
+                    const active = data.find(y => y.is_active || y.status === 'active') || data[0];
+                    if (active) setAcademicYearId(String(active.id));
+                }
+            })
+            .catch(console.error);
+
         fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/academic/classes`).then(r => r.json()).then(setClasses).catch(console.error);
         fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/academic/sections`).then(r => r.json()).then(setSections).catch(console.error);
     }, []);
@@ -38,6 +53,7 @@ export default function StudentReportPage() {
         setLoading(true); setError('');
         try {
             const params = new URLSearchParams();
+            if (academicYearId) params.append('academic_year_id', academicYearId);
             if (classId) params.append('class_id', classId);
             if (sectionId) params.append('section_id', sectionId);
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/reports/students?${params}`);
@@ -78,46 +94,76 @@ export default function StudentReportPage() {
     };
 
     return (
-        <div className="p-3 p-md-4" style={{ backgroundColor: 'var(--bg-main)', minHeight: '100vh' }}>
+        <div className="container-fluid p-2 p-sm-3 p-md-4" style={{ backgroundColor: 'var(--bg-main)', minHeight: '100vh' }}>
+            {/* Custom Responsive Styles */}
+            <style jsx>{`
+                @media (max-width: 575.98px) {
+                    .student-report-table {
+                        min-width: 820px;
+                    }
+                    .summary-stat-box {
+                        padding: 8px 10px !important;
+                    }
+                }
+            `}</style>
+
             {/* Header */}
-            <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2 mb-4">
+            <div className="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3 mb-3 mb-md-4">
                 <div>
-                    <h4 className="mb-1 fw-bold" style={{ color: 'var(--primary-dark)' }}>
+                    <h4 className="mb-1 fw-bold" style={{ color: 'var(--primary-dark)', fontSize: 'clamp(1.25rem, 3vw, 1.6rem)' }}>
                         <i className="bi bi-people-fill me-2" style={{ color: 'var(--accent-orange)' }} />
                         Student Report
                     </h4>
-                    <div className="text-muted small">Class & Section wise student list</div>
+                    <div className="text-muted small">Class &amp; Section wise student list</div>
+                </div>
+                <div>
+                    <span className="badge rounded-pill bg-light text-dark border px-3 py-2 shadow-sm d-inline-flex align-items-center gap-1.5" style={{ fontSize: '13px', fontWeight: 600 }}>
+                        <i className="bi bi-mortarboard-fill text-primary"></i>
+                        Academic Year: {years.find(y => String(y.id) === academicYearId)?.year_name || years.find(y => y.is_active)?.year_name || '—'}
+                    </span>
                 </div>
             </div>
 
             {/* Filters */}
-            <div className="card border-0 shadow-sm mb-4">
-                <div className="card-header bg-white border-bottom py-3" style={{ borderLeft: '4px solid var(--primary-teal)' }}>
+            <div className="card border-0 shadow-sm mb-3 mb-md-4" style={{ borderRadius: 16 }}>
+                <div className="card-header bg-white border-bottom py-3" style={{ borderLeft: '4px solid var(--primary-teal)', borderRadius: '16px 16px 0 0' }}>
                     <h6 className="mb-0 fw-bold"><i className="bi bi-funnel me-2 text-muted" />Filters</h6>
                 </div>
                 <div className="card-body">
-                    <div className="row g-3 align-items-end">
-                        <div className="col-12 col-md-3">
+                    <div className="row g-2 g-md-3 align-items-end">
+                        <div className="col-12 col-sm-6 col-md-3">
+                            <label className="form-label fw-semibold small mb-1">
+                                <i className="bi bi-mortarboard-fill me-1 text-primary"></i>Academic Year
+                            </label>
+                            <select className="form-select form-select-sm" value={academicYearId} onChange={e => setAcademicYearId(e.target.value)}>
+                                {years.map(y => (
+                                    <option key={y.id} value={y.id}>
+                                        {y.year_name} {y.is_active || y.status === 'active' ? '(Active)' : ''}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="col-12 col-sm-6 col-md-3">
                             <label className="form-label fw-semibold small mb-1">Class</label>
                             <select className="form-select form-select-sm" value={classId} onChange={e => setClassId(e.target.value)}>
                                 <option value="">All Classes</option>
                                 {classes.map(c => <option key={c.class_id} value={c.class_id}>{c.class_name}</option>)}
                             </select>
                         </div>
-                        <div className="col-12 col-md-3">
+                        <div className="col-12 col-sm-6 col-md-3">
                             <label className="form-label fw-semibold small mb-1">Section</label>
                             <select className="form-select form-select-sm" value={sectionId} onChange={e => setSectionId(e.target.value)} disabled={!classId}>
                                 <option value="">All Sections</option>
                                 {filteredSections.map(s => <option key={s.section_id} value={s.section_id}>{s.section_name}</option>)}
                             </select>
                         </div>
-                        <div className="col-12 col-md-4 d-flex gap-2">
-                            <button className="btn btn-sm fw-bold px-4 flex-grow-1" style={{ background: 'var(--primary-teal)', color: '#fff', height: 34 }} onClick={loadReport} disabled={loading}>
+                        <div className="col-12 col-sm-6 col-md-3 d-flex gap-2">
+                            <button className="btn btn-sm fw-bold px-4 flex-grow-1" style={{ background: 'var(--primary-teal)', color: '#fff', height: 34, borderRadius: 10 }} onClick={loadReport} disabled={loading}>
                                 {loading ? <span className="spinner-border spinner-border-sm me-2" /> : <i className="bi bi-search me-2" />}
                                 Generate
                             </button>
                             {students.length > 0 && (
-                                <button className="btn btn-outline-secondary btn-sm fw-bold px-3" onClick={handlePrint}>
+                                <button className="btn btn-outline-secondary btn-sm fw-bold px-3" style={{ borderRadius: 10 }} onClick={handlePrint}>
                                     <i className="bi bi-printer" />
                                 </button>
                             )}
@@ -130,7 +176,7 @@ export default function StudentReportPage() {
 
             {/* Report Content */}
             {students.length > 0 && (
-                <div className="card border-0 shadow-sm">
+                <div className="card border-0 shadow-sm" style={{ borderRadius: 16, overflow: 'hidden' }}>
                     <div className="card-body p-0">
                         <div ref={printRef}>
                             <h2 style={{ textAlign: 'center', padding: '16px 0 4px', color: '#233D4D' }}>Student Report</h2>
@@ -142,16 +188,16 @@ export default function StudentReportPage() {
 
                             {/* Summary */}
                             {summary && (
-                                <div className="row g-2 g-md-3 px-3 px-md-4 mb-3">
+                                <div className="row g-2 g-md-3 px-2 px-md-4 mb-3">
                                     {[
                                         { label: 'Total Students', val: summary.total, color: '#233D4D', bg: '#eaf0f6' },
                                         { label: 'Active', val: summary.active, color: '#198754', bg: '#e8f5ee' },
                                         { label: 'Inactive', val: summary.inactive, color: '#dc3545', bg: '#fdecea' },
                                     ].map(s => (
                                         <div key={s.label} className="col-4">
-                                            <div style={{ background: s.bg, padding: '10px 14px', borderRadius: 8, borderTop: `3px solid ${s.color}` }}>
-                                                <div style={{ fontSize: 22, fontWeight: 800, color: s.color }}>{s.val}</div>
-                                                <div style={{ fontSize: 11, color: '#666' }}>{s.label}</div>
+                                            <div className="summary-stat-box" style={{ background: s.bg, padding: '10px 14px', borderRadius: 12, borderTop: `3px solid ${s.color}` }}>
+                                                <div style={{ fontSize: 'clamp(1.1rem, 3.5vw, 1.4rem)', fontWeight: 800, color: s.color }}>{s.val}</div>
+                                                <div style={{ fontSize: 11, color: '#666' }} className="text-truncate">{s.label}</div>
                                             </div>
                                         </div>
                                     ))}
@@ -159,7 +205,7 @@ export default function StudentReportPage() {
                             )}
 
                             <div className="table-responsive">
-                                <table className="table table-hover mb-0" style={{ fontSize: 13 }}>
+                                <table className="table table-hover mb-0 student-report-table" style={{ fontSize: 13 }}>
                                     <thead style={{ background: '#233D4D' }}>
                                         <tr>
                                             {['#', 'Admission#', 'Roll#', 'Student Name', 'Gender', 'Class', 'Section', 'Father Name', 'Contact', 'Monthly Fee', 'Status'].map(h => (

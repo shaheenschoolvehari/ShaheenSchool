@@ -17,6 +17,7 @@ interface PlanHead {
     head_type: string;
     frequency: string;
     amount: string;
+    fine_after_day?: string | number | null;
 }
 
 interface ClassItem {
@@ -58,15 +59,18 @@ export default function FeePlansPage() {
     });
 
     useEffect(() => {
-        Promise.all([fetchPlans(), fetchHeads(), fetchClasses()]);
+        fetchPlans();
+        fetchHeads();
+        fetchClasses();
     }, []);
 
     const fetchPlans = async () => {
         try {
             const r = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/fee-plans`);
             const data = await r.json();
-            setPlans(Array.isArray(data) ? data : []);
-        } catch { } finally { setLoading(false); }
+            if (Array.isArray(data)) setPlans(data);
+        } catch { setError('Failed to load fee plans'); }
+        finally { setLoading(false); }
     };
 
     const fetchHeads = async () => {
@@ -96,7 +100,7 @@ export default function FeePlansPage() {
             academic_year: plan.academic_year,
             description: plan.description || '',
             is_active: plan.is_active,
-            heads: (plan.heads || []).map(h => ({ ...h, amount: h.amount?.toString() || '0' }))
+            heads: (plan.heads || []).map(h => ({ ...h, amount: h.amount?.toString() || '0', fine_after_day: (h as any).fine_after_day ? (h as any).fine_after_day.toString() : '' }))
         });
         setEditMode(true); setEditId(plan.plan_id); setError(''); setShowModal(true);
     };
@@ -115,16 +119,31 @@ export default function FeePlansPage() {
         if (exists) {
             setForm(p => ({ ...p, heads: p.heads.filter(h => h.head_id !== head.head_id) }));
         } else {
-            setForm(p => ({ ...p, heads: [...p.heads, { ...head, amount: '0' }] }));
+            setForm(p => ({ ...p, heads: [...p.heads, { ...head, amount: '0', fine_after_day: '' }] }));
         }
     };
 
-    const updateHeadAmount = (head_id: number, amount: string) => {
-        setForm(p => ({ ...p, heads: p.heads.map(h => h.head_id === head_id ? { ...h, amount } : h) }));
+    const updateHeadAmount = (head_id: number, val: string) => {
+        // Strict numeric validation (only positive digits and at most one decimal point)
+        let cleanVal = val.replace(/[^0-9.]/g, '');
+        const parts = cleanVal.split('.');
+        if (parts.length > 2) {
+            cleanVal = `${parts[0]}.${parts.slice(1).join('')}`;
+        }
+        setForm(p => ({ ...p, heads: p.heads.map(h => h.head_id === head_id ? { ...h, amount: cleanVal } : h) }));
+    };
+
+    const updateHeadFineDay = (head_id: number, val: string) => {
+        const cleanVal = val.replace(/[^0-9]/g, '');
+        let num = parseInt(cleanVal) || 0;
+        if (num > 31) num = 31;
+        const finalVal = cleanVal === '' ? '' : num.toString();
+        setForm(p => ({ ...p, heads: p.heads.map(h => h.head_id === head_id ? { ...h, fine_after_day: finalVal } : h) }));
     };
 
     const isTuitionHead = (name: string) => name.toLowerCase().includes('tuition');
     const isOpbHead = (type: string) => type === 'prev_balance';
+    const isLateFineHead = (name: string) => name.toLowerCase().includes('late') || name.toLowerCase().includes('fine');
     // Tuition (per-student) and Previous Balance (per-family) amounts are auto exclude from plan fixed total
     const totalAmount = form.heads
         .filter(h => !isTuitionHead(h.head_name) && !isOpbHead(h.head_type))
@@ -409,12 +428,46 @@ export default function FeePlansPage() {
                                                                                 </div>
                                                                             </div>
                                                                         ) : (
-                                                                            <div className="input-group input-group-sm">
-                                                                                <span className="input-group-text bg-light">PKR</span>
-                                                                                <input type="number" className="form-control" value={sel.amount} min="0"
-                                                                                    onKeyDown={e => ['e', 'E', '+', '-'].includes(e.key) && e.preventDefault()}
-                                                                                    onChange={e => updateHeadAmount(head.head_id, e.target.value)}
-                                                                                    placeholder="0.00" onClick={e => e.stopPropagation()} />
+                                                                            <div className="d-flex flex-column gap-2" onClick={e => e.stopPropagation()}>
+                                                                                <div className="input-group input-group-sm">
+                                                                                    <span className="input-group-text bg-light fw-bold small text-muted">PKR</span>
+                                                                                    <input
+                                                                                        type="number"
+                                                                                        className="form-control text-end fw-bold no-spinner"
+                                                                                        value={sel.amount}
+                                                                                        min="0"
+                                                                                        step="any"
+                                                                                        onKeyDown={e => ['e', 'E', '+', '-', 'ArrowUp', 'ArrowDown'].includes(e.key) && e.preventDefault()}
+                                                                                        onWheel={e => (e.target as HTMLElement).blur()}
+                                                                                        onChange={e => updateHeadAmount(head.head_id, e.target.value)}
+                                                                                        placeholder="0"
+                                                                                        style={{ fontSize: '0.9rem' }}
+                                                                                    />
+                                                                                </div>
+                                                                                {isLateFineHead(head.head_name) && (
+                                                                                    <div className="bg-light p-2 rounded border">
+                                                                                        <div className="d-flex align-items-center justify-content-between mb-1">
+                                                                                            <span className="fw-bold text-dark" style={{ fontSize: '0.73rem' }}>
+                                                                                                <i className="bi bi-calendar-event text-warning me-1"></i>Apply Fine After Day (1-31):
+                                                                                            </span>
+                                                                                        </div>
+                                                                                        <input
+                                                                                            type="number"
+                                                                                            className="form-control form-control-sm no-spinner"
+                                                                                            min="1"
+                                                                                            max="31"
+                                                                                            value={sel.fine_after_day || ''}
+                                                                                            onChange={e => updateHeadFineDay(head.head_id, e.target.value)}
+                                                                                            placeholder="e.g. 10 or 15 (Optional)"
+                                                                                            onWheel={e => (e.target as HTMLElement).blur()}
+                                                                                            onKeyDown={e => ['e', 'E', '+', '-', '.', 'ArrowUp', 'ArrowDown'].includes(e.key) && e.preventDefault()}
+                                                                                            style={{ fontSize: '0.8rem' }}
+                                                                                        />
+                                                                                        <small className="text-muted d-block mt-1" style={{ fontSize: '0.68rem', lineHeight: '1.2' }}>
+                                                                                            Fine implements after this day of the month. If empty, defaults to voucher due date.
+                                                                                        </small>
+                                                                                    </div>
+                                                                                )}
                                                                             </div>
                                                                         )
                                                                     )}
@@ -459,6 +512,17 @@ export default function FeePlansPage() {
                     </div>
                 </>
             )}
+
+            <style jsx>{`
+                .no-spinner::-webkit-outer-spin-button,
+                .no-spinner::-webkit-inner-spin-button {
+                    -webkit-appearance: none !important;
+                    margin: 0 !important;
+                }
+                .no-spinner[type=number] {
+                    -moz-appearance: textfield !important;
+                }
+            `}</style>
         </div>
     );
 }

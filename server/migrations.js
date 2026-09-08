@@ -210,9 +210,50 @@ async function runEssentialMigrations() {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_uniq_sheet_term_exam ON exam_sheet_approvals (sheet_type, term_id, class_id, section_id, subject_id) WHERE sheet_type = 'term_exam';
             CREATE UNIQUE INDEX IF NOT EXISTS idx_uniq_sheet_class_test ON exam_sheet_approvals (test_id) WHERE sheet_type = 'class_test';
 
-            -- Legacy data backfill (keep existing marks published)
+            -- Legacy data backfill (keep existing marks published & link active academic year)
             UPDATE exam_marks SET status = 'published' WHERE status IS NULL;
             UPDATE test_papers SET status = 'published' WHERE status IS NULL;
+            UPDATE test_papers SET academic_year_id = (SELECT id FROM academic_years WHERE is_active = TRUE ORDER BY id DESC LIMIT 1) WHERE academic_year_id IS NULL;
+
+            -- Fees & Exam Collections Academic Year Migration
+            ALTER TABLE exam_fee_collections ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
+            CREATE INDEX IF NOT EXISTS idx_efc_academic_year ON exam_fee_collections(academic_year_id);
+            UPDATE exam_fee_collections SET academic_year_id = (SELECT id FROM academic_years WHERE is_active = TRUE ORDER BY id DESC LIMIT 1) WHERE academic_year_id IS NULL;
+
+            ALTER TABLE monthly_fee_slips ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
+            CREATE INDEX IF NOT EXISTS idx_mfs_academic_year ON monthly_fee_slips(academic_year_id);
+            UPDATE monthly_fee_slips SET academic_year_id = (SELECT id FROM academic_years WHERE is_active = TRUE ORDER BY id DESC LIMIT 1) WHERE academic_year_id IS NULL;
+
+            ALTER TABLE admission_fee_ledger ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
+            CREATE INDEX IF NOT EXISTS idx_afl_academic_year ON admission_fee_ledger(academic_year_id);
+            UPDATE admission_fee_ledger SET academic_year_id = (SELECT id FROM academic_years WHERE is_active = TRUE ORDER BY id DESC LIMIT 1) WHERE academic_year_id IS NULL;
+
+            ALTER TABLE fee_payments ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
+            ALTER TABLE family_opb_payments ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
+            ALTER TABLE admission_fee_payments ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
+            ALTER TABLE expenses ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
+        `);
+
+        // 7.1 Fee Heads Arrears & Line Items Migration
+        console.log("   → Checking fee_heads and slip_line_items columns...");
+        await client.query(`
+            ALTER TABLE fee_heads ADD COLUMN IF NOT EXISTS track_arrears BOOLEAN NOT NULL DEFAULT TRUE;
+            UPDATE fee_heads 
+            SET track_arrears = FALSE 
+            WHERE head_type = 'prev_balance' 
+               OR LOWER(head_name) LIKE '%tuition%' 
+               OR LOWER(head_name) LIKE '%family%';
+
+            ALTER TABLE slip_line_items 
+                ADD COLUMN IF NOT EXISTS is_carried_forward BOOLEAN NOT NULL DEFAULT FALSE,
+                ADD COLUMN IF NOT EXISTS arrears_head_id INTEGER REFERENCES fee_heads(head_id) ON DELETE SET NULL,
+                ADD COLUMN IF NOT EXISTS source_slip_id INTEGER REFERENCES monthly_fee_slips(slip_id) ON DELETE SET NULL,
+                ADD COLUMN IF NOT EXISTS is_waived BOOLEAN NOT NULL DEFAULT FALSE,
+                ADD COLUMN IF NOT EXISTS waived_at TIMESTAMP;
+
+            CREATE INDEX IF NOT EXISTS idx_sli_arrears ON slip_line_items(arrears_head_id, is_carried_forward);
+
+            ALTER TABLE fee_plan_heads ADD COLUMN IF NOT EXISTS fine_after_day INTEGER DEFAULT NULL;
         `);
 
         // 8. User Sessions & Login Security Migration
@@ -255,6 +296,64 @@ async function runEssentialMigrations() {
             CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
             CREATE INDEX IF NOT EXISTS idx_notifications_role ON notifications(role);
             CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read);
+        `);
+
+        // 9. Attendance Settings, Holidays & Coordinator Assignments Migration
+        console.log("   → Checking attendance_settings, holidays & coordinator assignments...");
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS attendance_settings (
+                id SERIAL PRIMARY KEY,
+                staff_in_time TIME DEFAULT '08:00',
+                staff_out_time TIME DEFAULT '14:00',
+                staff_grace_minutes INTEGER DEFAULT 15,
+                staff_auto_absent_enabled BOOLEAN DEFAULT TRUE,
+                staff_notify_in_out BOOLEAN DEFAULT TRUE,
+                staff_notify_holidays BOOLEAN DEFAULT TRUE,
+                student_notify_parents BOOLEAN DEFAULT TRUE,
+                student_notify_holidays BOOLEAN DEFAULT TRUE,
+                student_auto_absent_enabled BOOLEAN DEFAULT TRUE,
+                family_notify_each_child BOOLEAN DEFAULT TRUE,
+                consecutive_absent_alert_days INTEGER DEFAULT 3,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            INSERT INTO attendance_settings (id, staff_in_time, staff_out_time, staff_grace_minutes)
+            VALUES (1, '08:00', '14:00', 15)
+            ON CONFLICT (id) DO NOTHING;
+
+            CREATE TABLE IF NOT EXISTS attendance_holidays (
+                id SERIAL PRIMARY KEY,
+                title VARCHAR(150) NOT NULL,
+                holiday_type VARCHAR(50) DEFAULT 'staff_and_students',
+                start_date DATE NOT NULL,
+                end_date DATE NOT NULL,
+                is_recurring_weekly BOOLEAN DEFAULT FALSE,
+                recurring_day_of_week INTEGER DEFAULT 0,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_att_holidays_dates ON attendance_holidays(start_date, end_date);
+
+            CREATE TABLE IF NOT EXISTS attendance_coordinator_assignments (
+                id SERIAL PRIMARY KEY,
+                employee_id INTEGER NOT NULL REFERENCES employees(employee_id) ON DELETE CASCADE,
+                class_id INTEGER NOT NULL REFERENCES classes(class_id) ON DELETE CASCADE,
+                section_id INTEGER NOT NULL REFERENCES sections(section_id) ON DELETE CASCADE,
+                assigned_by INTEGER REFERENCES app_users(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(employee_id, class_id, section_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_att_coord_emp ON attendance_coordinator_assignments(employee_id);
+            CREATE INDEX IF NOT EXISTS idx_att_coord_class_sec ON attendance_coordinator_assignments(class_id, section_id);
+
+            -- Ensure permission 'attendance.settings' exists for super admins and admins
+            INSERT INTO role_permissions (role_id, module_name, can_read, can_write, can_delete)
+            SELECT id, 'attendance.settings', TRUE, TRUE, TRUE
+            FROM app_roles
+            WHERE role_level >= 80 OR LOWER(role_name) LIKE '%admin%' OR LOWER(role_name) LIKE '%principal%'
+            ON CONFLICT (role_id, module_name) DO NOTHING;
         `);
 
         const { syncAllSequences } = require('./utils/sequenceSync');

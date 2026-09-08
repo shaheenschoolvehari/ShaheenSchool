@@ -704,8 +704,10 @@ export default function NewAdmission() {
                                                                     <span className="badge bg-primary ms-2 small">{student.admission_no}</span>
                                                                 </h6>
                                                                 <small className="text-muted">
-                                                                    Father: {student.father_name || 'N/A'}
-                                                                    {student.class_name && ` | ${student.class_name}`}
+                                                                    Father: <strong>{student.father_name || 'N/A'}</strong>
+                                                                    {student.class_name && (
+                                                                        <> | Class: <strong>{student.class_name}</strong>{student.section_name ? ` (${student.section_name})` : ''}</>
+                                                                    )}
                                                                 </small>
                                                             </div>
                                                             <i className="bi bi-plus-circle text-success fs-4"></i>
@@ -773,7 +775,9 @@ export default function NewAdmission() {
                                                                     ) : (
                                                                         <><i className="bi bi-diagram-3-fill text-warning me-1"></i>Cousin</>
                                                                     )}
-                                                                    {sibling.class_name && ` | ${sibling.class_name}`}
+                                                                    {sibling.class_name && (
+                                                                        <> | Class: <strong>{sibling.class_name}</strong>{sibling.section_name ? ` (${sibling.section_name})` : ''}</>
+                                                                    )}
                                                                 </small>
                                                             </div>
                                                         </div>
@@ -913,50 +917,50 @@ export default function NewAdmission() {
                                 */}
                                 <div className={`row g-3 ${form.is_orphan ? 'opacity-50' : ''}`}>
                                     <h6 className="fw-bold text-muted border-bottom pb-2">Parents Information <span className="small text-secondary fw-normal">(Required even if not Guardian)</span></h6>
-                                     {/* FATHER */}
-                                     <div className="col-md-3 position-relative">
-                                         <label className="form-label fw-bold">Father Name <span className="text-danger">*</span></label>
-                                         <input type="text" className="form-control" required={!form.is_orphan}
-                                             value={form.father_name}
-                                             onChange={e => {
-                                                 const val = e.target.value;
-                                                 handleTextChange("father_name", val);
-                                                 searchFatherSuggestions(val);
-                                             }}
-                                             onFocus={() => {
-                                                 if (form.father_name && form.father_name.length >= 2) {
-                                                     searchFatherSuggestions(form.father_name);
-                                                 }
-                                             }} />
-                                         {/* Father Auto-Suggestions Dropdown */}
-                                         {showFatherSuggestions && fatherSuggestions.length > 0 && (
-                                             <div className="position-absolute start-0 end-0 bg-white border rounded-3 shadow-lg z-3 mt-1 p-2"
-                                                  style={{ maxHeight: '220px', overflowY: 'auto', top: '100%', minWidth: '260px' }}>
-                                                 <div className="d-flex justify-content-between align-items-center mb-1 pb-1 border-bottom">
-                                                     <small className="fw-bold text-muted">Matching Existing Fathers:</small>
-                                                     <button type="button" className="btn-close btn-sm" onClick={() => setShowFatherSuggestions(false)}></button>
-                                                 </div>
-                                                 {fatherSuggestions.map((item, idx) => (
-                                                     <div key={idx}
-                                                          className="p-2 border-bottom cursor-pointer rounded mb-1 bg-light-subtle"
-                                                          style={{ cursor: 'pointer' }}
-                                                          onClick={() => applyFatherDetails(item)}>
-                                                         <div className="fw-bold text-primary" style={{ fontSize: '0.85rem' }}>
-                                                             <i className="bi bi-person-fill me-1"></i>{item.father_name}
-                                                         </div>
-                                                         <div className="small text-dark" style={{ fontSize: '0.78rem' }}>
-                                                             <i className="bi bi-telephone-fill text-success me-1"></i>Phone: <strong>{item.father_phone || 'N/A'}</strong>
-                                                         </div>
-                                                         {item.first_name && (
-                                                             <div className="text-muted" style={{ fontSize: '0.7rem' }}>
-                                                                 Student: {item.first_name} {item.last_name} ({item.admission_no})
-                                                             </div>
-                                                         )}
-                                                     </div>
-                                                 ))}
-                                             </div>
-                                         )}
-                                     </div>
+                                    {/* FATHER */}
+                                    <div className="col-md-3 position-relative">
+                                        <label className="form-label fw-bold">Father Name <span className="text-danger">*</span></label>
+                                        <input type="text" className="form-control" required={!form.is_orphan}
+                                            value={form.father_name}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                handleTextChange("father_name", val);
+                                                searchFatherSuggestions(val);
+                                            }}
+                                            onFocus={() => {
+                                                if (form.father_name && form.father_name.length >= 2) {
+                                                    searchFatherSuggestions(form.father_name);
+                                                }
+                                            }} />
+                                        {/* Father Auto-Suggestions Dropdown */}
+                                        {showFatherSuggestions && fatherSuggestions.length > 0 && (
+                                            <div className="position-absolute start-0 end-0 bg-white border rounded-3 shadow-lg z-3 mt-1 p-2"
+                                                style={{ maxHeight: '220px', overflowY: 'auto', top: '100%', minWidth: '260px' }}>
+                                                <div className="d-flex justify-content-between align-items-center mb-1 pb-1 border-bottom">
+                                                    <small className="fw-bold text-muted">Matching Existing Fathers:</small>
+                                                    <button type="button" className="btn-close btn-sm" onClick={() => setShowFatherSuggestions(false)}></button>
+                                                </div>
+                                                {fatherSuggestions.map((item, idx) => (
+                                                    <div key={idx}
+                                                        className="p-2 border-bottom cursor-pointer rounded mb-1 bg-light-subtle"
+                                                        style={{ cursor: 'pointer' }}
+                                                        onClick={() => applyFatherDetails(item)}>
+                                                        <div className="fw-bold text-primary" style={{ fontSize: '0.85rem' }}>
+                                                            <i className="bi bi-person-fill me-1"></i>{item.father_name}
+                                                        </div>
+                                                        <div className="small text-dark" style={{ fontSize: '0.78rem' }}>
+                                                            <i className="bi bi-telephone-fill text-success me-1"></i>Phone: <strong>{item.father_phone || 'N/A'}</strong>
+                                                        </div>
+                                                        {item.first_name && (
+                                                            <div className="text-muted" style={{ fontSize: '0.7rem' }}>
+                                                                Student: {item.first_name} {item.last_name} ({item.admission_no}) {item.class_name ? `| Class: ${item.class_name}${item.section_name ? ` (${item.section_name})` : ''}` : ''}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
                                     <div className="col-md-3">
                                         <label className="form-label fw-bold">Father Phone</label>
                                         <input type="text" className="form-control"

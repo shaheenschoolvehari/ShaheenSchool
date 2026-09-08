@@ -45,6 +45,7 @@ export default function OpeningBalancePage() {
     const [loading, setLoading] = useState(false);
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState('all');
+    const [activeYear, setActiveYear] = useState<{ id: number; year_name: string; is_active: boolean } | null>(null);
     const [toast, setToast] = useState<{ type: 'success' | 'danger'; msg: string } | null>(null);
 
     // Detail modal state
@@ -78,7 +79,12 @@ export default function OpeningBalancePage() {
         finally { setLoading(false); }
     }, [filter, search]);
 
-    useEffect(() => { loadFamilies(); }, [loadFamilies]);
+    useEffect(() => {
+        loadFamilies();
+        fetch(`${API}/academic/active-year`).then(r => r.json()).then(data => {
+            if (data && data.id) setActiveYear(data);
+        }).catch(() => {});
+    }, [loadFamilies]);
 
     const openDetail = async (fam: FamilyOPB) => {
         setShowDetailModal(true);
@@ -134,47 +140,53 @@ export default function OpeningBalancePage() {
         } catch { showToast('danger', 'Server error'); }
     };
 
-    // Summary stats
-    const totalOPB = families.filter(f => f.opening_balance > 0).reduce((s, f) => s + parseFloat(String(f.opening_balance)), 0);
-    const totalPaid = families.filter(f => f.opening_balance > 0).reduce((s, f) => s + parseFloat(String(f.opening_balance_paid)), 0);
-    const totalRemaining = totalOPB - totalPaid;
+    const totalOPB = families.reduce((s, f) => s + parseFloat(String(f.opening_balance || 0)), 0);
+    const totalPaid = families.reduce((s, f) => s + parseFloat(String(f.opening_balance_paid || 0)), 0);
+    const totalRemaining = families.reduce((s, f) => s + parseFloat(String(f.opb_remaining || 0)), 0);
     const familiesWithOPB = families.filter(f => f.opening_balance > 0).length;
-    const clearedCount = families.filter(f => f.opening_balance > 0 && parseFloat(String(f.opb_remaining)) <= 0).length;
+    const clearedCount = families.filter(f => f.opening_balance > 0 && f.opening_balance_paid >= f.opening_balance).length;
 
-    const STATUS_COLOR: Record<string, string> = { cleared: '#0d9e6e', partial: '#e6860a', pending: '#e13232' };
     const getStatus = (f: FamilyOPB) => {
-        if (f.opening_balance <= 0) return null;
-        if (parseFloat(String(f.opb_remaining)) <= 0) return 'cleared';
-        if (parseFloat(String(f.opening_balance_paid)) > 0) return 'partial';
+        if (!f.opening_balance || f.opening_balance === 0) return null;
+        if (f.opening_balance_paid >= f.opening_balance) return 'cleared';
+        if (f.opening_balance_paid > 0) return 'partial';
         return 'pending';
     };
+
+    const STATUS_COLOR: Record<string, string> = { cleared: '#0d9e6e', partial: '#d97706', pending: '#e13232' };
 
     return (
         <div className="container-fluid px-3 px-md-4 py-3 animate__animated animate__fadeIn">
             {/* HEADER */}
             <div className="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
                 <div>
-                    <h2 className="fw-bold mb-1" style={{ color: 'var(--primary-dark)' }}>
-                        <i className="bi bi-clock-history me-2" style={{ color: 'var(--accent-orange)' }} /> Opening Balance
+                    <h2 className="fw-bold mb-1 d-flex align-items-center flex-wrap gap-2" style={{ color: 'var(--primary-dark)' }}>
+                        <i className="bi bi-clock-history me-1" style={{ color: 'var(--accent-orange)' }} /> Opening Balance
+                        <span className="badge rounded-pill bg-light text-dark border ms-2" style={{ fontSize: '0.85rem', fontWeight: 500 }}>
+                            Academic Year: {activeYear?.year_name || '—'}
+                        </span>
                     </h2>
                     <p className="text-muted mb-0 small">Set/view family previous dues payments are collected via Fee Slips</p>
                 </div>
-                {hasPermission('fees', 'write') && (
-                    <button className="btn btn-sm fw-semibold rounded-3 px-3"
-                        onClick={() => { setSetTarget(null); setSetForm({ opening_balance: '', opb_notes: '' }); setShowSetModal(true); }}
-                        style={{ background: 'var(--accent-orange)', color: '#fff', border: 'none' }}>
-                        <i className="bi bi-plus-circle-fill me-1" /> Set Family OPB
-                    </button>
-                )}
+                <div className="d-flex align-items-center gap-2">
+                    {hasPermission('fees', 'write') && (
+                        <button className="btn btn-sm fw-semibold rounded-3 px-3 py-2"
+                            onClick={() => { setSetTarget(null); setSetForm({ opening_balance: '', opb_notes: '' }); setShowSetModal(true); }}
+                            style={{ background: 'var(--accent-orange)', color: '#fff', border: 'none' }}>
+                            <i className="bi bi-plus-circle-fill me-1" /> Set Family OPB
+                        </button>
+                    )}
+                </div>
             </div>
 
             {/* HOW IT WORKS banner */}
             <div className="alert border-0 rounded-4 mb-4 d-flex align-items-start gap-3" style={{ background: 'rgba(33,94,97,0.08)', borderLeft: '4px solid var(--primary-teal) !important' }}>
                 <i className="bi bi-info-circle-fill fs-4 mt-1" style={{ color: 'var(--primary-teal)', flexShrink: 0 }} />
                 <div>
-                    <strong style={{ color: 'var(--primary-dark)' }}>How Opening Balance works:</strong>
+                    <strong style={{ color: 'var(--primary-dark)' }}>How Opening Balance &amp; Fiscal Rollover work:</strong>
                     <ol className="mb-0 mt-1 ps-3" style={{ fontSize: '0.85rem', color: '#495057' }}>
                         <li>Set OPB for each family using the <strong>Set Family OPB</strong> button or <i className="bi bi-pencil-fill" /> icon below.</li>
+                        <li><strong>Automated Fiscal Rollover:</strong> When closing an academic session in Settings and activating a new one, all remaining unpaid balances across fee slips and admission fees are automatically shifted into Opening Balance for the new fiscal year.</li>
                         <li>Go to <strong>Fee Heads</strong> the <em>Opening Balance</em> head is already created.</li>
                         <li>Open each <strong>Fee Plan</strong> and add the <em>Opening Balance</em> head (amount can be 0 system uses actual remaining OPB).</li>
                         <li><strong>Generate Slips</strong> OPB is auto-added as a line item for families with remaining balance.</li>

@@ -3,42 +3,72 @@ const router = express.Router();
 const pool = require('../db');
 const { createNotification } = require('../utils/notify');
 
+// Helper to build strict audience-partitioned query conditions
+function buildNotificationFilter(query) {
+    const { user_id, family_id, student_id, role } = query;
+    const normalizedRole = (role || '').trim().toLowerCase();
+    const isFamilyTargeted = Boolean(family_id || student_id || ['student', 'parent'].includes(normalizedRole));
+
+    let conditions = [];
+    let params = [];
+    let paramIdx = 1;
+
+    if (isFamilyTargeted) {
+        // ── Family Portal / Student View ──
+        // Only fetch notifications addressed to this family, student, or broadcast to students/parents.
+        // MUST NEVER return administration-only notices (e.g. exam approvals, staff attendance).
+        let famSubConditions = [];
+        if (family_id && String(family_id).trim()) {
+            famSubConditions.push(`family_id = $${paramIdx++}`);
+            params.push(String(family_id).trim());
+        }
+        if (student_id && !isNaN(parseInt(student_id, 10))) {
+            famSubConditions.push(`student_id = $${paramIdx++}`);
+            params.push(parseInt(student_id, 10));
+        }
+        if (famSubConditions.length === 0) {
+            famSubConditions.push(`LOWER(role) IN ('student', 'parent')`);
+        } else {
+            famSubConditions.push(`(LOWER(role) IN ('student', 'parent') AND family_id IS NULL AND student_id IS NULL)`);
+        }
+
+        conditions.push(`(${famSubConditions.join(' OR ')}) AND (type NOT IN ('exam_approval', 'staff_attendance')) AND (LOWER(COALESCE(role, '')) NOT IN ('admin', 'principal', 'coordinator', 'vice_principal', 'teacher', 'staff', 'clerk', 'accountant'))`);
+    } else {
+        // ── Staff / Administration / Teacher View ──
+        // Only fetch administrative or teacher alerts.
+        // MUST NEVER return family-specific attendance arrivals, parent fee reminders, or student test marks.
+        let staffSubConditions = [];
+
+        if (user_id && !isNaN(parseInt(user_id, 10))) {
+            staffSubConditions.push(`user_id = $${paramIdx++}`);
+            params.push(parseInt(user_id, 10));
+        }
+
+        if (['admin', 'principal', 'coordinator', 'vice_principal', 'clerk', 'accountant', 'superadmin', 'root'].includes(normalizedRole)) {
+            staffSubConditions.push(`(LOWER(role) IN ('admin', 'principal', 'coordinator', 'vice_principal', 'clerk', 'accountant', 'staff', 'all') AND family_id IS NULL AND student_id IS NULL)`);
+        } else if (normalizedRole === 'teacher') {
+            staffSubConditions.push(`(LOWER(role) IN ('teacher', 'all') AND family_id IS NULL AND student_id IS NULL)`);
+        } else if (normalizedRole === 'staff') {
+            staffSubConditions.push(`(LOWER(role) IN ('staff', 'all') AND family_id IS NULL AND student_id IS NULL)`);
+        } else if (normalizedRole && normalizedRole !== 'all') {
+            staffSubConditions.push(`(LOWER(role) = $${paramIdx++} AND family_id IS NULL AND student_id IS NULL)`);
+            params.push(normalizedRole);
+        } else {
+            staffSubConditions.push(`(LOWER(role) IN ('admin', 'principal', 'all') AND family_id IS NULL AND student_id IS NULL)`);
+        }
+
+        conditions.push(`(${staffSubConditions.join(' OR ')}) AND (family_id IS NULL) AND (student_id IS NULL) AND (type NOT IN ('attendance', 'fee_reminder', 'fee_urgent', 'fee_payment', 'test_marks') OR user_id IS NOT NULL)`);
+    }
+
+    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+    return { whereClause, params, paramIdx };
+}
+
 // GET /notifications - Fetch notifications with unread count
 router.get('/', async (req, res) => {
     try {
-        const { user_id, family_id, student_id, role, limit = 50 } = req.query;
-
-        let conditions = [];
-        let params = [];
-        let paramIdx = 1;
-
-        if (user_id) {
-            conditions.push(`user_id = $${paramIdx++}`);
-            params.push(user_id);
-        }
-        if (family_id && family_id.trim()) {
-            conditions.push(`family_id = $${paramIdx++}`);
-            params.push(family_id.trim());
-        }
-        if (student_id) {
-            conditions.push(`student_id = $${paramIdx++}`);
-            params.push(student_id);
-        }
-        if (role && role.trim()) {
-            const normalizedRole = role.trim().toLowerCase();
-            if (['admin', 'principal', 'coordinator', 'vice_principal'].includes(normalizedRole)) {
-                conditions.push(`(LOWER(role) IN ('admin', 'principal', 'coordinator', 'vice_principal', 'all') AND family_id IS NULL)`);
-            } else {
-                conditions.push(`(LOWER(role) = $${paramIdx++} OR (LOWER(role) = 'all' AND family_id IS NULL))`);
-                params.push(normalizedRole);
-            }
-        }
-
-        if (conditions.length === 0) {
-            conditions.push(`(LOWER(role) = 'all' AND family_id IS NULL)`);
-        }
-
-        const whereClause = `WHERE ${conditions.map(c => `(${c})`).join(' OR ')}`;
+        const { limit = 50 } = req.query;
+        const { whereClause, params, paramIdx } = buildNotificationFilter(req.query);
 
         const query = `
             SELECT * FROM notifications 
@@ -46,15 +76,15 @@ router.get('/', async (req, res) => {
             ORDER BY created_at DESC 
             LIMIT $${paramIdx}
         `;
-        params.push(parseInt(limit, 10));
+        const queryParams = [...params, parseInt(limit, 10)];
 
-        const result = await pool.query(query, params);
+        const result = await pool.query(query, queryParams);
 
         const unreadCountRes = await pool.query(`
             SELECT COUNT(*) AS unread_count 
             FROM notifications 
             ${whereClause} AND is_read = FALSE
-        `, params.slice(0, params.length - 1));
+        `, params);
 
         const unreadCount = parseInt(unreadCountRes.rows[0]?.unread_count || '0', 10);
 
@@ -85,30 +115,7 @@ router.put('/:id/read', async (req, res) => {
 // PUT /notifications/mark-all-read - Mark all as read for user/family/role
 router.put('/mark-all-read', async (req, res) => {
     try {
-        const { user_id, family_id, role } = req.body;
-
-        let conditions = [];
-        let params = [];
-        let paramIdx = 1;
-
-        if (user_id) {
-            conditions.push(`user_id = $${paramIdx++}`);
-            params.push(user_id);
-        }
-        if (family_id && family_id.trim()) {
-            conditions.push(`family_id = $${paramIdx++}`);
-            params.push(family_id.trim());
-        }
-        if (role && role.trim()) {
-            conditions.push(`LOWER(role) = $${paramIdx++} OR LOWER(role) = 'all'`);
-            params.push(role.trim().toLowerCase());
-        }
-
-        if (conditions.length === 0) {
-            conditions.push(`LOWER(role) = 'all'`);
-        }
-
-        const whereClause = `WHERE ${conditions.join(' OR ')}`;
+        const { whereClause, params } = buildNotificationFilter(req.body);
 
         await pool.query(`UPDATE notifications SET is_read = TRUE ${whereClause}`, params);
         res.json({ message: "All notifications marked as read" });

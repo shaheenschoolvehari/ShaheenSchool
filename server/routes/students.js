@@ -698,12 +698,16 @@ router.get('/families-directory', async (req, res) => {
                 s.gender,
                 s.dob,
                 s.status,
+                s.category,
+                s.monthly_fee,
                 c.class_id,
                 c.class_name,
                 sec.section_id,
                 sec.section_name,
                 f.family_fee,
-                f.opening_balance
+                f.opening_balance,
+                f.opening_balance_paid,
+                GREATEST(0, COALESCE(f.opening_balance, 0) - COALESCE(f.opening_balance_paid, 0)) AS opb_remaining
             FROM students s
             LEFT JOIN classes c ON s.class_id = c.class_id
             LEFT JOIN sections sec ON s.section_id = sec.section_id
@@ -721,15 +725,21 @@ router.get('/families-directory', async (req, res) => {
                     family_id: fid,
                     family_fee: parseFloat(s.family_fee || 0),
                     opening_balance: parseFloat(s.opening_balance || 0),
+                    opening_balance_paid: parseFloat(s.opening_balance_paid || 0),
+                    opb_remaining: parseFloat(s.opb_remaining || 0),
                     members: []
                 };
             }
+            const isTrusted = (s.category || '').trim().toLowerCase() === 'trusted';
             familiesMap[fid].members.push({
                 student_id: s.student_id,
                 admission_no: s.admission_no,
                 first_name: s.first_name || '',
                 last_name: s.last_name || '',
                 full_name: `${s.first_name || ''} ${s.last_name || ''}`.trim(),
+                category: s.category || 'Normal',
+                is_trusted: isTrusted,
+                monthly_fee: parseFloat(s.monthly_fee || 0),
                 father_name: (s.father_name || '').trim(),
                 father_phone: (s.father_phone || '').trim(),
                 father_cnic: (s.father_cnic || '').trim(),
@@ -782,28 +792,48 @@ router.get('/families-directory', async (req, res) => {
         const familiesList = Object.values(familiesMap).map(fam => {
             const members = fam.members;
 
-            // Majority Father Name logic:
-            const fatherCounts = {};
+            // Distinct Fathers & Multi-Household (Cousin) Detection
+            const fatherMap = new Map();
             members.forEach(m => {
-                if (m.father_name) {
-                    fatherCounts[m.father_name] = (fatherCounts[m.father_name] || 0) + 1;
+                const fn = (m.father_name || '').trim();
+                if (fn) {
+                    if (!fatherMap.has(fn)) {
+                        fatherMap.set(fn, {
+                            name: fn,
+                            phone: (m.father_phone || '').trim(),
+                            cnic: (m.father_cnic || '').trim(),
+                            count: 1
+                        });
+                    } else {
+                        const existing = fatherMap.get(fn);
+                        existing.count++;
+                        if (!existing.phone && m.father_phone) existing.phone = m.father_phone.trim();
+                    }
                 }
             });
 
+            const fathersList = Array.from(fatherMap.values());
+            const isCousinFamily = fathersList.length > 1;
+
+            // Majority Father Name logic:
             let primaryFatherName = '';
             let maxCount = 0;
-            for (const [fn, count] of Object.entries(fatherCounts)) {
-                if (count > maxCount) {
-                    maxCount = count;
-                    primaryFatherName = fn;
+            fathersList.forEach(f => {
+                if (f.count > maxCount) {
+                    maxCount = f.count;
+                    primaryFatherName = f.name;
                 }
-            }
+            });
 
             if (!primaryFatherName) {
                 primaryFatherName = members.find(m => m.father_name)?.father_name ||
                     members.find(m => m.guardian_name)?.guardian_name ||
                     `Family (${fam.family_id})`;
             }
+
+            const combinedFatherNames = isCousinFamily 
+                ? fathersList.map(f => f.name).join(' & ') 
+                : primaryFatherName;
 
             // Majority Mother Name
             const motherCounts = {};
@@ -830,12 +860,45 @@ router.get('/families-directory', async (req, res) => {
             const guardianPhone = members.find(m => m.guardian_phone)?.guardian_phone || '';
             const primaryPhone = fatherPhone || motherPhone || guardianPhone || '';
 
+            const uniquePhones = Array.from(new Set(
+                fathersList.map(f => f.phone).concat([fatherPhone, motherPhone, guardianPhone]).filter(Boolean)
+            ));
+            const combinedPhones = uniquePhones.join(', ');
+
             // Children list, Classes, Sections
             const childrenNames = members.map(m => m.full_name);
             const classesList = members.map(m => m.class_name);
             const sectionsList = members.map(m => m.section_name);
 
+            // Trusted category evaluation
+            const isAllTrusted = members.length > 0 && members.every(m => m.is_trusted);
+            const hasTrusted = members.some(m => m.is_trusted);
+
             const feeStat = feeStatsMap[fam.family_id] || { total_billed: 0, total_paid: 0, total_balance: 0, fee_status: 'paid' };
+
+            let finalFeeStatus = feeStat.fee_status;
+            let finalBilled = feeStat.total_billed;
+            let finalPaid = feeStat.total_paid;
+            let finalBalance = feeStat.total_balance;
+
+            if (isAllTrusted) {
+                if (finalBalance <= 0 && finalBilled <= 0) {
+                    finalFeeStatus = 'settled';
+                    finalBilled = 0;
+                    finalPaid = 0;
+                    finalBalance = 0;
+                } else if (finalBalance <= 0) {
+                    finalFeeStatus = 'settled';
+                }
+            } else if (finalBalance === 0) {
+                finalFeeStatus = 'paid';
+            }
+
+            // Effective monthly tuition fee calculation
+            const memberMonthlySum = members
+                .filter(m => (m.status || '').toLowerCase() === 'active' && !m.is_trusted)
+                .reduce((sum, m) => sum + (parseFloat(m.monthly_fee) || 0), 0);
+            const effectiveMonthlyFee = fam.family_fee > 0 ? fam.family_fee : memberMonthlySum;
 
             return {
                 family_id: fam.family_id,
@@ -846,22 +909,31 @@ router.get('/families-directory', async (req, res) => {
                 mother_phone: motherPhone,
                 guardian_phone: guardianPhone,
                 primary_phone: primaryPhone,
+                is_cousin_family: isCousinFamily,
+                is_trusted_family: isAllTrusted,
+                has_trusted_members: hasTrusted,
+                fathers_list: fathersList,
+                combined_father_names: combinedFatherNames,
+                combined_phones: combinedPhones,
                 total_children: members.length,
                 children_names: childrenNames,
                 classes_list: classesList,
                 sections_list: sectionsList,
                 family_fee: fam.family_fee,
+                effective_monthly_fee: effectiveMonthlyFee,
                 opening_balance: fam.opening_balance,
-                total_billed: feeStat.total_billed,
-                total_paid: feeStat.total_paid,
-                total_balance: feeStat.total_balance,
-                fee_status: feeStat.fee_status,
+                opening_balance_paid: fam.opening_balance_paid,
+                opb_remaining: fam.opb_remaining,
+                total_billed: finalBilled,
+                total_paid: finalPaid,
+                total_balance: finalBalance,
+                fee_status: finalFeeStatus,
                 members: members
             };
         });
 
-        // Sequence Sort: Unpaid (1) -> Partial (2) -> Paid (3)
-        const statusPriority = { unpaid: 1, partial: 2, paid: 3 };
+        // Sequence Sort: Unpaid (1) -> Partial (2) -> Paid (3) -> Settled (4)
+        const statusPriority = { unpaid: 1, partial: 2, paid: 3, settled: 4, satteled: 4 };
 
         familiesList.sort((a, b) => {
             const pA = statusPriority[a.fee_status] || 3;
@@ -2145,14 +2217,17 @@ router.post('/opb/families/:family_id/payment', async (req, res) => {
             return res.status(400).json({ error: 'Opening balance is already fully paid' });
         }
 
-        // Record payment in ledger
+        // Record payment in ledger with active academic_year_id
+        const activeYearRes = await client.query("SELECT id FROM academic_years WHERE is_active = TRUE ORDER BY id ASC LIMIT 1");
+        const activeYearId = activeYearRes.rows[0]?.id || null;
+
         const payment = await client.query(`
             INSERT INTO family_opb_payments
-                (family_id, amount, payment_date, payment_method, received_by, reference_no, notes)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+                (family_id, amount, payment_date, payment_method, received_by, reference_no, notes, academic_year_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING *
         `, [family_id, payAmt, payment_date || new Date().toISOString().split('T')[0],
-            payment_method || 'cash', received_by || null, reference_no || null, notes || null]);
+            payment_method || 'cash', received_by || null, reference_no || null, notes || null, activeYearId]);
 
         // Update families.opening_balance_paid
         await client.query(`

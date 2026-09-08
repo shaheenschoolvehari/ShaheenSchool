@@ -321,6 +321,7 @@ async function dispatchFeeReminderNotifications(isUrgentSlot = false) {
                 await createNotification({
                     familyId: famId,
                     studentId: row.student_id,
+                    role: 'student',
                     type: isUrgent ? 'fee_urgent' : 'fee_reminder',
                     title,
                     message,

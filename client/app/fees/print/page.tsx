@@ -20,6 +20,7 @@ interface Voucher {
     family_id: string | null; total_family_amount: number; total_paid: number;
     is_printed: boolean; partial_printed?: boolean; slip_ids: number[];
     family_members?: { student_id: number; first_name: string; last_name: string; father_name: string; class_name: string; class_id: number; section_name?: string }[];
+    pending_months_count?: number;
 }
 interface SchoolInfo {
     school_name: string; school_address: string; phone_number: string;
@@ -46,8 +47,12 @@ function OldVoucherSlip({ v, serial, month, year, school, filterClassId }: { v: 
     const feeRows: { sr: number; desc: string; amount: number }[] = [];
     let sr = 1;
     for (const item of (v.primary.line_items || [])) {
-        const displayName = item.head_name.replace('Family Monthly Fee', 'Monthly Fee');
-        feeRows.push({ sr: sr++, desc: `${displayName} (${monthName})`, amount: parseFloat(item.amount as any) });
+        let displayName = item.head_name.replace('Family Monthly Fee', 'Monthly Fee');
+        const isPb = displayName.toLowerCase().includes('previous balance') || displayName.toLowerCase().includes('opening balance');
+        const rowDesc = isPb 
+            ? displayName 
+            : (displayName.includes('(') ? displayName : `${displayName} (${monthName})`);
+        feeRows.push({ sr: sr++, desc: rowDesc, amount: parseFloat(item.amount as any) });
     }
     const totalPaid = parseFloat(v.total_paid as any) || 0;
     if (totalPaid > 0) feeRows.push({ sr: sr++, desc: 'Amount Already Paid', amount: -totalPaid });
@@ -206,29 +211,91 @@ function VoucherSlip({ v, serial, month, year, school, filterClassId }: { v: Vou
         studentRows.push({ name: '', father: '', cls: '' });
     }
 
-    const rawFeeItems: { desc: string; amount: number }[] = [];
+    const regularFeeItems: { desc: string; amount: number }[] = [];
+    let lateFineAmount = 0;
+    let fineAfterDay = (v.primary as any).fine_after_day || null;
+
+    const itemMap = new Map<string, number>();
+
     for (const item of (v.primary.line_items || [])) {
-        const displayName = item.head_name.replace('Family Monthly Fee', 'Monthly Fee');
-        rawFeeItems.push({ desc: `${displayName} (${monthName})`, amount: parseFloat(item.amount as any) || 0 });
-    }
-    const totalPaid = parseFloat(v.total_paid as any) || 0;
-    if (totalPaid > 0) {
-        rawFeeItems.push({ desc: 'Amount Already Paid', amount: -totalPaid });
+        const rawName = (item.head_name || '').trim();
+        const isFine = rawName.toLowerCase().includes('late') || rawName.toLowerCase().includes('fine');
+        const amt = parseFloat(item.amount as any) || 0;
+
+        if (isFine) {
+            lateFineAmount += amt;
+            if ((item as any).fine_after_day) fineAfterDay = (item as any).fine_after_day;
+            continue; // Exclude late fine from regular total
+        }
+
+        const displayName = rawName.replace(/Family Monthly Fee/i, 'Monthly Fee');
+        const isTuition = displayName.toLowerCase().includes('monthly fee') || displayName.toLowerCase().includes('tuition');
+        const isPb = displayName.toLowerCase().includes('previous balance') || displayName.toLowerCase().includes('opening balance');
+        
+        let desc = displayName;
+        if (isPb) {
+            desc = 'Previous Balance';
+        } else if (isTuition) {
+            desc = displayName.includes('(') ? displayName : `${displayName} (${monthName})`;
+        } else if ((item as any).is_carried_forward || item.note?.toLowerCase().includes('carried') || item.note?.toLowerCase().includes('arrears')) {
+            desc = `${displayName} (Arrears)`;
+        } else {
+            desc = displayName;
+        }
+
+        itemMap.set(desc, (itemMap.get(desc) || 0) + amt);
     }
 
-    const feeRows = rawFeeItems.slice(0, MAX_FEES);
-    while (feeRows.length < MIN_FEES) {
+    const isTrustedVoucher = Boolean(
+        (v.primary as any).is_trusted ||
+        ((v.primary as any).category && (v.primary as any).category.trim().toLowerCase() === 'trusted') ||
+        (v.family_members && v.family_members.length > 0 && v.family_members.every((m: any) => (m.category || '').toLowerCase() === 'trusted'))
+    );
+
+    itemMap.forEach((amt, desc) => {
+        regularFeeItems.push({ desc, amount: amt });
+    });
+
+    if (isTrustedVoucher) {
+        let tuitionSum = 0;
+        itemMap.forEach((amt, desc) => {
+            if (desc.toLowerCase().includes('monthly fee') || desc.toLowerCase().includes('tuition')) {
+                tuitionSum += amt;
+            }
+        });
+        if (tuitionSum > 0) {
+            regularFeeItems.push({ desc: 'Tuition Concession (Trusted)', amount: -tuitionSum });
+        }
+    }
+
+    const totalPaid = parseFloat(v.total_paid as any) || 0;
+    if (totalPaid > 0) {
+        regularFeeItems.push({ desc: 'Amount Already Paid', amount: -totalPaid });
+    }
+
+    const maxSlots = lateFineAmount > 0 ? 3 : MAX_FEES;
+    const feeRows = regularFeeItems.slice(0, maxSlots);
+    while (feeRows.length < (lateFineAmount > 0 ? 2 : MIN_FEES)) {
         feeRows.push({ desc: '', amount: 0 });
     }
 
-    const totalAmount = feeRows.reduce((sum, f) => sum + (f.amount || 0), 0);
+    const totalAmountWithinDueDate = regularFeeItems.reduce((sum, f) => sum + (f.amount || 0), 0);
+    const totalAmountAfterDueDate = totalAmountWithinDueDate + lateFineAmount;
+
+    let fineCutoffDateStr = dueDate;
+    if (fineAfterDay && parseInt(fineAfterDay) > 0) {
+        const d = String(fineAfterDay).padStart(2, '0');
+        fineCutoffDateStr = `${d} ${monthName ? monthName.substring(0, 3) : ''} ${year}`;
+    }
+
+    const pendingMonths = v.pending_months_count || (v.primary as any).pending_months_count || 1;
 
     const studentCount = Math.max(MIN_STUDENTS, Math.min(rawStudentRows.length, MAX_STUDENTS));
     const feeCount = Math.max(MIN_FEES, Math.min(feeRows.length, MAX_FEES));
-    const extraRows = (studentCount - MIN_STUDENTS) + (feeCount - MIN_FEES);
-    const compactClass = extraRows >= 3 ? ' table-compact' : '';
+    const extraRows = (studentCount - MIN_STUDENTS) + (feeCount - MIN_FEES) + (lateFineAmount > 0 ? 2 : 0) + (pendingMonths >= 2 ? 1 : 0);
+    const compactClass = extraRows >= 2 ? ' table-compact' : '';
 
-    const schoolName = school.school_name || 'Shaheen English Model School Vehari';
+    const schoolName = school.school_name || 'Falcon School System';
     const schoolAddress = school.school_address || '83/M Madina Colony Vehari';
     const schoolPhones = [school.phone_number, school.school_phone2, school.school_phone3].filter(Boolean).join(' ; ') || '0300-7730141 ; 0308-7696430 ; 067-3366383';
 
@@ -288,22 +355,42 @@ function VoucherSlip({ v, serial, month, year, school, filterClassId }: { v: Vou
                     <tbody>
                         {feeRows.map((f, i) => (
                             <tr key={i}>
-                                <td>{i + 1}</td>
+                                <td>{f.desc ? i + 1 : '\u00A0'}</td>
                                 <td>{f.desc || '\u00A0'}</td>
                                 <td>{f.desc ? fmtAmt(f.amount) : '0/-'}</td>
                             </tr>
                         ))}
                         <tr className="total-row">
-                            <td>{feeRows.length + 1}</td>
+                            <td>{feeRows.filter(r => r.desc).length + 1}</td>
                             <td>Total Amount</td>
-                            <td>{fmtAmt(totalAmount)}</td>
+                            <td>{fmtAmt(totalAmountWithinDueDate)}</td>
                         </tr>
+                        {lateFineAmount > 0 && (
+                            <>
+                                <tr style={{ backgroundColor: '#fff', fontSize: '9.5pt' }}>
+                                    <td>-</td>
+                                    <td style={{ fontStyle: 'italic', color: '#444' }}>Late Fee Fine (After {fineCutoffDateStr})</td>
+                                    <td style={{ fontStyle: 'italic', color: '#444' }}>{fmtAmt(lateFineAmount)}</td>
+                                </tr>
+                                <tr className="total-row" style={{ backgroundColor: '#f2f2f2' }}>
+                                    <td>-</td>
+                                    <td>Total Payable (After {fineCutoffDateStr})</td>
+                                    <td>{fmtAmt(totalAmountAfterDueDate)}</td>
+                                </tr>
+                            </>
+                        )}
                     </tbody>
                 </table>
 
+                {pendingMonths >= 2 && (
+                    <div className="defaulter-warning-box">
+                        <strong> تنبیہ:⚠️</strong> محترم والدین! آپ کی فیس پچھلے <strong>{pendingMonths} ماہ</strong> سے واجب الادا ہے۔ برائے مہربانی اسے فوری جمع کروائیں، بصورت دیگر سکول پالیسی کے مطابق سٹرک آف  نوٹس جاری کیا جا سکتا ہے۔
+                    </div>
+                )}
+
                 <div className="rules-box">
                     <span className="rule-line">1. Fee must be paid before the due date.</span>
-                    <span className="rule-line">2. A fine/late fee will apply after the due date.</span>
+                    <span className="rule-line">2. A fine/late fee will apply after {fineCutoffDateStr !== '--' ? fineCutoffDateStr : 'the due date'}.</span>
                     <span className="rule-line">3. Fee must be deposited only at the school-designated bank/counter.</span>
                     <span className="rule-line">4. Fee once paid is non-refundable under any circumstances.</span>
                 </div>
@@ -379,6 +466,9 @@ export default function PrintSlipsPage() {
     const [month, setMonth] = useState('');
     const [year, setYear] = useState(new Date().getFullYear().toString());
     const [classId, setClassId] = useState('');
+    const [academicYears, setAcademicYears] = useState<{ id: number; year_name: string; is_active: boolean }[]>([]);
+    const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('all');
+    const [activeYear, setActiveYear] = useState<{ id: number; year_name: string; is_active: boolean } | null>(null);
     const [classes, setClasses] = useState<{ class_id: number; class_name: string }[]>([]);
     const [availableMonths, setAvailableMonths] = useState<AvailableMonth[]>([]);
     const [vouchers, setVouchers] = useState<Voucher[]>([]);
@@ -395,6 +485,27 @@ export default function PrintSlipsPage() {
 
     useEffect(() => {
         fetch(`${API}/academic`).then(r => r.json()).then(setClasses).catch(() => { });
+        fetch(`${API}/academic/years`).then(r => r.json()).then(data => {
+            if (Array.isArray(data)) {
+                setAcademicYears(data);
+                const active = data.find(y => y.is_active);
+                if (active) {
+                    setActiveYear(active);
+                    setSelectedAcademicYear(active.id.toString());
+                }
+            }
+        }).catch(() => {});
+        fetch(`${API}/academic/active-year`).then(r => r.json()).then(data => {
+            if (data && data.id) {
+                setActiveYear(data);
+                setSelectedAcademicYear(data.id.toString());
+                const startY = data.start_date ? new Date(data.start_date).getFullYear().toString() : (data.year_name ? data.year_name.split('-')[0].trim() : new Date().getFullYear().toString());
+                if (startY && !isNaN(parseInt(startY))) {
+                    setYear(startY);
+                }
+            }
+        }).catch(() => {});
+
         fetch(`${API}/settings`).then(r => r.json()).then((data: any) => {
             if (data && typeof data === 'object' && !Array.isArray(data)) {
                 const getLogo = (raw?: string) => {
@@ -416,7 +527,9 @@ export default function PrintSlipsPage() {
     }, []);
 
     useEffect(() => {
-        fetch(`${API}/fee-slips/available-months?year=${year}`)
+        const targetYearId = (selectedAcademicYear && selectedAcademicYear !== 'all') ? selectedAcademicYear : (activeYear ? activeYear.id.toString() : '');
+        const yrParam = targetYearId ? `&academic_year_id=${targetYearId}` : '';
+        fetch(`${API}/fee-slips/available-months?year=${year}${yrParam}`)
             .then(r => r.json())
             .then(data => {
                 if (data.months) {
@@ -436,7 +549,7 @@ export default function PrintSlipsPage() {
                 }
             })
             .catch(() => { });
-    }, [year]);
+    }, [year, selectedAcademicYear, activeYear]);
 
     const loadQueue = async () => {
         if (!month || !year) {
@@ -445,11 +558,57 @@ export default function PrintSlipsPage() {
         }
         setLoading(true); setMessage(null); setSelected(new Set()); setVouchers([]); setCoveredStudents([]); setStats(null);
         try {
-            const url = `${API}/fee-slips/print-queue?month=${month}&year=${year}${classId ? `&class_id=${classId}` : ''}`;
+            const targetYearId = (selectedAcademicYear && selectedAcademicYear !== 'all') ? selectedAcademicYear : (activeYear ? activeYear.id.toString() : '');
+            const yrParam = targetYearId ? `&academic_year_id=${targetYearId}` : '';
+            const url = `${API}/fee-slips/print-queue?month=${month}&year=${year}${classId ? `&class_id=${classId}` : ''}${yrParam}`;
             const r = await fetch(url);
             const data = await r.json();
             if (!r.ok) throw new Error(data.error);
-            setVouchers(data.vouchers || []);
+
+            const getClassRank = (className?: string, classId?: number) => {
+                if (!className) return typeof classId === 'number' ? classId : 0;
+                const name = className.toString().trim().toLowerCase();
+                const numMatch = name.match(/\b(\d+)(?:st|nd|rd|th)?\b/) || name.match(/(\d+)/);
+                if (numMatch) return parseInt(numMatch[1], 10);
+                if (name.includes('prep') || name.includes('kg') || name.includes('kindergarten')) return 0;
+                if (name.includes('nursery')) return -1;
+                if (name.includes('play') || name.includes('pg') || name.includes('daycare') || name.includes('montessori')) return -2;
+                return typeof classId === 'number' ? classId : 0;
+            };
+
+            const compareSections = (secA?: string, secB?: string) => {
+                const sA = (secA || '').toString().trim().toLowerCase();
+                const sB = (secB || '').toString().trim().toLowerCase();
+                if (!sA && !sB) return 0;
+                if (!sA) return 1;
+                if (!sB) return -1;
+                return sA.localeCompare(sB, undefined, { sensitivity: 'base' });
+            };
+
+            const sortedList = (data.vouchers || []).sort((a: Voucher, b: Voucher) => {
+                const rankA = getClassRank(a.primary.class_name, a.primary.c_class_id || a.primary.class_id);
+                const rankB = getClassRank(b.primary.class_name, b.primary.c_class_id || b.primary.class_id);
+                if (rankA !== rankB) return rankB - rankA;
+
+                const clsA = (a.primary.class_name || '').trim().toLowerCase();
+                const clsB = (b.primary.class_name || '').trim().toLowerCase();
+                if (clsA !== clsB) {
+                    const clsComp = clsA.localeCompare(clsB);
+                    if (clsComp !== 0) return clsComp;
+                }
+
+                const secComp = compareSections((a.primary as any).section_name, (b.primary as any).section_name);
+                if (secComp !== 0) return secComp;
+
+                if (!a.is_printed && b.is_printed) return -1;
+                if (a.is_printed && !b.is_printed) return 1;
+
+                const nameA = `${a.primary.first_name || ''} ${a.primary.last_name || ''}`.trim().toLowerCase();
+                const nameB = `${b.primary.first_name || ''} ${b.primary.last_name || ''}`.trim().toLowerCase();
+                return nameA.localeCompare(nameB);
+            });
+
+            setVouchers(sortedList);
             setCoveredStudents(data.covered_students || []);
             setStats(data.stats || null);
         } catch (err: any) { setMessage({ type: 'danger', text: err.message }); }
@@ -724,6 +883,29 @@ export default function PrintSlipsPage() {
             border-top: 1pt dashed #000;
         }
         .rules-box .rule-line { display: block; }
+
+        .defaulter-warning-box {
+            flex: 0 0 auto;
+            margin-top: 0.8mm;
+            padding: 0.8mm 1.2mm;
+            border: 1pt solid #000;
+            background-color: #f7f7f7;
+            font-size: 7.5pt;
+            line-height: 1.25;
+        }
+        .defaulter-warning-box .warning-head {
+            font-size: 7.8pt;
+            font-weight: bold;
+            color: #000;
+            text-align: center;
+            margin-bottom: 0.3mm;
+        }
+        .defaulter-warning-box .warning-body {
+            direction: rtl;
+            text-align: justify;
+            font-size: 7.5pt;
+        }
+
         .filler { flex: 1 1 auto; }
     `;
 
@@ -767,9 +949,14 @@ export default function PrintSlipsPage() {
             )}
             {/* Screen UI */}
             <div className="container-fluid p-4 animate__animated animate__fadeIn">
-                <div className="d-flex justify-content-between align-items-center mb-4">
+                <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center align-items-start gap-3 mb-4">
                     <div>
-                        <h2 className="fw-bold mb-1" style={{ color: 'var(--primary-dark)' }}><i className="bi bi-printer me-2"></i>Print Fee Slips</h2>
+                        <h2 className="fw-bold mb-1 d-flex align-items-center flex-wrap gap-2" style={{ color: 'var(--primary-dark)' }}>
+                            <i className="bi bi-printer me-1"></i>Print Fee Slips
+                            <span className="badge rounded-pill bg-light text-dark border ms-2" style={{ fontSize: '0.85rem', fontWeight: 500 }}>
+                                Academic Year: {activeYear?.year_name || '—'}
+                            </span>
+                        </h2>
                         <p className="text-muted small mb-0">3 family vouchers per A4 landscape. Sibling fees combined into one voucher. Print tracking enabled.</p>
                     </div>
                 </div>
@@ -785,7 +972,7 @@ export default function PrintSlipsPage() {
                 <div className="card border-0 shadow-sm mb-4">
                     <div className="card-body p-3">
                         <div className="row g-3 align-items-end">
-                            <div className="col-md-2">
+                            <div className="col-md-3">
                                 <label className="form-label fw-bold small text-muted">Month</label>
                                 <select className="form-select" value={month} onChange={e => setMonth(e.target.value)}>
                                     {availableMonths.length === 0 ? (
@@ -795,9 +982,16 @@ export default function PrintSlipsPage() {
                                     )}
                                 </select>
                             </div>
-                            <div className="col-md-2">
+                            <div className="col-md-3">
                                 <label className="form-label fw-bold small text-muted">Year</label>
-                                <input type="number" className="form-control" value={year} onKeyDown={e => ['e', 'E', '+', '-', '.'].includes(e.key) && e.preventDefault()} onChange={e => setYear(e.target.value)} />
+                                <input
+                                    type="text"
+                                    className="form-control bg-light text-dark fw-semibold"
+                                    value={activeYear?.year_name || year}
+                                    readOnly
+                                    disabled
+                                    style={{ cursor: 'not-allowed' }}
+                                />
                             </div>
                             <div className="col-md-3">
                                 <label className="form-label fw-bold small text-muted">Class Filter (optional)</label>

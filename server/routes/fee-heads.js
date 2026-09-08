@@ -29,13 +29,18 @@ router.get('/active', async (req, res) => {
 // CREATE fee head
 router.post('/', async (req, res) => {
     try {
-        const { head_name, head_type, frequency, description } = req.body;
+        const { head_name, head_type, frequency, track_arrears, description } = req.body;
         if (!head_name) return res.status(400).json({ error: 'Head name is required' });
 
+        const isTuitionOrPb = (head_type === 'prev_balance') || 
+            head_name.toLowerCase().includes('tuition') || 
+            head_name.toLowerCase().includes('family');
+        const resolvedTrack = track_arrears !== undefined ? Boolean(track_arrears) : !isTuitionOrPb;
+
         const result = await pool.query(
-            `INSERT INTO fee_heads (head_name, head_type, frequency, description)
-             VALUES ($1, $2, $3, $4) RETURNING *`,
-            [head_name, head_type || 'regular', frequency || 'monthly', description || null]
+            `INSERT INTO fee_heads (head_name, head_type, frequency, track_arrears, description)
+             VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+            [head_name, head_type || 'regular', frequency || 'monthly', resolvedTrack, description || null]
         );
         res.status(201).json(result.rows[0]);
     } catch (err) {
@@ -47,12 +52,16 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { head_name, head_type, frequency, description, is_active } = req.body;
+        const { head_name, head_type, frequency, track_arrears, description, is_active } = req.body;
+
+        const isTuitionOrPb = (head_type === 'prev_balance') || 
+            (head_name && (head_name.toLowerCase().includes('tuition') || head_name.toLowerCase().includes('family')));
+        const resolvedTrack = track_arrears !== undefined ? Boolean(track_arrears) : !isTuitionOrPb;
 
         const result = await pool.query(
-            `UPDATE fee_heads SET head_name=$1, head_type=$2, frequency=$3,
-             description=$4, is_active=$5 WHERE head_id=$6 RETURNING *`,
-            [head_name, head_type, frequency, description, is_active, id]
+            `UPDATE fee_heads SET head_name=$1, head_type=$2, frequency=$3, track_arrears=$4,
+             description=$5, is_active=$6 WHERE head_id=$7 RETURNING *`,
+            [head_name, head_type, frequency, resolvedTrack, description, is_active, id]
         );
         if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
         res.json(result.rows[0]);

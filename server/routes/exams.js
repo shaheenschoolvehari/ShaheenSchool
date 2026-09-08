@@ -685,6 +685,7 @@ router.post('/marks/save', async (req, res) => {
                     await createNotification({
                         familyId: sInfo.rows[0].family_id,
                         studentId: sId,
+                        role: 'student',
                         type: 'test_marks',
                         title: 'New Exam / Test Marks Entered 📊',
                         message: `New marks recorded for ${sInfo.rows[0].full_name} in ${className} (${subName}): ${row.obtained_marks}/${totalMarks}.`,
@@ -1470,8 +1471,10 @@ async function ensureTestTables() {
                     subject_id INTEGER NOT NULL REFERENCES subjects(subject_id) ON DELETE CASCADE,
                     created_by_user_id INTEGER REFERENCES app_users(id) ON DELETE SET NULL,
                     created_by_employee_id INTEGER REFERENCES employees(employee_id) ON DELETE SET NULL,
+                    academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
+                ALTER TABLE test_papers ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
             `);
             await pool.query(`
                 CREATE TABLE IF NOT EXISTS test_marks (
@@ -1603,18 +1606,23 @@ router.get('/tests', async (req, res) => {
             if (!allowed) return res.status(403).json({ error: 'You are not assigned to this class/section/subject' });
         }
 
+        const activeYear = await getActiveAcademicYear(client);
+        const reqYearId = req.query.academic_year_id ? Number(req.query.academic_year_id) : (activeYear?.id || null);
+
         const testsRes = await client.query(
-            `SELECT tp.test_id, tp.test_name, tp.description, tp.total_marks, tp.created_at,
+            `SELECT tp.test_id, tp.test_name, tp.description, tp.total_marks, tp.created_at, tp.academic_year_id, ay.year_name AS academic_year_name,
                     COALESCE(e.first_name || ' ' || e.last_name, 'Admin') AS created_by_name,
                     (SELECT COUNT(*) FROM test_marks tm WHERE tm.test_id = tp.test_id AND tm.obtained_marks IS NOT NULL)::int AS marks_entered
              FROM test_papers tp
              LEFT JOIN employees e ON e.employee_id = tp.created_by_employee_id
+             LEFT JOIN academic_years ay ON ay.id = tp.academic_year_id
              WHERE tp.class_id = $1 AND tp.section_id = $2 AND tp.subject_id = $3
+               AND ($4::int IS NULL OR tp.academic_year_id = $4 OR tp.academic_year_id IS NULL)
              ORDER BY tp.created_at DESC`,
-            [classId, sectionId, subjectId]
+            [classId, sectionId, subjectId, reqYearId]
         );
 
-        res.json({ tests: testsRes.rows });
+        res.json({ tests: testsRes.rows, active_year: activeYear });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: err.message });
@@ -1653,11 +1661,14 @@ router.post('/tests', async (req, res) => {
             if (!allowed) return res.status(403).json({ error: 'You are not assigned to this class/section/subject' });
         }
 
+        const activeYear = await getActiveAcademicYear(client);
+        const academicYearId = req.body.academic_year_id ? Number(req.body.academic_year_id) : (activeYear?.id || null);
+
         const insertRes = await client.query(
-            `INSERT INTO test_papers (test_name, description, total_marks, class_id, section_id, subject_id, created_by_user_id, created_by_employee_id)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+            `INSERT INTO test_papers (test_name, description, total_marks, class_id, section_id, subject_id, created_by_user_id, created_by_employee_id, academic_year_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
              RETURNING test_id`,
-            [testName, description, totalMarks, classId, sectionId, subjectId, userId, ctx.employeeId]
+            [testName, description, totalMarks, classId, sectionId, subjectId, userId, ctx.employeeId, academicYearId]
         );
 
         res.status(201).json({ test_id: insertRes.rows[0].test_id, message: 'Test created successfully.' });
@@ -1868,11 +1879,15 @@ router.get('/approvals/list', async (req, res) => {
         const ctx = await getUserContext(client, userId);
         if (ctx.error) return res.status(ctx.error.status).json({ error: ctx.error.message });
 
+        const activeYear = await getActiveAcademicYear(client);
+        const yearsRes = await client.query(`SELECT id, year_name, is_active FROM academic_years ORDER BY id DESC`);
+
         // 1. Term Exam Sheets
         const termSheetsRes = await client.query(`
             SELECT 
                 'term_exam' AS sheet_type,
                 em.term_id, t.term_name,
+                t.academic_year_id, ay.year_name AS academic_year_name,
                 em.class_id, c.class_name,
                 em.section_id, sec.section_name,
                 em.subject_id, sub.subject_name,
@@ -1891,6 +1906,7 @@ router.get('/approvals/list', async (req, res) => {
             JOIN sections sec ON sec.section_id = em.section_id
             JOIN subjects sub ON sub.subject_id = em.subject_id
             JOIN academic_terms t ON t.id = em.term_id
+            LEFT JOIN academic_years ay ON ay.id = t.academic_year_id
             LEFT JOIN exam_sheet_approvals esa 
                 ON esa.sheet_type = 'term_exam' 
                AND esa.term_id = em.term_id 
@@ -1900,7 +1916,7 @@ router.get('/approvals/list', async (req, res) => {
             LEFT JOIN app_users u_sub ON u_sub.id = COALESCE(esa.submitted_by, em.entered_by_user_id)
             LEFT JOIN app_users u_app ON u_app.id = esa.approved_by
             LEFT JOIN app_users u_pub ON u_pub.id = esa.published_by
-            GROUP BY em.term_id, t.term_name, em.class_id, c.class_name, em.section_id, sec.section_name, em.subject_id, sub.subject_name, esa.status, esa.submitted_at, esa.approved_at, esa.published_at, u_sub.full_name, u_sub.username, u_app.full_name, u_pub.full_name
+            GROUP BY em.term_id, t.term_name, t.academic_year_id, ay.year_name, em.class_id, c.class_name, em.section_id, sec.section_name, em.subject_id, sub.subject_name, esa.status, esa.submitted_at, esa.approved_at, esa.published_at, u_sub.full_name, u_sub.username, u_app.full_name, u_pub.full_name
             ORDER BY c.class_name ASC, sec.section_name ASC, t.term_name ASC, sub.subject_name ASC
         `);
 
@@ -1909,6 +1925,7 @@ router.get('/approvals/list', async (req, res) => {
             SELECT
                 'class_test' AS sheet_type,
                 NULL::int AS term_id, NULL AS term_name,
+                tp.academic_year_id, ay.year_name AS academic_year_name,
                 tp.class_id, c.class_name,
                 tp.section_id, sec.section_name,
                 tp.subject_id, sub.subject_name,
@@ -1926,6 +1943,7 @@ router.get('/approvals/list', async (req, res) => {
             JOIN classes c ON c.class_id = tp.class_id
             JOIN sections sec ON sec.section_id = tp.section_id
             JOIN subjects sub ON sub.subject_id = tp.subject_id
+            LEFT JOIN academic_years ay ON ay.id = tp.academic_year_id
             LEFT JOIN exam_sheet_approvals esa ON esa.sheet_type = 'class_test' AND esa.test_id = tp.test_id
             LEFT JOIN app_users u_sub ON u_sub.id = COALESCE(esa.submitted_by, tp.created_by_user_id)
             LEFT JOIN app_users u_app ON u_app.id = COALESCE(esa.approved_by, tp.approved_by)
@@ -1934,7 +1952,13 @@ router.get('/approvals/list', async (req, res) => {
         `);
 
         const allSheets = [...termSheetsRes.rows, ...testSheetsRes.rows];
-        res.json({ sheets: allSheets, role_level: ctx.user.role_level, role_name: ctx.user.role_name });
+        res.json({
+            sheets: allSheets,
+            years: yearsRes.rows,
+            active_year_id: activeYear?.id || null,
+            role_level: ctx.user.role_level,
+            role_name: ctx.user.role_name
+        });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: err.message });

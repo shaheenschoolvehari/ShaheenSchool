@@ -1,7 +1,42 @@
 const router = require('express').Router();
 const pool = require('../db');
 
-// Get all academic years
+// Get active academic year
+router.get('/active-year', async (req, res) => {
+    try {
+        let result = await pool.query("SELECT * FROM academic_years WHERE is_active = true OR status = 'active' ORDER BY id ASC LIMIT 1");
+        if (result.rows.length === 0) {
+            result = await pool.query("SELECT * FROM academic_years ORDER BY id ASC LIMIT 1");
+            if (result.rows.length > 0) {
+                await pool.query("UPDATE academic_years SET is_active = true, status = 'active' WHERE id = $1", [result.rows[0].id]);
+                result.rows[0].is_active = true;
+                result.rows[0].status = 'active';
+            }
+        }
+        res.json(result.rows[0] || null);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send("Server Error");
+    }
+});
+
+router.get('/years/active', async (req, res) => {
+    try {
+        let result = await pool.query("SELECT * FROM academic_years WHERE is_active = true OR status = 'active' ORDER BY id ASC LIMIT 1");
+        if (result.rows.length === 0) {
+            result = await pool.query("SELECT * FROM academic_years ORDER BY id ASC LIMIT 1");
+            if (result.rows.length > 0) {
+                await pool.query("UPDATE academic_years SET is_active = true, status = 'active' WHERE id = $1", [result.rows[0].id]);
+                result.rows[0].is_active = true;
+                result.rows[0].status = 'active';
+            }
+        }
+        res.json(result.rows[0] || null);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send("Server Error");
+    }
+});
 router.get('/years', async (req, res) => {
     try {
         const result = await pool.query("SELECT * FROM academic_years ORDER BY id ASC");
@@ -112,6 +147,10 @@ router.put('/years/activate/:id', async (req, res) => {
         // Start transaction
         await client.query('BEGIN');
 
+        // Fetch current active year before deactivating
+        const prevYearRes = await client.query("SELECT id, year_name FROM academic_years WHERE is_active = true ORDER BY id DESC LIMIT 1");
+        const prevYear = prevYearRes.rows[0] || null;
+
         // Deactivate all active years and mark as completed
         await client.query(
             "UPDATE academic_years SET is_active = false, status = 'completed' WHERE is_active = true"
@@ -122,6 +161,52 @@ router.put('/years/activate/:id', async (req, res) => {
             "UPDATE academic_years SET is_active = true, status = 'active' WHERE id = $1",
             [id]
         );
+
+        // Automated Fiscal Balance Rollover into Opening Balance
+        if (prevYear) {
+            const familyDues = await client.query(`
+                SELECT f.family_id,
+                       COALESCE((f.opening_balance - f.opening_balance_paid), 0) AS prev_opb_rem,
+                       COALESCE((
+                           SELECT SUM(mfs.total_amount - mfs.paid_amount)
+                           FROM monthly_fee_slips mfs
+                           WHERE mfs.family_id = f.family_id AND mfs.status IN ('unpaid', 'partial')
+                             AND (mfs.academic_year_id = $1 OR mfs.academic_year_id IS NULL)
+                       ), 0) AS unpaid_slips,
+                       COALESCE((
+                           SELECT SUM(afl.total_amount - afl.paid_amount - COALESCE(afl.discount_amount, 0))
+                           FROM admission_fee_ledger afl
+                           JOIN students s ON s.student_id = afl.student_id
+                           WHERE s.family_id = f.family_id AND afl.status IN ('unpaid', 'partial')
+                             AND (afl.academic_year_id = $1 OR afl.academic_year_id IS NULL)
+                       ), 0) AS unpaid_adm
+                FROM families f
+            `, [prevYear.id]);
+
+            for (const row of familyDues.rows) {
+                const prevOpb = parseFloat(row.prev_opb_rem) || 0;
+                const unpaidSlips = parseFloat(row.unpaid_slips) || 0;
+                const unpaidAdm = parseFloat(row.unpaid_adm) || 0;
+                const totalRem = prevOpb + unpaidSlips + unpaidAdm;
+
+                if (totalRem > 0) {
+                    const breakdownParts = [];
+                    if (unpaidSlips > 0) breakdownParts.push(`Unpaid Slips: PKR ${unpaidSlips.toLocaleString('en-PK')}`);
+                    if (unpaidAdm > 0) breakdownParts.push(`Unpaid Admission: PKR ${unpaidAdm.toLocaleString('en-PK')}`);
+                    if (prevOpb > 0) breakdownParts.push(`Prior Dues: PKR ${prevOpb.toLocaleString('en-PK')}`);
+                    
+                    const detailedNote = `Carried forward from closed session ${prevYear.year_name} (${breakdownParts.join(', ')})`;
+
+                    await client.query(`
+                        UPDATE families 
+                        SET opening_balance = $1,
+                            opening_balance_paid = 0,
+                            opb_notes = $2
+                        WHERE family_id = $3
+                    `, [totalRem, detailedNote, row.family_id]);
+                }
+            }
+        }
 
         await client.query('COMMIT');
 

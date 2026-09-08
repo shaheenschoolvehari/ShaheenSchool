@@ -1,6 +1,8 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 
+type AcademicYear = { id: number; year_name: string; is_active: boolean; status: string; start_date?: string; end_date?: string };
+
 type AdmissionFee = {
     ledger_id: number;
     student_id: number;
@@ -34,6 +36,8 @@ type Summary = {
 };
 
 export default function AdmissionFeeReportPage() {
+    const [years, setYears] = useState<AcademicYear[]>([]);
+    const [academicYearId, setAcademicYearId] = useState<string>('');
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState('');
     const [status, setStatus] = useState('');
@@ -51,18 +55,40 @@ export default function AdmissionFeeReportPage() {
     const printRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        // Default: Current Year Start to Current Date
-        const now = new Date();
-        const y = now.getFullYear();
-        setFromDate(`${y}-01-01`);
-        setToDate(`${y}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`);
+        // Fetch academic years
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/academic/years`)
+            .then(r => r.json())
+            .then((data: AcademicYear[]) => {
+                if (Array.isArray(data) && data.length > 0) {
+                    setYears(data);
+                    const active = data.find(y => y.is_active || y.status === 'active') || data[0];
+                    if (active) {
+                        setAcademicYearId(String(active.id));
+                        if (active.start_date && active.end_date) {
+                            setFromDate(active.start_date.slice(0, 10));
+                            setToDate(active.end_date.slice(0, 10));
+                        }
+                    }
+                }
+            })
+            .catch(console.error);
     }, []);
+
+    const handleYearChange = (id: string) => {
+        setAcademicYearId(id);
+        const sel = years.find(y => String(y.id) === id);
+        if (sel && sel.start_date && sel.end_date) {
+            setFromDate(sel.start_date.slice(0, 10));
+            setToDate(sel.end_date.slice(0, 10));
+        }
+    };
 
     const loadReport = async () => {
         setLoading(true);
         setError('');
         try {
             const params = new URLSearchParams();
+            if (academicYearId) params.append('academic_year_id', academicYearId);
             if (fromDate) params.append('from_date', fromDate);
             if (toDate) params.append('to_date', toDate);
             if (status) params.append('status', status);
@@ -113,32 +139,62 @@ export default function AdmissionFeeReportPage() {
     };
 
     return (
-        <div className="p-3 p-md-4" style={{ backgroundColor: 'var(--bg-main)', minHeight: '100vh' }}>
-            <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2 mb-4">
+        <div className="container-fluid p-2 p-sm-3 p-md-4" style={{ backgroundColor: 'var(--bg-main)', minHeight: '100vh' }}>
+            {/* Custom Responsive Styles */}
+            <style jsx>{`
+                @media (max-width: 575.98px) {
+                    .admission-table {
+                        min-width: 650px;
+                    }
+                    .summary-box {
+                        padding: 8px 10px !important;
+                    }
+                }
+            `}</style>
+
+            <div className="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3 mb-3 mb-md-4">
                 <div>
-                    <h4 className="mb-1 fw-bold" style={{ color: 'var(--primary-dark)' }}>
+                    <h4 className="mb-1 fw-bold" style={{ color: 'var(--primary-dark)', fontSize: 'clamp(1.25rem, 3vw, 1.6rem)' }}>
                         <i className="bi bi-person-lines-fill me-2" style={{ color: 'var(--accent-orange)' }} />
                         Admission Fee Report
                     </h4>
                     <div className="text-muted small">Monthly admissions, revenue and outstanding dues tracker</div>
                 </div>
+                <div>
+                    <span className="badge rounded-pill bg-light text-dark border px-3 py-2 shadow-sm d-inline-flex align-items-center gap-1.5" style={{ fontSize: '13px', fontWeight: 600 }}>
+                        <i className="bi bi-mortarboard-fill text-primary"></i>
+                        Academic Year: {years.find(y => String(y.id) === academicYearId)?.year_name || years.find(y => y.is_active)?.year_name || '—'}
+                    </span>
+                </div>
             </div>
 
-            <div className="card border-0 shadow-sm mb-4">
-                <div className="card-header bg-white border-bottom py-3" style={{ borderLeft: '4px solid var(--primary-teal)' }}>
+            <div className="card border-0 shadow-sm mb-3 mb-md-4" style={{ borderRadius: 16 }}>
+                <div className="card-header bg-white border-bottom py-3" style={{ borderLeft: '4px solid var(--primary-teal)', borderRadius: '16px 16px 0 0' }}>
                     <h6 className="mb-0 fw-bold"><i className="bi bi-funnel me-2 text-muted" />Filters</h6>
                 </div>
                 <div className="card-body">
-                    <div className="row g-3 align-items-end">
+                    <div className="row g-2 g-md-3 align-items-end">
                         <div className="col-12 col-sm-6 col-md-3">
-                            <label className="form-label fw-semibold small mb-1">From Date (Admission)</label>
+                            <label className="form-label fw-semibold small mb-1">
+                                <i className="bi bi-mortarboard-fill me-1 text-primary"></i>Academic Year
+                            </label>
+                            <select className="form-select form-select-sm" value={academicYearId} onChange={e => handleYearChange(e.target.value)}>
+                                {years.map(y => (
+                                    <option key={y.id} value={y.id}>
+                                        {y.year_name} {y.is_active || y.status === 'active' ? '(Active)' : ''}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="col-6 col-sm-6 col-md-2">
+                            <label className="form-label fw-semibold small mb-1">From Date</label>
                             <input type="date" className="form-control form-control-sm" value={fromDate} onChange={e => setFromDate(e.target.value)} />
                         </div>
-                        <div className="col-12 col-sm-6 col-md-3">
-                            <label className="form-label fw-semibold small mb-1">To Date (Admission)</label>
+                        <div className="col-6 col-sm-6 col-md-2">
+                            <label className="form-label fw-semibold small mb-1">To Date</label>
                             <input type="date" className="form-control form-control-sm" value={toDate} onChange={e => setToDate(e.target.value)} />
                         </div>
-                        <div className="col-12 col-sm-6 col-md-3">
+                        <div className="col-12 col-sm-6 col-md-2">
                             <label className="form-label fw-semibold small mb-1">Status</label>
                             <select className="form-select form-select-sm" value={status} onChange={e => setStatus(e.target.value)}>
                                 <option value="">All Status</option>
@@ -147,12 +203,12 @@ export default function AdmissionFeeReportPage() {
                                 <option value="Partial">Partial</option>
                             </select>
                         </div>
-                        <div className="col-12 col-sm-12 col-md-3 mt-4 mt-md-0 d-flex gap-2">
-                            <button className="btn btn-sm btn-primary w-100" onClick={loadReport} disabled={loading}>
+                        <div className="col-12 col-sm-6 col-md-3 d-flex gap-2">
+                            <button className="btn btn-sm fw-bold px-4 flex-grow-1" style={{ background: 'var(--primary-teal)', color: '#fff', height: 34, borderRadius: 10 }} onClick={loadReport} disabled={loading}>
                                 {loading ? <span className="spinner-border spinner-border-sm me-2" /> : <i className="bi bi-search me-2" />}
                                 Generate
                             </button>
-                            <button className="btn btn-sm btn-outline-secondary" onClick={handlePrint} disabled={!fees.length}>
+                            <button className="btn btn-sm btn-outline-secondary" style={{ borderRadius: 10 }} onClick={handlePrint} disabled={!fees.length}>
                                 <i className="bi bi-printer" />
                             </button>
                         </div>
@@ -161,7 +217,7 @@ export default function AdmissionFeeReportPage() {
                 </div>
             </div>
 
-            <div className="card border-0 shadow-sm">
+            <div className="card border-0 shadow-sm" style={{ borderRadius: 16, overflow: 'hidden' }}>
                 <div className="card-body p-0">
                     {fees.length === 0 ? (
                         <div className="text-center p-5 text-muted">
@@ -169,45 +225,45 @@ export default function AdmissionFeeReportPage() {
                             No report generated or no data found.
                         </div>
                     ) : (
-                        <div className="p-4" ref={printRef}>
+                        <div className="p-3 p-md-4" ref={printRef}>
                             <div className="d-none d-print-block">
                                 <h2>Admission Fee Report</h2>
                                 <h4>From: {fromDate || 'Start'} To: {toDate || 'End'}</h4>
                             </div>
 
                             {/* Key Metrics */}
-                            <div className="row g-3 mb-4 summary-grid">
-                                <div className="col summary-box">
-                                    <div className="small text-muted mb-1 d-print-none">Total Admissions</div>
+                            <div className="row g-2 g-md-3 mb-3 mb-md-4 summary-grid">
+                                <div className="col-6 col-sm-4 col-md summary-box">
+                                    <div className="small text-muted mb-1 d-print-none text-truncate" style={{ fontSize: '0.72rem' }}>Total Admissions</div>
                                     <div className="d-none d-print-block">Total Admissions</div>
-                                    <div className="fs-5 text-primary">{summary.total_admissions}</div>
+                                    <div className="fs-5 fw-bold text-primary">{summary.total_admissions}</div>
                                 </div>
-                                <div className="col summary-box">
-                                    <div className="small text-muted mb-1 d-print-none">Billed Revenue</div>
+                                <div className="col-6 col-sm-4 col-md summary-box">
+                                    <div className="small text-muted mb-1 d-print-none text-truncate" style={{ fontSize: '0.72rem' }}>Billed Revenue</div>
                                     <div className="d-none d-print-block">Billed Revenue</div>
-                                    <div className="fs-5 text-dark">Rs {summary.total_billed.toLocaleString()}</div>
+                                    <div className="fs-5 fw-bold text-dark">Rs {summary.total_billed.toLocaleString()}</div>
                                 </div>
-                                <div className="col summary-box">
-                                    <div className="small text-muted mb-1 d-print-none">Collected</div>
+                                <div className="col-6 col-sm-4 col-md summary-box">
+                                    <div className="small text-muted mb-1 d-print-none text-truncate" style={{ fontSize: '0.72rem' }}>Collected</div>
                                     <div className="d-none d-print-block">Collected</div>
-                                    <div className="fs-5 text-success">Rs {summary.total_collected.toLocaleString()}</div>
+                                    <div className="fs-5 fw-bold text-success">Rs {summary.total_collected.toLocaleString()}</div>
                                 </div>
-                                <div className="col summary-box">
-                                    <div className="small text-muted mb-1 d-print-none">Discounts</div>
+                                <div className="col-6 col-sm-4 col-md summary-box">
+                                    <div className="small text-muted mb-1 d-print-none text-truncate" style={{ fontSize: '0.72rem' }}>Discounts</div>
                                     <div className="d-none d-print-block">Discounts</div>
-                                    <div className="fs-5 text-warning">Rs {summary.total_discount.toLocaleString()}</div>
+                                    <div className="fs-5 fw-bold text-warning">Rs {summary.total_discount.toLocaleString()}</div>
                                 </div>
-                                <div className="col summary-box">
-                                    <div className="small text-muted mb-1 d-print-none">Outstanding Dues</div>
+                                <div className="col-12 col-sm-4 col-md summary-box">
+                                    <div className="small text-muted mb-1 d-print-none text-truncate" style={{ fontSize: '0.72rem' }}>Outstanding Dues</div>
                                     <div className="d-none d-print-block">Outstanding</div>
-                                    <div className="fs-5 text-danger">Rs {summary.total_pending.toLocaleString()}</div>
+                                    <div className="fs-5 fw-bold text-danger">Rs {summary.total_pending.toLocaleString()}</div>
                                 </div>
                             </div>
 
                             {/* Monthly Breakdown */}
                             <h6 className="fw-bold mb-3 border-bottom pb-2" style={{ color: 'var(--primary-dark)' }}>Monthly Breakdown</h6>
                             <div className="table-responsive mb-4">
-                                <table className="table table-bordered table-sm align-middle">
+                                <table className="table table-bordered table-sm align-middle admission-table">
                                     <thead className="table-light">
                                         <tr>
                                             <th>Month (YYYY-MM)</th>

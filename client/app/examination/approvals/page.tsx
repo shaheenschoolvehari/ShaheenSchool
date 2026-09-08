@@ -9,6 +9,8 @@ interface SheetItem {
     sheet_type: 'term_exam' | 'class_test';
     term_id?: number;
     term_name?: string;
+    academic_year_id?: number;
+    academic_year_name?: string;
     class_id: number;
     class_name: string;
     section_id: number;
@@ -41,6 +43,8 @@ export default function MarksApprovalPage() {
     const { user } = useAuth();
 
     const [sheets, setSheets] = useState<SheetItem[]>([]);
+    const [years, setYears] = useState<{ id: number; year_name: string; is_active: boolean }[]>([]);
+    const [activeYearId, setActiveYearId] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
     const [roleLevel, setRoleLevel] = useState<number>(0);
     const [roleName, setRoleName] = useState<string>('');
@@ -48,6 +52,7 @@ export default function MarksApprovalPage() {
     // Filters
     const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'published'>('all');
     const [typeFilter, setTypeFilter] = useState<'all' | 'term_exam' | 'class_test'>('all');
+    const [yearFilter, setYearFilter] = useState<string>('active'); // 'active' | 'all' | specific year id
     const [searchQuery, setSearchQuery] = useState('');
 
     // Modal Review State
@@ -99,6 +104,8 @@ export default function MarksApprovalPage() {
             const data = await res.json();
             if (res.ok) {
                 setSheets(data.sheets || []);
+                setYears(data.years || []);
+                setActiveYearId(data.active_year_id || null);
                 setRoleLevel(data.role_level || 0);
                 setRoleName(data.role_name || '');
             } else {
@@ -121,6 +128,11 @@ export default function MarksApprovalPage() {
         return sheets.filter(item => {
             if (statusFilter !== 'all' && item.status !== statusFilter) return false;
             if (typeFilter !== 'all' && item.sheet_type !== typeFilter) return false;
+            if (yearFilter === 'active' && activeYearId) {
+                if (item.academic_year_id && item.academic_year_id !== activeYearId) return false;
+            } else if (yearFilter !== 'all' && yearFilter !== 'active') {
+                if (item.academic_year_id !== Number(yearFilter)) return false;
+            }
             if (searchQuery.trim()) {
                 const q = searchQuery.toLowerCase().trim();
                 const name = (item.sheet_name || '').toLowerCase();
@@ -132,7 +144,7 @@ export default function MarksApprovalPage() {
             }
             return true;
         });
-    }, [sheets, statusFilter, typeFilter, searchQuery]);
+    }, [sheets, statusFilter, typeFilter, yearFilter, activeYearId, searchQuery]);
 
     // Stats
     const stats = useMemo(() => {
@@ -300,6 +312,9 @@ export default function MarksApprovalPage() {
                                 Role: {roleName} (Lvl {roleLevel})
                             </span>
                         )}
+                        <span className="badge rounded-pill bg-light text-dark border">
+                            Academic Year: {years.find(y => y.id === activeYearId)?.year_name || years.find(y => y.is_active)?.year_name || '—'}
+                        </span>
                     </div>
                     <h2 className="mb-1 fw-bold text-white" style={{ letterSpacing: '-0.5px', fontSize: 'clamp(1.1rem, 2.5vw, 1.75rem)' }}>
                         Marks Approval &amp; Publishing Portal
@@ -413,6 +428,21 @@ export default function MarksApprovalPage() {
 
                         {/* Type & Search */}
                         <div className="col-12 col-md-6 d-flex flex-wrap gap-2 justify-content-md-end">
+                            <select
+                                className="form-select form-select-sm rounded-3 border bg-light flex-grow-1 flex-md-grow-0"
+                                style={{ width: 'auto', minWidth: '150px', fontSize: '0.82rem' }}
+                                value={yearFilter}
+                                onChange={e => setYearFilter(e.target.value)}
+                            >
+                                <option value="active">Active Session Only</option>
+                                <option value="all">All Academic Years</option>
+                                {years.map(y => (
+                                    <option key={y.id} value={String(y.id)}>
+                                        {y.year_name} {y.is_active ? '(Active)' : ''}
+                                    </option>
+                                ))}
+                            </select>
+
                             <select
                                 className="form-select form-select-sm rounded-3 border bg-light flex-grow-1 flex-md-grow-0"
                                 style={{ width: 'auto', minWidth: '130px', fontSize: '0.82rem' }}

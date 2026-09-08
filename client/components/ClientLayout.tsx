@@ -7,7 +7,7 @@ import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { useAuth } from '@/contexts/AuthContext';
 
-const API = process.env.NEXT_PUBLIC_API_URL || "https://demo-school-soxa.onrender.com";
+const API = process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com";
 
 function useAutoBackup(isLoggedIn: boolean) {
   useEffect(() => {
@@ -113,7 +113,13 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     key: 'attendance', label: 'Attendance', icon: 'bi-calendar-check-fill', href: '/attendance/students', permission: 'attendance',
-    subs: [{ label: 'Student Attendance', href: '/attendance/students' }, { label: 'Student History', href: '/attendance/students/history' }, { label: 'Staff Attendance', href: '/attendance/staff' }, { label: 'Staff History', href: '/attendance/staff/history' }]
+    subs: [
+      { label: 'Student Attendance', href: '/attendance/students' },
+      { label: 'Student History', href: '/attendance/students/history' },
+      { label: 'Staff Attendance', href: '/attendance/staff' },
+      { label: 'Staff History', href: '/attendance/staff/history' },
+      { label: 'Attendance Settings', href: '/attendance/settings/students' }
+    ]
   },
   {
     key: 'reports', label: 'Reports', icon: 'bi-bar-chart-fill', href: '/reports/monthly', permission: 'reports',
@@ -158,6 +164,8 @@ const NAV_PERMISSION_MAP: Record<string, string> = {
   '/attendance/students/history': 'attendance.students.history',
   '/attendance/staff': 'attendance.staff',
   '/attendance/staff/history': 'attendance.staff.history',
+  '/attendance/settings': 'attendance.settings',
+  '/attendance/settings/students': 'attendance.settings',
   '/reports/monthly': 'reports.monthly',
   '/reports/students': 'reports.students',
   '/reports/results': 'reports.results',

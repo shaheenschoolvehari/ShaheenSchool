@@ -23,7 +23,9 @@ router.get('/', async (req, res) => {
                                 'head_name', fh.head_name,
                                 'head_type', fh.head_type,
                                 'frequency', fh.frequency,
-                                'amount', fph.amount
+                                'track_arrears', COALESCE(fh.track_arrears, TRUE),
+                                'amount', fph.amount,
+                                'fine_after_day', fph.fine_after_day
                             ) ORDER BY fh.head_name
                         ),
                         '[]'
@@ -60,7 +62,7 @@ router.get('/:id', async (req, res) => {
         if (plan.rows.length === 0) return res.status(404).json({ error: 'Not found' });
 
         const heads = await pool.query(`
-            SELECT fph.*, fh.head_name, fh.head_type, fh.frequency
+            SELECT fph.*, fh.head_name, fh.head_type, fh.frequency, COALESCE(fh.track_arrears, TRUE) AS track_arrears, fph.fine_after_day
             FROM fee_plan_heads fph
             JOIN fee_heads fh ON fph.head_id = fh.head_id
             WHERE fph.plan_id = $1
@@ -104,9 +106,10 @@ router.post('/', async (req, res) => {
         // Insert fee heads
         if (heads && heads.length > 0) {
             for (const head of heads) {
+                const fineDay = head.fine_after_day ? parseInt(head.fine_after_day) : null;
                 await client.query(
-                    'INSERT INTO fee_plan_heads (plan_id, head_id, amount) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
-                    [planId, head.head_id, head.amount]
+                    'INSERT INTO fee_plan_heads (plan_id, head_id, amount, fine_after_day) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING',
+                    [planId, head.head_id, head.amount, fineDay]
                 );
             }
         }
@@ -156,9 +159,10 @@ router.put('/:id', async (req, res) => {
         await client.query('DELETE FROM fee_plan_heads WHERE plan_id = $1', [id]);
         if (heads && heads.length > 0) {
             for (const head of heads) {
+                const fineDay = head.fine_after_day ? parseInt(head.fine_after_day) : null;
                 await client.query(
-                    'INSERT INTO fee_plan_heads (plan_id, head_id, amount) VALUES ($1, $2, $3)',
-                    [id, head.head_id, head.amount]
+                    'INSERT INTO fee_plan_heads (plan_id, head_id, amount, fine_after_day) VALUES ($1, $2, $3, $4)',
+                    [id, head.head_id, head.amount, fineDay]
                 );
             }
         }

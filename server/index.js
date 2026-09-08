@@ -109,6 +109,10 @@ const { runEssentialMigrations } = require('./migrations');
 
 app.listen(PORT, '0.0.0.0', async () => {
     console.log(`Server is running on port ${PORT}`);
-    await runEssentialMigrations();
-    await seedRootUser();
+    try {
+        await runEssentialMigrations();
+        await seedRootUser();
+    } catch (err) {
+        console.error('❌ Startup Database Error (Check DATABASE_URL & Supabase status):', err.message);
+    }
 });

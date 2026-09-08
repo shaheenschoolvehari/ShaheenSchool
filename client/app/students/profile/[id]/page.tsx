@@ -1,9 +1,9 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { notify } from '@/app/utils/notify';
 import { useAuth } from '@/contexts/AuthContext';
-import { NotificationBell } from '@/components/notifications/NotificationBell';
 
 export default function StudentProfile({ params }: { params: { id: string } }) {
     const [student, setStudent] = useState<any>(null);
@@ -19,11 +19,13 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
     const [isChangingPwd, setIsChangingPwd] = useState(false);
 
     // Attendance states
-    const now = new Date();
-    const [attMonth, setAttMonth] = useState(String(now.getMonth() + 1));
-    const [attYear, setAttYear] = useState(String(now.getFullYear()));
+    const [attAcademicYears, setAttAcademicYears] = useState<any[]>([]);
+    const [attAcademicYearId, setAttAcademicYearId] = useState<string>('');
+    const [attSessionMonths, setAttSessionMonths] = useState<any[]>([]);
+    const [attSelectedMonth, setAttSelectedMonth] = useState<string>('all'); // 'all' or 'YYYY-MM'
     const [attRecords, setAttRecords] = useState<any[]>([]);
-    const [attStats, setAttStats] = useState<any>({ present: 0, absent: 0, late: 0, leave: 0, total: 0 });
+    const [attStats, setAttStats] = useState<any>({ present: 0, absent: 0, late: 0, leave: 0, total: 0, percentage: 0 });
+    const [attYearStats, setAttYearStats] = useState<any>({ present: 0, absent: 0, late: 0, leave: 0, total: 0, percentage: 0 });
     const [attLoading, setAttLoading] = useState(false);
 
     // Academic performance states
@@ -31,12 +33,37 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
     const [acadLoading, setAcadLoading] = useState(false);
     const [acadTab, setAcadTab] = useState<'terms' | 'tests' | 'prediction'>('terms');
 
-    const fetchAttendance = async (m?: string, y?: string) => {
+    const fetchAttendance = async (yearId?: string, monthFilter?: string) => {
         setAttLoading(true);
         try {
-            const month = m || attMonth; const year = y || attYear;
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/attendance/students/${params.id}/history?month=${month}&year=${year}`);
-            if (res.ok) { const data = await res.json(); setAttRecords(data.records || []); setAttStats(data.stats || {}); }
+            const yId = yearId !== undefined ? yearId : attAcademicYearId;
+            const mFilter = monthFilter !== undefined ? monthFilter : attSelectedMonth;
+            const queryParams = new URLSearchParams();
+            if (yId) queryParams.append('academic_year_id', yId);
+            if (mFilter && mFilter !== 'all') {
+                const [y, m] = mFilter.split('-');
+                queryParams.append('month', m);
+                queryParams.append('year', y);
+            } else {
+                queryParams.append('month', 'all');
+            }
+
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/attendance/students/${params.id}/history?${queryParams.toString()}`);
+            if (res.ok) {
+                const data = await res.json();
+                setAttRecords(data.records || []);
+                setAttStats(data.stats || {});
+                setAttYearStats(data.academic_year_stats || {});
+                if (Array.isArray(data.available_years) && data.available_years.length > 0) {
+                    setAttAcademicYears(data.available_years);
+                }
+                if (Array.isArray(data.session_months) && data.session_months.length > 0) {
+                    setAttSessionMonths(data.session_months);
+                }
+                if (data.academic_year?.id && !attAcademicYearId) {
+                    setAttAcademicYearId(String(data.academic_year.id));
+                }
+            }
         } catch { }
         setAttLoading(false);
     };
@@ -121,9 +148,9 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
 
     useEffect(() => {
         if (params.id) {
-            fetchAttendance(attMonth, attYear);
+            fetchAttendance(attAcademicYearId, attSelectedMonth);
         }
-    }, [params.id, attMonth, attYear]);
+    }, [params.id, attAcademicYearId, attSelectedMonth]);
 
     const fetchFamilySlips = async () => {
         setLoadingFamilySlips(true);
@@ -345,9 +372,6 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                         <button className="btn btn-outline-light rounded-circle shadow-sm" onClick={() => router.back()} style={{ width: 42, height: 42 }}>
                             <i className="bi bi-arrow-left fs-5"></i>
                         </button>
-                        <div className="d-flex align-items-center gap-2">
-                            <NotificationBell familyId={student?.family_id} studentId={student?.student_id} role="student" />
-                        </div>
                     </div>
 
                     {/* Student Hero Header Block */}
@@ -394,7 +418,7 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                                 <div className="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
                                     <div className="card-body p-3 p-md-4">
                                         <h6 className="fw-bold text-uppercase text-muted mb-3 small">Quick Info</h6>
-                                        
+
                                         {/* Credentials Block */}
                                         <div className="mb-3">
                                             <small className="text-muted d-block text-uppercase fw-bold mb-2" style={{ fontSize: '0.68rem', letterSpacing: '0.8px' }}>
@@ -1322,7 +1346,8 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                                                         </thead>
                                                         <tbody>
                                                             {familySlips.map((monthSlip, idx) => {
-                                                                const remainingBalance = Math.max(0, Number(monthSlip.family_total_billed || 0) - Number(monthSlip.family_total_paid || 0));
+                                                                const isMonthSettled = ['satteled', 'settled'].includes((monthSlip.status || '').toLowerCase());
+                                                                const remainingBalance = isMonthSettled ? 0 : Math.max(0, Number(monthSlip.family_total_billed || 0) - Number(monthSlip.family_total_paid || 0));
                                                                 const subDate = monthSlip.last_submission_date
                                                                     ? new Date(monthSlip.last_submission_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
                                                                     : '—';
@@ -1335,6 +1360,7 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                                                                         <td>
                                                                             <div className="d-flex flex-column gap-2 py-2" style={{ minWidth: '280px' }}>
                                                                                 {monthSlip.students.map((st: any, i: number) => {
+                                                                                    const isStTrusted = Boolean(st.is_trusted || (st.category || '').toLowerCase() === 'trusted');
                                                                                     const stRemaining = Math.max(0, Number(st.billed || 0) - Number(st.paid || 0));
                                                                                     const stSubDate = st.last_payment_date
                                                                                         ? new Date(st.last_payment_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -1349,6 +1375,11 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                                                                                                     <span className="fw-bold text-dark" style={{ fontSize: '0.85rem' }}>
                                                                                                         {st.name}
                                                                                                     </span>
+                                                                                                    {isStTrusted && (
+                                                                                                        <span className="badge rounded-pill px-1.5 py-0.5" style={{ backgroundColor: '#e0f2fe', color: '#0284c7', border: '1px solid #bae6fd', fontSize: '0.68rem', fontWeight: 600 }}>
+                                                                                                            <i className="bi bi-shield-check me-1"></i>Trusted
+                                                                                                        </span>
+                                                                                                    )}
                                                                                                     {st.class_name && (
                                                                                                         <span className="badge bg-secondary-subtle text-secondary small">
                                                                                                             {st.class_name} {st.section_name ? `- ${st.section_name}` : ''}
@@ -1362,7 +1393,9 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                                                                                                     <span className="badge bg-success-subtle text-success border border-success-subtle">
                                                                                                         Paid: <strong>{fmt(st.paid)}</strong>
                                                                                                     </span>
-                                                                                                    {stRemaining > 0 ? (
+                                                                                                    {isStTrusted && stRemaining === 0 ? (
+                                                                                                        <span className="badge rounded-pill" style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd' }}>Rem: 0 (Free Tuition)</span>
+                                                                                                    ) : stRemaining > 0 ? (
                                                                                                         <span className="badge bg-danger-subtle text-danger border border-danger-subtle fw-bold">
                                                                                                             Rem: {fmt(stRemaining)}
                                                                                                         </span>
@@ -1402,8 +1435,14 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                                                                         </td>
                                                                         <td className="text-end fw-semibold" style={{ color: 'var(--primary-dark)' }}>{fmt(monthSlip.family_total_billed)}</td>
                                                                         <td className="text-end fw-bold" style={{ color: '#0d9e6e' }}>{fmt(monthSlip.family_total_paid)}</td>
-                                                                        <td className="text-end fw-bold" style={{ color: remainingBalance > 0 ? '#dc3545' : '#6c757d' }}>
-                                                                            {fmt(remainingBalance)}
+                                                                        <td className="text-end fw-bold" style={{ color: isMonthSettled ? '#0891b2' : remainingBalance > 0 ? '#dc3545' : '#6c757d' }}>
+                                                                            {isMonthSettled ? (
+                                                                                <span className="badge rounded-pill px-2 py-0.5" style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', fontSize: '0.74rem' }}>
+                                                                                    Settled (PKR 0)
+                                                                                </span>
+                                                                            ) : (
+                                                                                fmt(remainingBalance)
+                                                                            )}
                                                                         </td>
                                                                         <td className="text-center small">
                                                                             {subDate !== '—' ? (
@@ -1415,9 +1454,15 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                                                                             )}
                                                                         </td>
                                                                         <td className="text-center pe-4">
-                                                                            <span className={`badge px-3 py-2 rounded-pill ${monthSlip.status === 'paid' ? 'bg-success bg-opacity-10 text-success border border-success' : monthSlip.status === 'partial' ? 'bg-warning bg-opacity-10 text-warning border border-warning' : 'bg-danger bg-opacity-10 text-danger border border-danger'}`}>
-                                                                                {monthSlip.status.toUpperCase()}
-                                                                            </span>
+                                                                            {isMonthSettled ? (
+                                                                                <span className="badge px-3 py-2 rounded-pill" style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', fontWeight: 600 }}>
+                                                                                    <i className="bi bi-shield-check me-1"></i>SETTLED
+                                                                                </span>
+                                                                            ) : (
+                                                                                <span className={`badge px-3 py-2 rounded-pill ${monthSlip.status === 'paid' ? 'bg-success bg-opacity-10 text-success border border-success' : monthSlip.status === 'partial' ? 'bg-warning bg-opacity-10 text-warning border border-warning' : 'bg-danger bg-opacity-10 text-danger border border-danger'}`}>
+                                                                                    {monthSlip.status.toUpperCase()}
+                                                                                </span>
+                                                                            )}
                                                                         </td>
                                                                     </tr>
                                                                 );
@@ -1560,57 +1605,138 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
 
                                 {activeTab === 'attendance' && (
                                     <div className="animate__animated animate__fadeIn">
-                                        {/* Filter row */}
-                                        <div className="d-flex gap-2 mb-4 align-items-end flex-wrap">
-                                            <div>
-                                                <label className="form-label fw-bold small text-muted mb-1">Month</label>
-                                                <select className="form-select form-select-sm" value={attMonth}
-                                                    onChange={e => setAttMonth(e.target.value)}
-                                                    style={{ minWidth: 130 }}>
-                                                    {['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'].map((m, i) => (
-                                                        <option key={m} value={m}>{['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][i]}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                            <div>
-                                                <label className="form-label fw-bold small text-muted mb-1">Year</label>
-                                                <select className="form-select form-select-sm" value={attYear}
-                                                    onChange={e => setAttYear(e.target.value)}
-                                                    style={{ minWidth: 90 }}>
-                                                    {[String(now.getFullYear() - 1), String(now.getFullYear()), String(now.getFullYear() + 1)].map(y => (
-                                                        <option key={y} value={y}>{y}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                            {attLoading && (
-                                                <div className="d-flex align-items-center text-teal small ms-2 pb-1">
-                                                    <span className="spinner-border spinner-border-sm me-1" role="status" />
-                                                    <span>Updating...</span>
+                                        {/* Academic Year Session Banner & Filters */}
+                                        <div className="card border-0 shadow-sm rounded-4 p-3.5 mb-4" style={{ background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)', border: '1px solid #e2e8f0' }}>
+                                            <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+                                                <div>
+                                                    <div className="d-flex align-items-center gap-2 mb-1">
+                                                        <i className="bi bi-mortarboard-fill text-primary fs-5" />
+                                                        <h6 className="fw-bold mb-0 text-dark">Academic Year Session Attendance</h6>
+                                                    </div>
+                                                    <p className="text-muted small mb-0">
+                                                        Tracking session from academic year start to end date
+                                                    </p>
                                                 </div>
-                                            )}
-                                        </div>
-                                        {/* Stats */}
-                                        <div className="row g-2 mb-4">
-                                            {[{ l: 'Present', v: attStats.present, c: '#198754' }, { l: 'Absent', v: attStats.absent, c: '#dc3545' }, { l: 'Late', v: attStats.late, c: '#fd7e14' }, { l: 'Leave', v: attStats.leave, c: '#0d6efd' }, { l: 'Total', v: attStats.total, c: '#6c757d' }].map(s => (
-                                                <div className="col" key={s.l}>
-                                                    <div className="card border-0 shadow-sm text-center py-2" style={{ borderTop: `3px solid ${s.c}` }}>
-                                                        <div style={{ fontSize: '1.5rem', fontWeight: 700, color: s.c }}>{s.v ?? 0}</div>
-                                                        <div style={{ fontSize: '0.75rem', color: '#6c757d' }}>{s.l}</div>
+
+                                                <div className="d-flex align-items-center gap-2 flex-wrap">
+                                                    {/* Academic Year Selector */}
+                                                    <div>
+                                                        <select
+                                                            className="form-select form-select-sm rounded-3 fw-semibold shadow-xs"
+                                                            value={attAcademicYearId}
+                                                            onChange={e => {
+                                                                const newId = e.target.value;
+                                                                setAttAcademicYearId(newId);
+                                                                setAttSelectedMonth('all');
+                                                            }}
+                                                            style={{ border: '2px solid rgba(245, 130, 32, 0.4)', minWidth: 160 }}
+                                                        >
+                                                            {attAcademicYears.map(ay => (
+                                                                <option key={ay.id} value={ay.id}>
+                                                                    {ay.year_name} {ay.is_active ? '★ Active' : ''}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+
+                                                    {/* Month Selector */}
+                                                    <div>
+                                                        <select
+                                                            className="form-select form-select-sm rounded-3 fw-semibold shadow-xs"
+                                                            value={attSelectedMonth}
+                                                            onChange={e => setAttSelectedMonth(e.target.value)}
+                                                            style={{ border: '1.5px solid #cbd5e1', minWidth: 180 }}
+                                                        >
+                                                            <option value="all">📅 All Months (Full Session)</option>
+                                                            {attSessionMonths.map(sm => (
+                                                                <option key={`${sm.year}-${sm.month}`} value={`${sm.year}-${sm.month}`}>
+                                                                    {sm.label}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+
+                                                    {attLoading && (
+                                                        <div className="d-flex align-items-center text-teal small ms-2">
+                                                            <span className="spinner-border spinner-border-sm me-1" role="status" />
+                                                            <span>Updating...</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Overall Academic Year Stats Card */}
+                                            <div className="row g-2 align-items-center p-2.5 rounded-3 bg-white border border-light-subtle">
+                                                <div className="col-12 col-md-3 border-end-md">
+                                                    <div className="text-muted small fw-semibold text-uppercase" style={{ fontSize: '0.7rem', letterSpacing: '0.05em' }}>
+                                                        Session Attendance Rate
+                                                    </div>
+                                                    <div className="d-flex align-items-baseline gap-2 mt-0.5">
+                                                        <span className="fs-3 fw-bold" style={{ color: (attYearStats.percentage || 0) >= 75 ? '#198754' : '#dc3545' }}>
+                                                            {attYearStats.percentage ?? 0}%
+                                                        </span>
+                                                        <span className="text-muted small">
+                                                            ({attYearStats.present ?? 0} / {attYearStats.total ?? 0} days)
+                                                        </span>
+                                                    </div>
+                                                    <div className="progress mt-1.5" style={{ height: 6, borderRadius: 10 }}>
+                                                        <div
+                                                            className={`progress-bar ${(attYearStats.percentage || 0) >= 75 ? 'bg-success' : 'bg-danger'}`}
+                                                            style={{ width: `${Math.min(attYearStats.percentage || 0, 100)}%`, borderRadius: 10 }}
+                                                        />
                                                     </div>
                                                 </div>
-                                            ))}
-                                        </div>
-                                        {/* % Badge */}
-                                        {attStats.total > 0 && (
-                                            <div className="mb-3">
-                                                <div className="progress" style={{ height: 10, borderRadius: 10 }}>
-                                                    <div className="progress-bar bg-success" style={{ width: `${Math.round(((attStats.present + attStats.late) / attStats.total) * 100)}%`, borderRadius: 10 }} />
+
+                                                <div className="col-12 col-md-9">
+                                                    <div className="row g-2 text-center">
+                                                        <div className="col-3">
+                                                            <div className="p-1.5 rounded-2" style={{ background: '#e6f9f3' }}>
+                                                                <div className="fw-bold fs-6 text-success">{attYearStats.present ?? 0}</div>
+                                                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>Present</div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="col-3">
+                                                            <div className="p-1.5 rounded-2" style={{ background: '#fde8e8' }}>
+                                                                <div className="fw-bold fs-6 text-danger">{attYearStats.absent ?? 0}</div>
+                                                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>Absent</div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="col-3">
+                                                            <div className="p-1.5 rounded-2" style={{ background: '#fef6e4' }}>
+                                                                <div className="fw-bold fs-6" style={{ color: '#e6860a' }}>{attYearStats.late ?? 0}</div>
+                                                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>Late</div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="col-3">
+                                                            <div className="p-1.5 rounded-2" style={{ background: '#e8f0fd' }}>
+                                                                <div className="fw-bold fs-6 text-primary">{attYearStats.leave ?? 0}</div>
+                                                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>Leave</div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                                <div className="small text-muted mt-1 text-end">
-                                                    Attendance: {Math.round(((attStats.present + attStats.late) / attStats.total) * 100)}%
+                                            </div>
+                                        </div>
+
+                                        {/* Filtered View Header / Stats */}
+                                        {attSelectedMonth !== 'all' && (
+                                            <div className="mb-4">
+                                                <h6 className="fw-bold mb-2 small text-muted text-uppercase" style={{ letterSpacing: '0.05em' }}>
+                                                    Monthly Breakdown Stats:
+                                                </h6>
+                                                <div className="row g-2">
+                                                    {[{ l: 'Present', v: attStats.present, c: '#198754' }, { l: 'Absent', v: attStats.absent, c: '#dc3545' }, { l: 'Late', v: attStats.late, c: '#fd7e14' }, { l: 'Leave', v: attStats.leave, c: '#0d6efd' }, { l: 'Total', v: attStats.total, c: '#6c757d' }].map(s => (
+                                                        <div className="col" key={s.l}>
+                                                            <div className="card border-0 shadow-sm text-center py-2" style={{ borderTop: `3px solid ${s.c}` }}>
+                                                                <div style={{ fontSize: '1.4rem', fontWeight: 700, color: s.c }}>{s.v ?? 0}</div>
+                                                                <div style={{ fontSize: '0.75rem', color: '#6c757d' }}>{s.l}</div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
                                                 </div>
                                             </div>
                                         )}
+
                                         {/* Records Table */}
                                         {attRecords.length > 0 ? (
                                             <div className="card border-0 shadow-sm rounded-4">
@@ -1654,7 +1780,7 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                                             <div className="text-center py-5 text-muted">
                                                 <i className="bi bi-calendar-x fs-1 opacity-50"></i>
                                                 <p className="mt-3 mb-0">No attendance data found</p>
-                                                <small>No attendance recorded for the selected month</small>
+                                                <small>No attendance recorded for the selected session / period</small>
                                             </div>
                                         ) : null}
                                     </div>

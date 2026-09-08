@@ -114,21 +114,30 @@ router.get('/sections', async (req, res) => {
 // GET /collection-names - Get existing collection names for class/section
 router.get('/collection-names', async (req, res) => {
     try {
-        const { class_id, section_id } = req.query;
+        const { class_id, section_id, academic_year_id } = req.query;
         if (!class_id || !section_id) {
             return res.status(400).json({ message: 'Class and Section ID required' });
         }
 
-        const result = await pool.query(
-            `
-                SELECT DISTINCT collection_name
-                FROM exam_fee_collections
-                WHERE class_id = $1 AND section_id = $2
-                ORDER BY collection_name ASC
-            `,
-            [class_id, section_id]
-        );
+        let yearId = academic_year_id;
+        if (!yearId) {
+            const activeYearRes = await pool.query("SELECT id FROM academic_years WHERE is_active = TRUE ORDER BY id DESC LIMIT 1");
+            yearId = activeYearRes.rows[0]?.id;
+        }
 
+        let query = `
+            SELECT DISTINCT collection_name
+            FROM exam_fee_collections
+            WHERE class_id = $1 AND section_id = $2
+        `;
+        const params = [class_id, section_id];
+        if (yearId) {
+            query += ` AND (academic_year_id = $3 OR academic_year_id IS NULL)`;
+            params.push(yearId);
+        }
+        query += ` ORDER BY collection_name ASC`;
+
+        const result = await pool.query(query, params);
         res.json(result.rows.map(r => r.collection_name));
     } catch (err) {
         console.error(err.message);
@@ -139,12 +148,19 @@ router.get('/collection-names', async (req, res) => {
 // GET /students - Get students with payment status for specific collection
 router.get('/students', async (req, res) => {
     try {
-        const { class_id, section_id, collection_name } = req.query;
+        const { class_id, section_id, collection_name, academic_year_id } = req.query;
         if (!class_id || !section_id) return res.status(400).send("Class and Section ID required");
 
-        // 1. Get all students in class/section
-        // 2. Left join with exam_fee_collections
-        
+        let yearId = academic_year_id;
+        if (!yearId) {
+            const activeYearRes = await pool.query("SELECT id FROM academic_years WHERE is_active = TRUE ORDER BY id DESC LIMIT 1");
+            yearId = activeYearRes.rows[0]?.id;
+        }
+
+        // Check if student has section_id
+        const checkCols = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name='students' AND column_name='section_id'");
+        const hasSection = checkCols.rows.length > 0;
+
         let query = `
             SELECT 
                 s.student_id, 
@@ -159,39 +175,22 @@ router.get('/students', async (req, res) => {
             LEFT JOIN exam_fee_collections efc 
                 ON efc.student_id = s.student_id 
                 AND efc.class_id = s.class_id 
-                AND efc.section_id = $2 -- Technically redundant with student join but safer
+                AND efc.section_id = $2
                 AND efc.collection_name = $3
+                ${yearId ? `AND (efc.academic_year_id = $4 OR efc.academic_year_id IS NULL)` : ''}
             WHERE s.class_id = $1
-            -- need to filter by section too? 
-            -- 'students' table usually has class_id. Does it have section_id?
-            -- Usually yes, or linked via class_section_assignment/enrollments.
-            -- Let's check students table schema.
-            -- server/database.sql shows: class_id INT. No section_id.
-            -- But create-student-records-table.js might have updated it.
-            -- Assuming students are in a section.
-            -- Wait, if students don't have section_id in table, we need another join.
-            -- Usually 'student_enrollments' or 'student_sections'.
-            -- server/create-students-table.js handles it.
-            -- Let's Assume students has section_id or we filter by section via join.
         `;
-
-        // Check if student has section_id
-        const checkCols = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name='students' AND column_name='section_id'");
-        const hasSection = checkCols.rows.length > 0;
 
         if (hasSection) {
             query += ` AND s.section_id = $2`;
-        } else {
-             // Fallback: This is risky if schema differs. 
-             // If no section_id on students, user might select Class->Students regardless of section?
-             // But UI asks for user to Select Class -> Show Sections -> Select Section.
-             // Implies students belong to check.
-             // I'll assume section_id exists on students table for now or search for it.
         }
         
         query += ` ORDER BY s.first_name ASC`;
         
-        const result = await pool.query(query, [class_id, section_id, collection_name || '']);
+        const params = [class_id, section_id, collection_name || ''];
+        if (yearId) params.push(yearId);
+
+        const result = await pool.query(query, params);
         res.json(result.rows);
 
     } catch (err) {
@@ -204,23 +203,36 @@ router.get('/students', async (req, res) => {
 router.post('/collect', async (req, res) => {
     const client = await pool.connect();
     try {
-        const { user_id, class_id, section_id, collection_name, students } = req.body;
+        const { user_id, class_id, section_id, collection_name, students, academic_year_id } = req.body;
         // students: [{ student_id, amount, remarks }] (Only the ones to be saved/paid)
 
         if (!collection_name) return res.status(400).json({message: "Collection Name required"});
         if (!students || students.length === 0) return res.json({message: "No students to save"});
 
+        let yearId = academic_year_id;
+        if (!yearId) {
+            const activeYearRes = await client.query("SELECT id, is_active FROM academic_years WHERE is_active = TRUE ORDER BY id DESC LIMIT 1");
+            if (activeYearRes.rows.length === 0) {
+                return res.status(400).json({ message: "No active academic year found" });
+            }
+            yearId = activeYearRes.rows[0].id;
+        } else {
+            const yearCheck = await client.query("SELECT id, is_active FROM academic_years WHERE id = $1", [yearId]);
+            if (yearCheck.rows.length > 0 && !yearCheck.rows[0].is_active) {
+                return res.status(403).json({ message: "This academic session is closed. Exam fee collection is locked." });
+            }
+        }
+
         await client.query('BEGIN');
 
         for (const st of students) {
             // Insert. If exists, do nothing (already frozen).
-            // Using student_id + collection_name unique constraint.
             await client.query(`
                 INSERT INTO exam_fee_collections 
-                (collection_name, student_id, class_id, section_id, amount, remarks, collected_by, collection_date)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE)
+                (collection_name, student_id, class_id, section_id, amount, remarks, collected_by, collection_date, academic_year_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE, $8)
                 ON CONFLICT (collection_name, student_id) DO NOTHING
-            `, [collection_name, st.student_id, class_id, section_id, st.amount, st.remarks, user_id]);
+            `, [collection_name, st.student_id, class_id, section_id, st.amount, st.remarks, user_id, yearId]);
         }
 
         await client.query('COMMIT');

@@ -119,27 +119,36 @@ export default function ExpenseCategoriesPage() {
     };
 
     return (
-        <div className="container-fluid p-4 animate__animated animate__fadeIn">
-            <div className="d-flex justify-content-between align-items-center mb-4">
-                <h2 className="fw-bold" style={{ color: 'var(--primary-dark)' }}>
-                    <i className="bi bi-tags me-2"></i> Expense Categories
+        <div className="container-fluid p-2 p-sm-3 p-md-4 animate__animated animate__fadeIn">
+            {/* Custom Responsive Styles */}
+            <style jsx>{`
+                @media (max-width: 575.98px) {
+                    .categories-table {
+                        min-width: 500px;
+                    }
+                }
+            `}</style>
+
+            <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-3 mb-3 mb-md-4">
+                <h2 className="fw-bold mb-0" style={{ color: 'var(--primary-dark)', fontSize: 'clamp(1.3rem, 3vw, 1.75rem)' }}>
+                    <i className="bi bi-tags me-2" style={{ color: 'var(--accent-orange)' }}></i> Expense Categories
                 </h2>
                 {hasPermission('expenses', 'write') && (
                     <button
-                        className="btn btn-primary-custom shadow-sm"
+                        className="btn btn-primary-custom shadow-sm d-flex align-items-center gap-2"
                         onClick={() => setShowModal(true)}
                     >
-                        <i className="bi bi-plus-lg me-2"></i> Add New Category
+                        <i className="bi bi-plus-lg"></i> Add New Category
                     </button>
                 )}
             </div>
 
             <div className="row">
                 <div className="col-md-12">
-                    <div className="card shadow-md border-0">
+                    <div className="card shadow-md border-0" style={{ borderRadius: 16 }}>
                         <div className="card-body p-0">
                             <div className="table-responsive">
-                                <table className="table table-hover align-middle mb-0">
+                                <table className="table table-hover align-middle mb-0 categories-table">
                                     <thead className="bg-light">
                                         <tr>
                                             <th className="ps-4 py-3 text-secondary">Category Name</th>

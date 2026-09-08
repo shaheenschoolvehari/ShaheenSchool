@@ -37,6 +37,7 @@ export default function ExamCollectionPage() {
     const [sections, setSections] = useState<SectionItem[]>([]);
     const [students, setStudents] = useState<StudentItem[]>([]);
     const [collectionNames, setCollectionNames] = useState<string[]>([]);
+    const [activeYear, setActiveYear] = useState<{ id: number; year_name: string; is_active: boolean } | null>(null);
 
     const [selectedClass, setSelectedClass] = useState('');
     const [selectedSection, setSelectedSection] = useState('');
@@ -99,6 +100,7 @@ export default function ExamCollectionPage() {
 
         try {
             const params = new URLSearchParams({ class_id: classId, section_id: sectionId });
+            if (activeYear?.id) params.append('academic_year_id', activeYear.id.toString());
             const res = await fetch(`${API}/exam-fees/collection-names?${params}`);
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Failed to load collection names');
@@ -106,7 +108,7 @@ export default function ExamCollectionPage() {
         } catch {
             setCollectionNames([]);
         }
-    }, []);
+    }, [activeYear?.id]);
 
     const fetchStudents = useCallback(async (collectionNameOverride?: string) => {
         if (!selectedClass || !selectedSection) return;
@@ -119,6 +121,7 @@ export default function ExamCollectionPage() {
                 section_id: selectedSection,
                 collection_name: activeCollectionName
             });
+            if (activeYear?.id) params.append('academic_year_id', activeYear.id.toString());
             const res = await fetch(`${API}/exam-fees/students?${params}`);
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Failed to load students');
@@ -138,10 +141,13 @@ export default function ExamCollectionPage() {
         } finally {
             setLoadingStudents(false);
         }
-    }, [selectedClass, selectedSection, collectionName]);
+    }, [selectedClass, selectedSection, collectionName, activeYear?.id]);
 
     useEffect(() => {
         loadClasses();
+        fetch(`${API}/academic/active-year`).then(r => r.json()).then(data => {
+            if (data && data.id) setActiveYear(data);
+        }).catch(() => {});
     }, [user?.id]);
 
     useEffect(() => {
@@ -243,10 +249,11 @@ export default function ExamCollectionPage() {
                     section_id: selectedSection,
                     collection_name: collectionName.trim(),
                     students: selectedRows,
+                    academic_year_id: activeYear?.id
                 }),
             });
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Failed to save collection');
+            if (!res.ok) throw new Error(data.error || data.message || 'Failed to save collection');
 
             setMsg({ type: 'success', text: data.message || 'Collection saved successfully.' });
             await loadCollectionNames(selectedClass, selectedSection);
@@ -262,11 +269,14 @@ export default function ExamCollectionPage() {
 
     return (
         <div className="page-wrap" style={{ backgroundColor: 'var(--bg-main)', minHeight: '100vh' }}>
-            <div className="d-flex align-items-center justify-content-between mb-4">
+            <div className="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
                 <div>
-                    <h4 className="mb-1 fw-bold" style={{ color: 'var(--primary-dark)' }}>
-                        <i className="bi bi-cash-coin me-2" style={{ color: 'var(--accent-orange)' }} />
+                    <h4 className="mb-1 fw-bold d-flex align-items-center flex-wrap gap-2" style={{ color: 'var(--primary-dark)' }}>
+                        <i className="bi bi-cash-coin me-1" style={{ color: 'var(--accent-orange)' }} />
                         Exam Collection
+                        <span className="badge rounded-pill bg-light text-dark border ms-2" style={{ fontSize: '0.8rem', fontWeight: 500 }}>
+                            Academic Year: {activeYear?.year_name || '—'}
+                        </span>
                     </h4>
                     <div className="text-muted small">Create and submit exam fee collection for selected students</div>
                 </div>

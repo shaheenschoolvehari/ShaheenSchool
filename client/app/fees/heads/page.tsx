@@ -8,6 +8,7 @@ interface FeeHead {
     head_name: string;
     head_type: 'regular' | 'extra' | 'prev_balance';
     frequency: 'monthly' | 'yearly' | 'once';
+    track_arrears?: boolean;
     description: string;
     is_active: boolean;
 }
@@ -16,6 +17,7 @@ const emptyHead: Omit<FeeHead, 'head_id'> = {
     head_name: '',
     head_type: 'regular',
     frequency: 'monthly',
+    track_arrears: true,
     description: '',
     is_active: true
 };
@@ -42,7 +44,7 @@ export default function FeeHeadsPage() {
     };
 
     const openAdd = () => { setCurrent({ ...emptyHead }); setEditMode(false); setEditId(null); setError(''); setShowModal(true); };
-    const openEdit = (h: FeeHead) => { setCurrent({ ...h }); setEditMode(true); setEditId(h.head_id); setError(''); setShowModal(true); };
+    const openEdit = (h: FeeHead) => { setCurrent({ ...h, track_arrears: h.track_arrears !== undefined ? h.track_arrears : true }); setEditMode(true); setEditId(h.head_id); setError(''); setShowModal(true); };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault(); setError('');
@@ -74,6 +76,16 @@ export default function FeeHeadsPage() {
         return <span className="badge rounded-pill bg-warning text-dark">Extra / Ad-hoc</span>;
     };
 
+    const arrearsBadge = (head: FeeHead) => {
+        if (head.head_type === 'prev_balance' || head.head_name.toLowerCase().includes('tuition')) {
+            return <span className="badge bg-light text-secondary border"><i className="bi bi-clock-history me-1" />Rolls into Prev Bal</span>;
+        }
+        if (head.track_arrears) {
+            return <span className="badge bg-success-subtle text-success border border-success-subtle"><i className="bi bi-layers me-1" />Separate Arrears</span>;
+        }
+        return <span className="badge bg-light text-muted border">Rolls into Prev Bal</span>;
+    };
+
     const freqBadge = (f: string) => {
         const map: any = { monthly: 'bg-info text-dark', yearly: 'bg-secondary', once: 'bg-light text-dark border' };
         return <span className={`badge rounded-pill ${map[f] || 'bg-light'}`}>{f.charAt(0).toUpperCase() + f.slice(1)}</span>;
@@ -87,7 +99,7 @@ export default function FeeHeadsPage() {
                     <h2 className="fw-bold mb-1" style={{ color: 'var(--primary-dark)' }}>
                         <i className="bi bi-tags me-2"></i>Fee Heads
                     </h2>
-                    <p className="text-muted small mb-0">Manage all charge types Tuition, Transport, Exam Fee, etc.</p>
+                    <p className="text-muted small mb-0">Manage all charge types Tuition, Transport, Exam Fee, Annual Fee, etc.</p>
                 </div>
                 {hasPermission('fees', 'write') && (
                     <button className="btn btn-primary-custom shadow-sm d-flex align-items-center gap-2" onClick={openAdd}>
@@ -102,7 +114,7 @@ export default function FeeHeadsPage() {
                     { label: 'Total Heads', value: heads.length, color: 'var(--primary-dark)', icon: 'bi-collection' },
                     { label: 'Regular Heads', value: regular.length, color: 'var(--primary-teal)', icon: 'bi-arrow-repeat' },
                     { label: 'Extra / Ad-hoc', value: extra.length, color: 'var(--accent-orange)', icon: 'bi-plus-circle' },
-                    { label: 'Opening Balance/PB', value: opb.length, color: '#6f42c1', icon: 'bi-clock-history' },
+                    { label: 'Previous Balance Head', value: opb.length, color: '#6f42c1', icon: 'bi-clock-history' },
                     { label: 'Active Heads', value: heads.filter(h => h.is_active).length, color: '#198754', icon: 'bi-check-circle' },
                 ].map((s, i) => (
                     <div className="col-md-3" key={i}>
@@ -140,6 +152,7 @@ export default function FeeHeadsPage() {
                                         <tr>
                                             <th className="ps-4 py-3 text-secondary">Head Name</th>
                                             <th className="py-3 text-secondary">Frequency</th>
+                                            <th className="py-3 text-secondary">Arrears Tracking</th>
                                             <th className="py-3 text-secondary">Description</th>
                                             <th className="py-3 text-secondary">Status</th>
                                             <th className="pe-4 py-3 text-end text-secondary">Actions</th>
@@ -147,13 +160,14 @@ export default function FeeHeadsPage() {
                                     </thead>
                                     <tbody>
                                         {loading ? (
-                                            <tr><td colSpan={5} className="text-center py-4"><div className="spinner-border spinner-border-sm text-primary"></div></td></tr>
+                                            <tr><td colSpan={6} className="text-center py-4"><div className="spinner-border spinner-border-sm text-primary"></div></td></tr>
                                         ) : list.length === 0 ? (
-                                            <tr><td colSpan={5} className="text-center py-4 text-muted">No heads found</td></tr>
+                                            <tr><td colSpan={6} className="text-center py-4 text-muted">No heads found</td></tr>
                                         ) : list.map(head => (
                                             <tr key={head.head_id}>
                                                 <td className="ps-4 fw-bold text-dark">{head.head_name}</td>
                                                 <td>{freqBadge(head.frequency)}</td>
+                                                <td>{arrearsBadge(head)}</td>
                                                 <td className="text-muted small">{head.description || '—'}</td>
                                                 <td>
                                                     <span className={`badge rounded-pill ${head.is_active ? 'bg-success' : 'bg-secondary'}`}>
@@ -191,10 +205,10 @@ export default function FeeHeadsPage() {
                     <div className="card-body p-0">
                         <div className="alert border-0 m-3 mb-0 rounded-3 py-2 px-3" style={{ background: 'rgba(111,66,193,0.06)', fontSize: '0.83rem' }}>
                             <i className="bi bi-info-circle me-1" style={{ color: '#6f42c1' }} />
-                            This head shows as <strong>"Previous Balance"</strong> on vouchers. It combines:
-                            (1) Opening Balance (OPB) set on the family, and
-                            (2) All unpaid/partial previous months\u2019 fees except admission fee.
-                            Add it to any Fee Plan; the actual amount per family is calculated automatically at slip generation.
+                            This head shows as <strong>"Previous Balance"</strong> on vouchers. It dynamically combines:
+                            (1) Family Opening Balance (OPB), and
+                            (2) Unpaid pure tuition fees from previous months.
+                            Special heads (like Annual Fee, Paper Fund) carry forward independently under their exact head names.
                         </div>
                         <div className="table-responsive">
                             <table className="table table-hover align-middle mb-0">
@@ -276,6 +290,23 @@ export default function FeeHeadsPage() {
                                                 <option value="once">One-time</option>
                                             </select>
                                         </div>
+                                        {(current as any).head_type !== 'prev_balance' && !(current as any).head_name.toLowerCase().includes('tuition') && (
+                                            <div className="col-12">
+                                                <div className="card p-3 bg-light border-0">
+                                                    <div className="form-check form-switch mb-0">
+                                                        <input type="checkbox" className="form-check-input" id="trackArrears"
+                                                            checked={(current as any).track_arrears !== false}
+                                                            onChange={e => setCurrent(p => ({ ...p, track_arrears: e.target.checked }))} />
+                                                        <label className="form-check-label fw-bold small text-dark" htmlFor="trackArrears">
+                                                            Track As Separate Cumulative Arrears
+                                                        </label>
+                                                        <div className="text-muted" style={{ fontSize: '0.78rem' }}>
+                                                            When enabled, unpaid balance of this head auto-carries forward on subsequent months under its own head name instead of collapsing into Previous Balance.
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
                                         <div className="col-12">
                                             <label className="form-label fw-bold small text-muted">Description</label>
                                             <textarea className="form-control" rows={2} value={(current as any).description}

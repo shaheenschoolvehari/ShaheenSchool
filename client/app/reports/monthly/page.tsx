@@ -22,11 +22,22 @@ interface AvailableMonth {
     months: number[];
 }
 
+interface AcademicYear {
+    id: number;
+    year_name: string;
+    is_active: boolean;
+    status: string;
+    start_date?: string;
+    end_date?: string;
+}
+
 export default function MonthlyReportPage() {
     const { hasPermission } = useAuth();
 
     // Filters
     const now = new Date();
+    const [years, setYears] = useState<AcademicYear[]>([]);
+    const [academicYearId, setAcademicYearId] = useState<string>('');
     const [month, setMonth] = useState<string>('');
     const [year, setYear] = useState<string>(now.getFullYear().toString());
     const [classId, setClassId] = useState<string>('');
@@ -42,17 +53,29 @@ export default function MonthlyReportPage() {
     const [reportData, setReportData] = useState<{ summary: any; families: any[] } | null>(null);
     const [loading, setLoading] = useState<boolean>(true);
     const [schoolInfo, setSchoolInfo] = useState<{ name: string; address: string; phone: string; logo: string }>({
-        name: 'Shaheen Public School', address: '', phone: '', logo: ''
+        name: 'Falcon School System', address: '', phone: '', logo: ''
     });
 
     useEffect(() => {
+        // Fetch academic years
+        fetch(`${API}/academic/years`)
+            .then(r => r.json())
+            .then((data: AcademicYear[]) => {
+                if (Array.isArray(data) && data.length > 0) {
+                    setYears(data);
+                    const active = data.find(y => y.is_active || y.status === 'active') || data[0];
+                    if (active) setAcademicYearId(String(active.id));
+                }
+            })
+            .catch(console.error);
+
         // Fetch classes
         fetch(`${API}/academic`).then(r => r.json()).then(setClasses).catch(() => { });
         // Fetch school info
         fetch(`${API}/settings`).then(r => r.json()).then((data: any) => {
             if (data && typeof data === 'object') {
                 setSchoolInfo({
-                    name: data.school_name || 'Shaheen Public School',
+                    name: data.school_name || 'Falcon School System',
                     address: data.address || '',
                     phone: data.contact_number || '',
                     logo: data.logo_url ? `${API}${data.logo_url}` : ''
@@ -62,8 +85,13 @@ export default function MonthlyReportPage() {
     }, []);
 
     useEffect(() => {
+        if (!academicYearId) return;
         setLoadingMonths(true);
-        fetch(`${API}/fee-slips/available-months?year=${year}`)
+        const selYear = years.find(y => String(y.id) === academicYearId);
+        const yParam = selYear?.start_date ? new Date(selYear.start_date).getFullYear().toString() : year;
+        if (yParam) setYear(yParam);
+
+        fetch(`${API}/fee-slips/available-months?academic_year_id=${academicYearId}`)
             .then(r => r.json())
             .then(data => {
                 if (data.months) {
@@ -87,7 +115,7 @@ export default function MonthlyReportPage() {
                 setMonth('');
             })
             .finally(() => setLoadingMonths(false));
-    }, [year]);
+    }, [academicYearId, years]);
 
     useEffect(() => {
         if (classId) {
@@ -112,6 +140,7 @@ export default function MonthlyReportPage() {
                 month: month,
                 year: year
             });
+            if (academicYearId) params.append('academic_year_id', academicYearId);
             if (classId) params.append('class_id', classId);
             if (sectionId) params.append('section_id', sectionId);
 
@@ -346,11 +375,15 @@ export default function MonthlyReportPage() {
                         Monthly Tuition &amp; Expense Financial Report
                     </h2>
                     <p className="text-white-50 mb-0 small" style={{ fontSize: 'clamp(11px, 1.8vw, 13px)' }}>
-                        Comprehensive Cash Flow, Operating Surplus &amp; Family Fee Analysis for <strong>{monthName} {year}</strong>
+                        Comprehensive Cash Flow, Operating Surplus &amp; Family Fee Analysis for <strong>{monthName} {years.find(y => String(y.id) === academicYearId)?.year_name || year}</strong>
                     </p>
                 </div>
 
-                <div className="d-flex flex-wrap gap-2 justify-content-start justify-content-md-end" style={{ position: 'relative', zIndex: 2 }}>
+                <div className="d-flex flex-wrap gap-2 justify-content-start justify-content-md-end align-items-center" style={{ position: 'relative', zIndex: 2 }}>
+                    <span className="badge rounded-pill bg-light text-dark border px-3 py-2 shadow-sm d-inline-flex align-items-center gap-1.5" style={{ fontSize: '13px', fontWeight: 600 }}>
+                        <i className="bi bi-mortarboard-fill text-primary"></i>
+                        Academic Year: {years.find(y => String(y.id) === academicYearId)?.year_name || years.find(y => y.is_active)?.year_name || '—'}
+                    </span>
                     <button className="btn btn-sm text-white border-0 d-flex align-items-center gap-1 shadow-sm px-3 py-2 flex-grow-1 flex-md-grow-0 justify-content-center"
                         onClick={doExportPDF} title="Export PDF Report"
                         style={{ background: 'rgba(255,255,255,0.12)', backdropFilter: 'blur(10px)', borderRadius: 10, transition: 'all 0.2s' }}
@@ -382,6 +415,22 @@ export default function MonthlyReportPage() {
             <div className="card shadow-sm border-0 rounded-4 mb-4" style={{ background: '#ffffff', border: '1px solid #f1f5f9' }}>
                 <div className="card-body p-3">
                     <div className="row g-2 g-md-3 align-items-center">
+                        <div className="col-12 col-sm-6 col-md-3">
+                            <label className="form-label small text-muted text-uppercase fw-bold mb-1" style={{ fontSize: 10, letterSpacing: '0.05em' }}>
+                                <i className="bi bi-mortarboard-fill me-1 text-primary"></i>Academic Year
+                            </label>
+                            <select
+                                className="form-select form-select-sm fw-bold border-0 bg-light rounded-3"
+                                value={academicYearId}
+                                onChange={e => setAcademicYearId(e.target.value)}
+                            >
+                                {years.map(y => (
+                                    <option key={y.id} value={y.id}>
+                                        {y.year_name} {y.is_active || y.status === 'active' ? '(Active)' : ''}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
                         <div className="col-6 col-sm-4 col-md-2">
                             <label className="form-label small text-muted text-uppercase fw-bold mb-1" style={{ fontSize: 10, letterSpacing: '0.05em' }}>
                                 <i className="bi bi-calendar3 me-1 text-primary"></i>Month
@@ -399,15 +448,7 @@ export default function MonthlyReportPage() {
                                 )}
                             </select>
                         </div>
-                        <div className="col-6 col-sm-4 col-md-2">
-                            <label className="form-label small text-muted text-uppercase fw-bold mb-1" style={{ fontSize: 10, letterSpacing: '0.05em' }}>
-                                <i className="bi bi-calendar-event me-1 text-primary"></i>Year
-                            </label>
-                            <select className="form-select form-select-sm fw-bold border-0 bg-light rounded-3" value={year} onChange={e => setYear(e.target.value)}>
-                                {[2024, 2025, 2026, 2027, 2028].map(y => <option key={y} value={y}>{y}</option>)}
-                            </select>
-                        </div>
-                        <div className="col-12 col-sm-4 col-md-3">
+                        <div className="col-12 col-sm-4 col-md-2">
                             <label className="form-label small text-muted text-uppercase fw-bold mb-1" style={{ fontSize: 10, letterSpacing: '0.05em' }}>
                                 <i className="bi bi-building me-1 text-primary"></i>Class Filter
                             </label>
@@ -656,7 +697,7 @@ export default function MonthlyReportPage() {
                                             </td>
                                             <td className="text-center pe-3">
                                                 <span className={`badge rounded-pill px-2.5 py-1 ${f.payment_status === 'paid' ? 'bg-success bg-opacity-15 text-success border border-success' :
-                                                        f.payment_status === 'partial' ? 'bg-warning bg-opacity-15 text-warning-emphasis border border-warning' : 'bg-danger bg-opacity-15 text-danger border border-danger'
+                                                    f.payment_status === 'partial' ? 'bg-warning bg-opacity-15 text-warning-emphasis border border-warning' : 'bg-danger bg-opacity-15 text-danger border border-danger'
                                                     }`} style={{ fontSize: 9.5, fontWeight: 700 }}>
                                                     {f.payment_status === 'paid' ? 'FULLY PAID' :
                                                         f.payment_status === 'partial' ? 'PARTIAL' : 'UNPAID DUES'}
@@ -672,7 +713,7 @@ export default function MonthlyReportPage() {
 
                 <div className="card-footer bg-light p-3 text-center border-top">
                     <span className="text-muted small fw-semibold">
-                        Shaheen Public School • Monthly Financial Audit Report • {monthName} {year}
+                        Falcon School System • Monthly Financial Audit Report • {monthName} {year}
                     </span>
                 </div>
             </div>
