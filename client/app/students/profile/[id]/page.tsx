@@ -96,6 +96,36 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
         style: 'currency', currency: 'PKR', minimumFractionDigits: 0
     }).format(parseFloat(n?.toString() || '0'));
 
+    const fetchStudent = async () => {
+        try {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/students/${params.id}`);
+            if (res.ok) {
+                const data = await res.json();
+                setStudent(data.rows ? data.rows[0] : (Array.isArray(data) ? data[0] : data));
+            }
+        } catch (err) {
+            console.error(err);
+            notify.error("Failed to load profile");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const fetchSiblings = async () => {
+        setLoadingSiblings(true);
+        try {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/students/${params.id}/siblings`);
+            if (res.ok) {
+                const data = await res.json();
+                setSiblings(data);
+            }
+        } catch (err) {
+            console.error('Error fetching siblings:', err);
+        } finally {
+            setLoadingSiblings(false);
+        }
+    };
+
     useEffect(() => {
         // Reset states to prevent displaying stale data from the previous student
         setStudent(null);
@@ -108,36 +138,6 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
         setAdmissionPayments([]);
         setAttRecords([]);
         setAttStats({ present: 0, absent: 0, late: 0, leave: 0, total: 0 });
-
-        const fetchStudent = async () => {
-            try {
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/students/${params.id}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    setStudent(data.rows ? data.rows[0] : (Array.isArray(data) ? data[0] : data));
-                }
-            } catch (err) {
-                console.error(err);
-                notify.error("Failed to load profile");
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        const fetchSiblings = async () => {
-            setLoadingSiblings(true);
-            try {
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/students/${params.id}/siblings`);
-                if (res.ok) {
-                    const data = await res.json();
-                    setSiblings(data);
-                }
-            } catch (err) {
-                console.error('Error fetching siblings:', err);
-            } finally {
-                setLoadingSiblings(false);
-            }
-        };
 
         fetchStudent();
         fetchSiblings();
@@ -196,19 +196,28 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
     };
 
     const handleToggleStatus = async () => {
-        if (!confirm(`Are you sure you want to change status to ${student.status === 'Active' ? 'Inactive' : 'Active'}?`)) return;
+        const isDeactivating = student.status === 'Active';
+        const confirmMsg = isDeactivating
+            ? `Are you sure you want to DEACTIVATE ${student.first_name || 'this student'}?\n\n• Status will change to Inactive.\n• If this student is the Family Lead, leadership will automatically pass to the next senior active sibling in the highest class.\n• They will not be billed in future fee generation and will be excluded from attendance.`
+            : `Are you sure you want to RE-ACTIVATE ${student.first_name || 'this student'}?\n\n• Status will change to Active.\n• If they are the senior-most in the family, they will automatically regain Family Lead.\n• Fee slip generation and attendance tracking will resume.`;
+
+        if (!confirm(confirmMsg)) return;
         try {
-            const newStatus = student.status === 'Active' ? 'Inactive' : 'Active';
+            const newStatus = isDeactivating ? 'Inactive' : 'Active';
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/students/${params.id}/status`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status: newStatus })
             });
             if (res.ok) {
-                setStudent({ ...student, status: newStatus });
-                notify.success(`Status updated to ${newStatus}`);
+                setStudent((prev: any) => ({ ...prev, status: newStatus }));
+                notify.success(`Student marked as ${newStatus} successfully`);
+                fetchStudent();
+                fetchSiblings();
+                fetchFamilySlips();
             } else {
-                notify.error('Failed to update status');
+                const data = await res.json().catch(() => ({}));
+                notify.error(data.error || 'Failed to update status');
             }
         } catch (e) {
             console.error(e);
@@ -401,6 +410,17 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                                     <i className="bi bi-upc-scan me-1 text-primary"></i>
                                     {student.admission_no}
                                 </span>
+                                <span
+                                    className={`badge px-3 py-1.5 rounded-pill fw-bold shadow-sm ${
+                                        (student.status || 'Active') === 'Active'
+                                            ? 'bg-success text-white'
+                                            : 'bg-danger text-white'
+                                    }`}
+                                    style={{ fontSize: '0.82rem', letterSpacing: '0.3px' }}
+                                >
+                                    <i className={`bi bi-${(student.status || 'Active') === 'Active' ? 'check-circle-fill' : 'slash-circle-fill'} me-1.5`}></i>
+                                    {student.status || 'Active'}
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -507,6 +527,29 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                                                 >
                                                     <i className="bi bi-pencil-square fs-6"></i>
                                                     <span>Edit Student Profile</span>
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {hasPermission('students', 'write') && (
+                                            <div className="mt-2">
+                                                <button
+                                                    onClick={handleToggleStatus}
+                                                    className={`btn w-100 py-2.5 rounded-3 fw-bold shadow-sm d-flex align-items-center justify-content-center gap-2 ${
+                                                        student.status === 'Active'
+                                                            ? 'btn-outline-danger'
+                                                            : 'btn-outline-success'
+                                                    }`}
+                                                    style={{
+                                                        fontSize: '0.85rem',
+                                                        letterSpacing: '0.3px',
+                                                        borderWidth: '1.5px',
+                                                        transition: 'all 0.2s ease',
+                                                        cursor: 'pointer'
+                                                    }}
+                                                >
+                                                    <i className={`bi bi-${student.status === 'Active' ? 'person-x-fill' : 'person-check-fill'} fs-6`}></i>
+                                                    <span>{student.status === 'Active' ? 'Deactivate Student' : 'Activate Student'}</span>
                                                 </button>
                                             </div>
                                         )}
@@ -1105,6 +1148,11 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                                                                                     <i className={`bi ${sibling.relation_type === 'blood' ? 'bi-people-fill' : sibling.relation_type === 'cousin' ? 'bi-diagram-3-fill' : 'bi-person-lines-fill'} me-1`}></i>
                                                                                     {sibling.relation_type === 'blood' ? 'Blood Sibling' : sibling.relation_type === 'cousin' ? 'Cousin' : 'Family Member'}
                                                                                 </span>
+                                                                                {sibling.status && sibling.status.toLowerCase() !== 'active' && (
+                                                                                    <span className="badge bg-danger ms-2">
+                                                                                        <i className="bi bi-person-x-fill me-1"></i>Inactive
+                                                                                    </span>
+                                                                                )}
                                                                             </div>
                                                                             <div className="card-body p-3">
                                                                                 <div className="d-flex align-items-center mb-2">

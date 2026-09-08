@@ -408,10 +408,16 @@ router.post('/generate', async (req, res) => {
                  ORDER BY c.class_id DESC NULLS LAST, s.first_name LIMIT 1`,
                 [fid]
             );
-            const primary = famPrimaryRes.rows.length > 0 ? famPrimaryRes.rows[0] : members[0];
+            if (famPrimaryRes.rows.length === 0) {
+                // No active students remain in this family - skip generating slip
+                skippedCount++;
+                continue;
+            }
+            const primary = famPrimaryRes.rows[0];
             
             // Check if all active family members are in Trusted category
-            const isFamTrusted = members.length > 0 && members.every(m => (m.category || '').trim().toLowerCase() === 'trusted');
+            const activeMembers = members.filter(m => (m.status || '').trim().toLowerCase() === 'active');
+            const isFamTrusted = activeMembers.length > 0 && activeMembers.every(m => (m.category || '').trim().toLowerCase() === 'trusted');
 
             const familyFee = parseFloat(primary.family_fee) || 0;
             const familySize = parseInt(primary.total_family_size) || 1;

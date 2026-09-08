@@ -178,6 +178,7 @@ router.get('/:id/siblings', async (req, res) => {
                 s.mother_name,
                 s.gender,
                 s.dob,
+                s.status,
                 s.family_id,
                 s.sibling_relation,
                 s.class_id,
@@ -713,7 +714,7 @@ router.get('/families-directory', async (req, res) => {
             LEFT JOIN sections sec ON s.section_id = sec.section_id
             LEFT JOIN families f ON s.family_id = f.family_id
             WHERE s.family_id IS NOT NULL AND TRIM(s.family_id) != ''
-            ORDER BY s.family_id, c.class_id DESC NULLS LAST, s.first_name
+            ORDER BY s.family_id, (CASE WHEN LOWER(COALESCE(s.status, 'Active')) = 'active' THEN 0 ELSE 1 END) ASC, c.class_id DESC NULLS LAST, s.first_name
         `);
 
         const familiesMap = {};
@@ -916,6 +917,8 @@ router.get('/families-directory', async (req, res) => {
                 combined_father_names: combinedFatherNames,
                 combined_phones: combinedPhones,
                 total_children: members.length,
+                active_children: members.filter(m => (m.status || '').toLowerCase() === 'active').length,
+                lead_student: members.find(m => (m.status || '').toLowerCase() === 'active') || members[0] || null,
                 children_names: childrenNames,
                 classes_list: classesList,
                 sections_list: sectionsList,
