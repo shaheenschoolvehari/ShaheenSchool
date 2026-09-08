@@ -810,6 +810,21 @@ export default function CollectFeePage() {
         });
         // After collecting all slips, find the latest unpaid/partial per group
         map.forEach(g => {
+            // For family groups, ensure primary student info reflects the ACTIVE family lead
+            if (g.is_family_slip && g.family_members && g.family_members.length > 0) {
+                const activeMembers = g.family_members.filter((m: any) => (m.status || 'Active').toLowerCase() === 'active');
+                const activeLead = activeMembers.length > 0 ? activeMembers[0] : null;
+                if (activeLead) {
+                    g.first_name = activeLead.first_name;
+                    g.last_name = activeLead.last_name;
+                    g.admission_no = activeLead.admission_no;
+                    g.class_name = activeLead.class_name;
+                    g.student_id = activeLead.student_id;
+                    if (activeLead.section_name) g.section_name = activeLead.section_name;
+                    if (activeLead.father_name) g.father_name = activeLead.father_name;
+                }
+            }
+
             const isTrustedGroup = Boolean(
                 (g.family_members && g.family_members.length > 0 && g.family_members.every((m: any) => (m.category || '').toLowerCase() === 'trusted')) ||
                 ((g.latest_slip?.category || '').toLowerCase() === 'trusted') ||
@@ -1092,11 +1107,21 @@ export default function CollectFeePage() {
                                                                 )}
                                                                 {isFam && members.length > 0 && (
                                                                     <div className="d-flex flex-wrap gap-1 mt-1">
-                                                                        {members.map((m, mi) => (
-                                                                            <span key={mi} style={{ fontSize: '0.7rem', backgroundColor: '#f0f9f9', color: 'var(--primary-teal)', border: '1px solid #c5e8e8', borderRadius: 4, padding: '1px 5px' }}>
-                                                                                {m.first_name} {m.last_name}
-                                                                            </span>
-                                                                        ))}
+                                                                        {members.map((m, mi) => {
+                                                                            const isMInactive = (m.status || 'Active').toLowerCase() !== 'active';
+                                                                            return (
+                                                                                <span key={mi} style={{
+                                                                                    fontSize: '0.7rem',
+                                                                                    backgroundColor: isMInactive ? '#f8d7da' : '#f0f9f9',
+                                                                                    color: isMInactive ? '#842029' : 'var(--primary-teal)',
+                                                                                    border: `1px solid ${isMInactive ? '#f5c2c7' : '#c5e8e8'}`,
+                                                                                    borderRadius: 4,
+                                                                                    padding: '1px 5px'
+                                                                                }}>
+                                                                                    {m.first_name} {m.last_name}{isMInactive ? ' (Inactive)' : ''}
+                                                                                </span>
+                                                                            );
+                                                                        })}
                                                                     </div>
                                                                 )}
                                                             </div>

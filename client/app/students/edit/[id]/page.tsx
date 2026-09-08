@@ -121,13 +121,18 @@ export default function EditStudent({ params }: { params: { id: string } }) {
                         if (fRes.ok) {
                             const fData = await fRes.json();
                             const memberCount = fData.members ? fData.members.length : 1;
-                            if (memberCount > 1) {
+                            const parsedFamFee = parseFloat(fData.family_fee) || 0;
+                            if (memberCount > 1 || parsedFamFee > 0) {
                                 setFamilyInfo({
                                     family_id: data.family_id,
-                                    family_fee: parseFloat(fData.family_fee) || 0,
+                                    family_fee: parsedFamFee,
                                     family_size: memberCount
                                 });
-                                setForm(f => ({ ...f, family_fee: String(parseFloat(fData.family_fee) || 0) }));
+                                setForm(f => ({
+                                    ...f,
+                                    family_fee: String(parsedFamFee),
+                                    monthly_fee: parseFloat(f.monthly_fee) > 0 ? f.monthly_fee : String(parsedFamFee)
+                                }));
                             }
                         }
                     } catch (fe) { console.error('Family info fetch error:', fe); }

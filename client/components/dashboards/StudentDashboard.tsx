@@ -546,7 +546,7 @@ export default function StudentDashboard({ user }: { user: any }) {
                                         {(student.family_size || 1) > 1 ? (
                                             <>
                                                 <div className="small text-muted text-uppercase">Family Monthly Fee</div>
-                                                <h3 className="fw-bold text-dark my-1">{fmt(student.family_fee || 0)}</h3>
+                                                <h3 className="fw-bold text-dark my-1">{fmt(student.family_fee || student.monthly_fee || 0)}</h3>
                                                 <div className="badge bg-warning bg-opacity-10 text-warning mt-2 border border-warning">
                                                     <i className="bi bi-people-fill me-1"></i>{student.family_size} members
                                                 </div>
@@ -554,8 +554,12 @@ export default function StudentDashboard({ user }: { user: any }) {
                                         ) : (
                                             <>
                                                 <div className="small text-muted text-uppercase">Monthly Fee</div>
-                                                <h3 className="fw-bold text-dark my-1">{fmt(student.monthly_fee || 0)}</h3>
-                                                <div className="badge bg-success bg-opacity-10 text-success mt-2">Individual</div>
+                                                <h3 className="fw-bold text-dark my-1">
+                                                    {fmt(Number(student.monthly_fee || 0) > 0 ? student.monthly_fee : (student.family_fee || 0))}
+                                                </h3>
+                                                <div className="badge bg-success bg-opacity-10 text-success mt-2">
+                                                    {student.family_id && Number(student.family_fee || 0) > 0 ? 'Solo Active Member' : 'Individual'}
+                                                </div>
                                             </>
                                         )}
                                     </div>
@@ -1210,7 +1214,9 @@ export default function StudentDashboard({ user }: { user: any }) {
                                                     </div>
                                                     <div className="card-body py-4 px-3 d-flex flex-column justify-content-center align-items-center">
                                                         <div className="fw-bold text-break" style={{ fontSize: 'calc(1.3rem + 0.6vw)', color: 'var(--primary-teal)', lineHeight: 1.2 }}>
-                                                            {(student.family_size || 1) > 1 ? fmt(student.family_fee || 0) : fmt(student?.monthly_fee || 0)}
+                                                            {(student.family_size || 1) > 1 
+                                                                ? fmt(student.family_fee || student.monthly_fee || 0) 
+                                                                : fmt(Number(student?.monthly_fee || 0) > 0 ? student.monthly_fee : (student?.family_fee || 0))}
                                                         </div>
                                                         {(student.family_size || 1) > 1 ? (
                                                             <>
@@ -1221,7 +1227,9 @@ export default function StudentDashboard({ user }: { user: any }) {
                                                             </>
                                                         ) : (
                                                             <>
-                                                                <div className="text-muted small mt-1">Billed every month</div>
+                                                                <div className="text-muted small mt-1">
+                                                                    {student.family_id && Number(student.family_fee || 0) > 0 ? 'Solo active member of family' : 'Billed every month'}
+                                                                </div>
                                                                 <div className="badge bg-success bg-opacity-10 text-success border border-success mt-3 text-wrap px-3 py-2" style={{ maxWidth: '100%', lineHeight: 1.4 }}>
                                                                     Auto-applied on slip generation
                                                                 </div>

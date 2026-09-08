@@ -97,7 +97,7 @@ router.get('/search-siblings', async (req, res) => {
                 s.gender,
                 s.dob,
                 s.family_id,
-                s.monthly_fee,
+                COALESCE(NULLIF(s.monthly_fee, 0), f.family_fee, 0) AS monthly_fee,
                 s.class_id,
                 s.image_url,
                 s.current_address,
@@ -1004,13 +1004,28 @@ router.put('/families/:family_id/fee', async (req, res) => {
         if (family_fee === undefined || family_fee === null || isNaN(parseFloat(family_fee))) {
             return res.status(400).json({ error: 'family_fee is required and must be a number' });
         }
+        const parsedFee = parseFloat(family_fee);
         // Upsert families record
         const result = await pool.query(`
             INSERT INTO families (family_id, family_fee)
             VALUES ($1, $2)
             ON CONFLICT (family_id) DO UPDATE SET family_fee = EXCLUDED.family_fee
             RETURNING *
-        `, [family_id, parseFloat(family_fee)]);
+        `, [family_id, parsedFee]);
+
+        if (parsedFee > 0) {
+            // Also update any student in this family whose monthly_fee is 0 or if there is only 1 active student
+            await pool.query(`
+                UPDATE students
+                SET monthly_fee = $2
+                WHERE family_id = $1 AND (
+                    monthly_fee IS NULL 
+                    OR monthly_fee <= 0 
+                    OR (SELECT COUNT(*) FROM students s2 WHERE s2.family_id = $1 AND LOWER(COALESCE(s2.status, 'Active')) = 'active') = 1
+                )
+            `, [family_id, parsedFee]);
+        }
+
         res.json(result.rows[0]);
     } catch (err) {
         console.error(err.message);
@@ -1243,13 +1258,23 @@ router.post('/', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'documen
                 father_name, father_phone, father_cnic, father_occupation,
                 mother_name, mother_phone, mother_cnic, mother_occupation,
                 is_orphan === 'true' || is_orphan === true, guardian_name, guardian_relation, guardian_phone, guardian_cnic, guardian_address,
-                monthly_fee || 0, admission_fee || 0, other_charges || 0,
+                (parseFloat(monthly_fee) > 0 ? parseFloat(monthly_fee) : (familyFeeVal > 0 ? familyFeeVal : 0)),
+                admission_fee || 0, other_charges || 0,
                 image_url, JSON.stringify(documents), user_id,
                 family_id, final_sibling_relation
             ]
         );
 
         const new_student_id = newStudent.rows[0].student_id;
+
+        // If family fee is set, ensure all siblings in this family also have positive monthly_fee
+        if (familyFeeVal > 0) {
+            await client.query(`
+                UPDATE students
+                SET monthly_fee = $2
+                WHERE family_id = $1 AND (monthly_fee IS NULL OR monthly_fee <= 0)
+            `, [family_id, familyFeeVal]);
+        }
 
         // Create sibling relationships for all siblings
         if (siblingsArray.length > 0) {
@@ -1724,7 +1749,11 @@ router.get('/:id', async (req, res) => {
         `, [id]);
 
         if (student.rows.length === 0) return res.status(404).json({ error: "Student not found" });
-        res.json(student.rows[0]);
+        const studentData = student.rows[0];
+        if (parseFloat(studentData.monthly_fee || 0) <= 0 && parseFloat(studentData.family_fee || 0) > 0) {
+            studentData.monthly_fee = studentData.family_fee;
+        }
+        res.json(studentData);
     } catch (err) {
         console.error(err.message);
         res.status(500).json({ error: "Server Error" });
@@ -1811,7 +1840,9 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
             guardian_phone && String(guardian_phone).trim() !== '' ? String(guardian_phone).trim() : null,
             guardian_cnic && String(guardian_cnic).trim() !== '' ? String(guardian_cnic).trim() : null,
             guardian_address && String(guardian_address).trim() !== '' ? String(guardian_address).trim() : null,
-            !isNaN(parseFloat(monthly_fee)) ? parseFloat(monthly_fee) : 0,
+            ((!isNaN(parseFloat(monthly_fee)) && parseFloat(monthly_fee) > 0) 
+                ? parseFloat(monthly_fee) 
+                : ((!isNaN(parseFloat(family_fee)) && parseFloat(family_fee) > 0) ? parseFloat(family_fee) : 0)),
             !isNaN(parseFloat(admission_fee)) ? parseFloat(admission_fee) : 0,
             !isNaN(parseFloat(other_charges)) ? parseFloat(other_charges) : 0,
             image_url || null,
@@ -1831,11 +1862,23 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
 
         // Update family fee in families table if provided
         if (family_fee !== undefined && family_fee !== null && family_fee !== '' && !isNaN(parseFloat(family_fee)) && parseFloat(family_fee) > 0 && fam_id_updated) {
+            const parsedFamFee = parseFloat(family_fee);
             await client.query(`
                 INSERT INTO families (family_id, family_fee)
                 VALUES ($1, $2)
                 ON CONFLICT (family_id) DO UPDATE SET family_fee = $2
-            `, [fam_id_updated, parseFloat(family_fee)]);
+            `, [fam_id_updated, parsedFamFee]);
+
+            // Also update any siblings in this family who have monthly_fee <= 0 or if exactly 1 active student remains
+            await client.query(`
+                UPDATE students
+                SET monthly_fee = $2
+                WHERE family_id = $1 AND (
+                    monthly_fee IS NULL 
+                    OR monthly_fee <= 0
+                    OR (SELECT COUNT(*) FROM students s2 WHERE s2.family_id = $1 AND LOWER(COALESCE(s2.status, 'Active')) = 'active') = 1
+                )
+            `, [fam_id_updated, parsedFamFee]);
         }
 
         // Update opening_balance in families table if provided
@@ -1917,7 +1960,7 @@ router.patch('/:id/status', async (req, res) => {
 
         // Update Student
         const studentRes = await client.query(
-            "UPDATE students SET status = $1 WHERE student_id = $2 RETURNING user_id",
+            "UPDATE students SET status = $1 WHERE student_id = $2 RETURNING user_id, family_id, class_id, first_name, last_name",
             [status, id]
         );
 
@@ -1926,12 +1969,103 @@ router.patch('/:id/status', async (req, res) => {
             return res.status(404).json({ error: "Student not found" });
         }
 
-        const user_id = studentRes.rows[0].user_id;
+        const { user_id, family_id, class_id } = studentRes.rows[0];
 
         // Update User if linked
         if (user_id) {
             const isActive = (status === 'Active');
             await client.query("UPDATE app_users SET is_active = $1 WHERE id = $2", [isActive, user_id]);
+        }
+
+        // Auto-shift Family Fee Slips & Arrears to the Active Family Lead
+        if (family_id) {
+            const CLASS_SENIORITY_ORDER = `
+                CASE 
+                    WHEN c.class_name ~ '^[0-9]+' THEN CAST(SUBSTRING(c.class_name FROM '^[0-9]+') AS INTEGER)
+                    WHEN c.class_name ILIKE '%Class 10%' OR c.class_name ILIKE '%10%' THEN 10
+                    WHEN c.class_name ILIKE '%Class 9%' OR c.class_name ILIKE '%9%' THEN 9
+                    WHEN c.class_name ILIKE '%Class 8%' OR c.class_name ILIKE '%8%' THEN 8
+                    WHEN c.class_name ILIKE '%Class 7%' OR c.class_name ILIKE '%7%' THEN 7
+                    WHEN c.class_name ILIKE '%Class 6%' OR c.class_name ILIKE '%6%' THEN 6
+                    WHEN c.class_name ILIKE '%Class 5%' OR c.class_name ILIKE '%5%' THEN 5
+                    WHEN c.class_name ILIKE '%Class 4%' OR c.class_name ILIKE '%4%' THEN 4
+                    WHEN c.class_name ILIKE '%Class 3%' OR c.class_name ILIKE '%3%' THEN 3
+                    WHEN c.class_name ILIKE '%Class 2%' OR c.class_name ILIKE '%2%' THEN 2
+                    WHEN c.class_name ILIKE '%Class 1%' OR c.class_name ILIKE '%1%' THEN 1
+                    WHEN c.class_name ILIKE '%Prep%' OR c.class_name ILIKE '%KG%' THEN 0
+                    WHEN c.class_name ILIKE '%Nursery%' THEN -1
+                    WHEN c.class_name ILIKE '%Reception%' OR c.class_name ILIKE '%Play%' THEN -2
+                    ELSE COALESCE(c.class_id, 0)
+                END DESC, c.class_id DESC, s.first_name ASC
+            `;
+
+            if (status.toLowerCase() !== 'active') {
+                // Student is being DEACTIVATED: find the next senior active sibling
+                const leadRes = await client.query(`
+                    SELECT s.student_id, s.class_id, s.first_name, s.last_name
+                    FROM students s
+                    LEFT JOIN classes c ON s.class_id = c.class_id
+                    WHERE s.family_id = $1 AND LOWER(COALESCE(s.status, 'Active')) = 'active' AND s.student_id != $2
+                    ORDER BY ${CLASS_SENIORITY_ORDER}
+                    LIMIT 1
+                `, [family_id, id]);
+
+                if (leadRes.rows.length > 0) {
+                    const newLead = leadRes.rows[0];
+                    // Shift all unpaid / partial slips from this deactivated student to the new active lead
+                    await client.query(`
+                        UPDATE monthly_fee_slips
+                        SET student_id = $1, class_id = $2, is_family_slip = TRUE
+                        WHERE student_id = $3 AND family_id = $4 AND status IN ('unpaid', 'partial')
+                    `, [newLead.student_id, newLead.class_id, id, family_id]);
+                }
+            } else {
+                // Student is being ACTIVATED: check if this student is now the topmost active senior
+                const topLeadRes = await client.query(`
+                    SELECT s.student_id, s.class_id
+                    FROM students s
+                    LEFT JOIN classes c ON s.class_id = c.class_id
+                    WHERE s.family_id = $1 AND LOWER(COALESCE(s.status, 'Active')) = 'active'
+                    ORDER BY ${CLASS_SENIORITY_ORDER}
+                    LIMIT 1
+                `, [family_id]);
+
+                if (topLeadRes.rows.length > 0 && topLeadRes.rows[0].student_id === parseInt(id, 10)) {
+                    // This newly activated student is the highest-class sibling -> reclaim all unpaid/partial family slips
+                    await client.query(`
+                        UPDATE monthly_fee_slips
+                        SET student_id = $1, class_id = $2, is_family_slip = TRUE
+                        WHERE family_id = $3 AND status IN ('unpaid', 'partial') AND student_id != $1
+                    `, [id, class_id, family_id]);
+                }
+            }
+
+            // ── Auto-sync / inherit Family Fee for remaining active siblings ──
+            // 1. If any sibling in the family has monthly_fee <= 0, sync to family_fee
+            await client.query(`
+                UPDATE students s
+                SET monthly_fee = f.family_fee
+                FROM families f
+                WHERE s.family_id = f.family_id
+                  AND s.family_id = $1
+                  AND (s.monthly_fee IS NULL OR s.monthly_fee <= 0)
+                  AND f.family_fee > 0
+            `, [family_id]);
+
+            // 2. If exactly 1 active student remains in the family, ensure their monthly_fee equals the family_fee
+            await client.query(`
+                UPDATE students s
+                SET monthly_fee = f.family_fee
+                FROM families f
+                WHERE s.family_id = f.family_id
+                  AND s.family_id = $1
+                  AND LOWER(COALESCE(s.status, 'Active')) = 'active'
+                  AND f.family_fee > 0
+                  AND (
+                      SELECT COUNT(*) FROM students sub 
+                      WHERE sub.family_id = $1 AND LOWER(COALESCE(sub.status, 'Active')) = 'active'
+                  ) = 1
+            `, [family_id]);
         }
 
         await client.query('COMMIT');

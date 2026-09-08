@@ -180,7 +180,7 @@ router.post('/generate', async (req, res) => {
         // Get all active students in this class WITH their family_fee and total family size (across ALL classes)
         const studentsResult = await client.query(
             `SELECT s.student_id, s.family_id, s.first_name, s.last_name,
-                    s.admission_no, s.monthly_fee AS personal_monthly_fee,
+                    s.admission_no, COALESCE(NULLIF(s.monthly_fee, 0), f.family_fee, 0) AS personal_monthly_fee,
                     s.category,
                     COALESCE(f.family_fee, 0) AS family_fee,
                     (SELECT COUNT(*) FROM students s2
@@ -202,7 +202,9 @@ router.post('/generate', async (req, res) => {
         const soloStudents = [];
         for (const student of studentsResult.rows) {
             const familySize = parseInt(student.total_family_size) || 1;
-            if (!student.family_id || familySize <= 1) {
+            const hasFamilyFee = parseFloat(student.family_fee || 0) > 0;
+            // If family has configured family_fee or multiple active members, keep as family slip
+            if (!student.family_id || (familySize <= 1 && !hasFamilyFee)) {
                 soloStudents.push(student);
             } else {
                 if (!familyGroups[student.family_id]) familyGroups[student.family_id] = [];
@@ -405,7 +407,24 @@ router.post('/generate', async (req, res) => {
                  LEFT JOIN families f ON f.family_id = s.family_id
                  LEFT JOIN classes c ON c.class_id = s.class_id
                  WHERE s.family_id = $1 AND s.status = 'Active'
-                 ORDER BY c.class_id DESC NULLS LAST, s.first_name LIMIT 1`,
+                 ORDER BY 
+                     CASE 
+                         WHEN c.class_name ~ '^[0-9]+' THEN CAST(SUBSTRING(c.class_name FROM '^[0-9]+') AS INTEGER)
+                         WHEN c.class_name ILIKE '%Class 10%' OR c.class_name ILIKE '%10%' THEN 10
+                         WHEN c.class_name ILIKE '%Class 9%' OR c.class_name ILIKE '%9%' THEN 9
+                         WHEN c.class_name ILIKE '%Class 8%' OR c.class_name ILIKE '%8%' THEN 8
+                         WHEN c.class_name ILIKE '%Class 7%' OR c.class_name ILIKE '%7%' THEN 7
+                         WHEN c.class_name ILIKE '%Class 6%' OR c.class_name ILIKE '%6%' THEN 6
+                         WHEN c.class_name ILIKE '%Class 5%' OR c.class_name ILIKE '%5%' THEN 5
+                         WHEN c.class_name ILIKE '%Class 4%' OR c.class_name ILIKE '%4%' THEN 4
+                         WHEN c.class_name ILIKE '%Class 3%' OR c.class_name ILIKE '%3%' THEN 3
+                         WHEN c.class_name ILIKE '%Class 2%' OR c.class_name ILIKE '%2%' THEN 2
+                         WHEN c.class_name ILIKE '%Class 1%' OR c.class_name ILIKE '%1%' THEN 1
+                         WHEN c.class_name ILIKE '%Prep%' OR c.class_name ILIKE '%KG%' THEN 0
+                         WHEN c.class_name ILIKE '%Nursery%' THEN -1
+                         WHEN c.class_name ILIKE '%Reception%' OR c.class_name ILIKE '%Play%' THEN -2
+                         ELSE COALESCE(c.class_id, 0)
+                     END DESC, c.class_id DESC, s.first_name ASC LIMIT 1`,
                 [fid]
             );
             if (famPrimaryRes.rows.length === 0) {
@@ -487,7 +506,7 @@ router.post('/generate', async (req, res) => {
             if (existing.rows.length > 0) { skippedCount++; continue; }
 
             const isSoloTrusted = (student.category || '').trim().toLowerCase() === 'trusted';
-            const personalFee = parseFloat(student.personal_monthly_fee) || 0;
+            const personalFee = parseFloat(student.personal_monthly_fee) || parseFloat(student.family_fee) || 0;
             const lineItems = buildLineItems(personalFee, 1, isSoloTrusted);
 
             // ── 1. Add Pure Previous Balance (Tuition Arrears + OPB) ───────────
@@ -604,8 +623,64 @@ router.get('/available-months', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+const syncFamilyLeadSlips = async () => {
+    try {
+        const CLASS_SENIORITY_ORDER = `
+            CASE 
+                WHEN c.class_name ~ '^[0-9]+' THEN CAST(SUBSTRING(c.class_name FROM '^[0-9]+') AS INTEGER)
+                WHEN c.class_name ILIKE '%Class 10%' OR c.class_name ILIKE '%10%' THEN 10
+                WHEN c.class_name ILIKE '%Class 9%' OR c.class_name ILIKE '%9%' THEN 9
+                WHEN c.class_name ILIKE '%Class 8%' OR c.class_name ILIKE '%8%' THEN 8
+                WHEN c.class_name ILIKE '%Class 7%' OR c.class_name ILIKE '%7%' THEN 7
+                WHEN c.class_name ILIKE '%Class 6%' OR c.class_name ILIKE '%6%' THEN 6
+                WHEN c.class_name ILIKE '%Class 5%' OR c.class_name ILIKE '%5%' THEN 5
+                WHEN c.class_name ILIKE '%Class 4%' OR c.class_name ILIKE '%4%' THEN 4
+                WHEN c.class_name ILIKE '%Class 3%' OR c.class_name ILIKE '%3%' THEN 3
+                WHEN c.class_name ILIKE '%Class 2%' OR c.class_name ILIKE '%2%' THEN 2
+                WHEN c.class_name ILIKE '%Class 1%' OR c.class_name ILIKE '%1%' THEN 1
+                WHEN c.class_name ILIKE '%Prep%' OR c.class_name ILIKE '%KG%' THEN 0
+                WHEN c.class_name ILIKE '%Nursery%' THEN -1
+                WHEN c.class_name ILIKE '%Reception%' OR c.class_name ILIKE '%Play%' THEN -2
+                ELSE COALESCE(c.class_id, 0)
+            END DESC, c.class_id DESC, s.first_name ASC
+        `;
+
+        // Find any unpaid or partial family slips assigned to an inactive student
+        const orphanedSlips = await pool.query(`
+            SELECT mfs.slip_id, mfs.family_id, mfs.student_id
+            FROM monthly_fee_slips mfs
+            JOIN students s ON mfs.student_id = s.student_id
+            WHERE mfs.is_family_slip = TRUE 
+              AND mfs.status IN ('unpaid', 'partial')
+              AND LOWER(COALESCE(s.status, 'Active')) != 'active'
+              AND mfs.family_id IS NOT NULL
+        `);
+
+        for (const slip of orphanedSlips.rows) {
+            const leadRes = await pool.query(`
+                SELECT s.student_id, s.class_id
+                FROM students s
+                LEFT JOIN classes c ON s.class_id = c.class_id
+                WHERE s.family_id = $1 AND LOWER(COALESCE(s.status, 'Active')) = 'active'
+                ORDER BY ${CLASS_SENIORITY_ORDER}
+                LIMIT 1
+            `, [slip.family_id]);
+
+            if (leadRes.rows.length > 0) {
+                await pool.query(
+                    `UPDATE monthly_fee_slips SET student_id = $1, class_id = $2 WHERE slip_id = $3`,
+                    [leadRes.rows[0].student_id, leadRes.rows[0].class_id, slip.slip_id]
+                );
+            }
+        }
+    } catch (e) {
+        console.error("syncFamilyLeadSlips error:", e.message);
+    }
+};
+
 const cleanupCorruptLineItems = async () => {
     try {
+        await syncFamilyLeadSlips();
         await pool.query(`
             UPDATE slip_line_items 
             SET paid_amount = 0 
@@ -687,6 +762,7 @@ router.get('/', async (req, res) => {
         const { class_id, month, year, academic_year_id } = req.query;
 
         // Auto-cleanup any corrupt line item paid amounts before returning slips
+        await syncFamilyLeadSlips();
         await cleanupCorruptLineItems();
         await syncTrustedSlipsState();
 
@@ -734,6 +810,7 @@ router.get('/', async (req, res) => {
         const result = await pool.query(`
             SELECT mfs.*, s.first_name, s.last_name, s.admission_no, s.family_id,
                      s.father_name, s.father_phone, c.class_name, sec.section_name, s.category,
+                     s.status AS student_status,
                      ay.year_name AS academic_year_name, COALESCE(ay.is_active, TRUE) AS is_active_year,
                 COALESCE(JSON_AGG(JSON_BUILD_OBJECT('item_id',sli.item_id,'head_name',sli.head_name,'amount',sli.amount,'paid_amount',COALESCE(sli.paid_amount,0),'note',sli.note) ORDER BY sli.item_id) FILTER (WHERE sli.item_id IS NOT NULL),'[]') as line_items
             FROM monthly_fee_slips mfs
@@ -745,7 +822,7 @@ router.get('/', async (req, res) => {
             ${whereSql}
             GROUP BY mfs.slip_id, s.first_name, s.last_name, s.admission_no, s.family_id,
                        s.father_name, s.father_phone, c.class_name, sec.section_name, s.category,
-                       ay.year_name, ay.is_active
+                       s.status, ay.year_name, ay.is_active
             ORDER BY mfs.month ASC, s.first_name ASC`, params);
 
         // For family slips, attach all active students in this class that share the family_id
@@ -756,12 +833,33 @@ router.get('/', async (req, res) => {
         if (familySlipIds.length > 0) {
             const membersResult = await pool.query(
                 `SELECT s.student_id, s.first_name, s.last_name, s.admission_no, s.family_id, s.father_name,
-                        c.class_name, c.class_id, sec.section_name, s.category
+                        c.class_name, c.class_id, sec.section_name, s.category, s.status
                  FROM students s
                  LEFT JOIN classes c ON s.class_id = c.class_id
                  LEFT JOIN sections sec ON s.section_id = sec.section_id
-                 WHERE s.family_id = ANY($1) AND s.status = 'Active'
-                 ORDER BY c.class_id DESC NULLS LAST, s.first_name`,
+                 WHERE s.family_id = ANY($1)
+                 ORDER BY 
+                     CASE 
+                         WHEN LOWER(COALESCE(s.status, 'Active')) = 'active' THEN 0 
+                         ELSE 1 
+                     END ASC,
+                     CASE 
+                         WHEN c.class_name ~ '^[0-9]+' THEN CAST(SUBSTRING(c.class_name FROM '^[0-9]+') AS INTEGER)
+                         WHEN c.class_name ILIKE '%Class 10%' OR c.class_name ILIKE '%10%' THEN 10
+                         WHEN c.class_name ILIKE '%Class 9%' OR c.class_name ILIKE '%9%' THEN 9
+                         WHEN c.class_name ILIKE '%Class 8%' OR c.class_name ILIKE '%8%' THEN 8
+                         WHEN c.class_name ILIKE '%Class 7%' OR c.class_name ILIKE '%7%' THEN 7
+                         WHEN c.class_name ILIKE '%Class 6%' OR c.class_name ILIKE '%6%' THEN 6
+                         WHEN c.class_name ILIKE '%Class 5%' OR c.class_name ILIKE '%5%' THEN 5
+                         WHEN c.class_name ILIKE '%Class 4%' OR c.class_name ILIKE '%4%' THEN 4
+                         WHEN c.class_name ILIKE '%Class 3%' OR c.class_name ILIKE '%3%' THEN 3
+                         WHEN c.class_name ILIKE '%Class 2%' OR c.class_name ILIKE '%2%' THEN 2
+                         WHEN c.class_name ILIKE '%Class 1%' OR c.class_name ILIKE '%1%' THEN 1
+                         WHEN c.class_name ILIKE '%Prep%' OR c.class_name ILIKE '%KG%' THEN 0
+                         WHEN c.class_name ILIKE '%Nursery%' THEN -1
+                         WHEN c.class_name ILIKE '%Reception%' OR c.class_name ILIKE '%Play%' THEN -2
+                         ELSE COALESCE(c.class_id, 0)
+                     END DESC, c.class_id DESC, s.first_name ASC`,
                 [familySlipIds]
             );
             for (const m of membersResult.rows) {
@@ -774,6 +872,18 @@ router.get('/', async (req, res) => {
         result.rows.forEach(r => {
             if (r.is_family_slip && r.family_id) {
                 r.family_members = membersMap[r.family_id] || [];
+                // If the student on the slip is inactive, dynamically project the senior active member
+                const activeLead = r.family_members.find(m => (m.status || 'Active').toLowerCase() === 'active') || r.family_members[0];
+                if (activeLead && (r.student_status || '').toLowerCase() !== 'active') {
+                    r.student_id = activeLead.student_id;
+                    r.first_name = activeLead.first_name;
+                    r.last_name = activeLead.last_name;
+                    r.admission_no = activeLead.admission_no;
+                    r.class_name = activeLead.class_name;
+                    r.class_id = activeLead.class_id;
+                    if (activeLead.section_name) r.section_name = activeLead.section_name;
+                    if (activeLead.father_name) r.father_name = activeLead.father_name;
+                }
             } else {
                 r.family_members = [];
             }
@@ -1136,7 +1246,7 @@ router.get('/print-queue', async (req, res) => {
                      mfs.total_amount, mfs.paid_amount, mfs.status, mfs.due_date, mfs.issue_date,
                      mfs.is_printed, mfs.printed_at, mfs.is_family_slip, mfs.academic_year_id,
                      ay.year_name, ay.is_active,
-                     s.first_name, s.last_name, s.admission_no, s.monthly_fee, s.father_name, s.family_id,
+                     s.first_name, s.last_name, s.admission_no, s.monthly_fee, s.father_name, s.family_id, s.status,
                      sc.class_name, sc.class_id, sec.section_name
             ORDER BY s.family_id NULLS LAST, sc.class_id DESC NULLS LAST, s.first_name
         `, params);
@@ -1226,12 +1336,12 @@ router.get('/print-queue', async (req, res) => {
 
                 return (a.first_name || '').localeCompare(b.first_name || '');
             });
-            const primary = slips[0];
+            let primary = slips[0];
             const siblings = slips.slice(1);
 
             // Fetch all active family members for family vouchers so the print shows all students
             const membersResult = await pool.query(
-                `SELECT s.student_id, s.first_name, s.last_name, s.father_name, s.family_id,
+                `SELECT s.student_id, s.first_name, s.last_name, s.father_name, s.family_id, s.status,
                         c.class_name, c.class_id, sec.section_name
                  FROM students s
                  LEFT JOIN classes c ON s.class_id = c.class_id
@@ -1248,6 +1358,21 @@ router.get('/print-queue', async (req, res) => {
                 if (secComp !== 0) return secComp;
                 return (a.first_name || '').localeCompare(b.first_name || '');
             });
+
+            const activeLeadMember = sortedMembers.find(m => (m.status || 'Active').toLowerCase() === 'active') || sortedMembers[0];
+            if (activeLeadMember && (primary.student_status || '').toLowerCase() !== 'active') {
+                primary = {
+                    ...primary,
+                    student_id: activeLeadMember.student_id,
+                    first_name: activeLeadMember.first_name,
+                    last_name: activeLeadMember.last_name,
+                    admission_no: activeLeadMember.admission_no || primary.admission_no,
+                    class_name: activeLeadMember.class_name,
+                    c_class_id: activeLeadMember.class_id,
+                    class_id: activeLeadMember.class_id,
+                    section_name: activeLeadMember.section_name || primary.section_name
+                };
+            }
 
             const pCount = famPendingMap[fid] || 1;
             vouchers.push({
@@ -1352,7 +1477,8 @@ router.get('/:id', async (req, res) => {
         const { id } = req.params;
         const slip = await pool.query(`
             SELECT mfs.*, ay.year_name AS academic_year_name, COALESCE(ay.is_active, TRUE) AS is_active_year,
-                   s.first_name, s.last_name, s.admission_no, s.father_name, s.father_phone, c.class_name, sec.section_name, s.category
+                   s.first_name, s.last_name, s.admission_no, s.father_name, s.father_phone, c.class_name, sec.section_name, s.category,
+                   s.status AS student_status
             FROM monthly_fee_slips mfs
             JOIN students s ON mfs.student_id = s.student_id
             LEFT JOIN classes c ON mfs.class_id = c.class_id
@@ -1367,13 +1493,45 @@ router.get('/:id', async (req, res) => {
         let familyMembers = [];
         if (r.is_family_slip && r.family_id) {
             const fmRes = await pool.query(
-                `SELECT s.student_id, s.first_name, s.last_name, s.admission_no, s.category, c.class_name
+                `SELECT s.student_id, s.first_name, s.last_name, s.admission_no, s.category, s.status, s.father_name,
+                        c.class_name, c.class_id, sec.section_name
                  FROM students s
                  LEFT JOIN classes c ON s.class_id = c.class_id
-                 WHERE s.family_id = $1 AND s.status = 'Active'`,
+                 LEFT JOIN sections sec ON s.section_id = sec.section_id
+                 WHERE s.family_id = $1 AND s.status = 'Active'
+                 ORDER BY 
+                     CASE 
+                         WHEN c.class_name ~ '^[0-9]+' THEN CAST(SUBSTRING(c.class_name FROM '^[0-9]+') AS INTEGER)
+                         WHEN c.class_name ILIKE '%Class 10%' OR c.class_name ILIKE '%10%' THEN 10
+                         WHEN c.class_name ILIKE '%Class 9%' OR c.class_name ILIKE '%9%' THEN 9
+                         WHEN c.class_name ILIKE '%Class 8%' OR c.class_name ILIKE '%8%' THEN 8
+                         WHEN c.class_name ILIKE '%Class 7%' OR c.class_name ILIKE '%7%' THEN 7
+                         WHEN c.class_name ILIKE '%Class 6%' OR c.class_name ILIKE '%6%' THEN 6
+                         WHEN c.class_name ILIKE '%Class 5%' OR c.class_name ILIKE '%5%' THEN 5
+                         WHEN c.class_name ILIKE '%Class 4%' OR c.class_name ILIKE '%4%' THEN 4
+                         WHEN c.class_name ILIKE '%Class 3%' OR c.class_name ILIKE '%3%' THEN 3
+                         WHEN c.class_name ILIKE '%Class 2%' OR c.class_name ILIKE '%2%' THEN 2
+                         WHEN c.class_name ILIKE '%Class 1%' OR c.class_name ILIKE '%1%' THEN 1
+                         WHEN c.class_name ILIKE '%Prep%' OR c.class_name ILIKE '%KG%' THEN 0
+                         WHEN c.class_name ILIKE '%Nursery%' THEN -1
+                         WHEN c.class_name ILIKE '%Reception%' OR c.class_name ILIKE '%Play%' THEN -2
+                         ELSE COALESCE(c.class_id, 0)
+                     END DESC, c.class_id DESC, s.first_name ASC`,
                 [r.family_id]
             );
             familyMembers = fmRes.rows;
+
+            if (familyMembers.length > 0 && (r.student_status || '').toLowerCase() !== 'active') {
+                const activeLead = familyMembers[0];
+                r.student_id = activeLead.student_id;
+                r.first_name = activeLead.first_name;
+                r.last_name = activeLead.last_name;
+                r.admission_no = activeLead.admission_no;
+                r.class_name = activeLead.class_name;
+                r.class_id = activeLead.class_id;
+                if (activeLead.section_name) r.section_name = activeLead.section_name;
+                if (activeLead.father_name) r.father_name = activeLead.father_name;
+            }
         }
         const isSingleTrusted = (r.category || '').trim().toLowerCase() === 'trusted';
         const isFamilyAllTrusted = familyMembers.length > 0 && familyMembers.every(m => (m.category || '').trim().toLowerCase() === 'trusted');

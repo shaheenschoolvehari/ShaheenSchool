@@ -36,7 +36,11 @@ async function runEssentialMigrations() {
             ADD COLUMN IF NOT EXISTS has_multi_months BOOLEAN DEFAULT FALSE,
             ADD COLUMN IF NOT EXISTS months_list INTEGER[],
             ADD COLUMN IF NOT EXISTS is_printed BOOLEAN DEFAULT FALSE,
-            ADD COLUMN IF NOT EXISTS printed_at TIMESTAMP;
+            ADD COLUMN IF NOT EXISTS printed_at TIMESTAMP,
+            ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
+
+            UPDATE monthly_fee_slips SET academic_year_id = (SELECT id FROM academic_years WHERE is_active = TRUE ORDER BY id ASC LIMIT 1) WHERE academic_year_id IS NULL;
+            CREATE INDEX IF NOT EXISTS idx_mfs_academic_year ON monthly_fee_slips(academic_year_id);
         `);
 
         // 4. School Settings logo_url Migration (allow storing Base64 image data in DB)
@@ -58,21 +62,99 @@ async function runEssentialMigrations() {
                 status VARCHAR(20) NOT NULL DEFAULT 'unpaid',
                 admission_date DATE,
                 notes TEXT,
+                academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL,
                 created_at TIMESTAMP DEFAULT NOW(),
                 UNIQUE(student_id)
             );
 
             ALTER TABLE admission_fee_ledger 
             ADD COLUMN IF NOT EXISTS discount NUMERIC(10,2) DEFAULT 0,
-            ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(10,2) DEFAULT 0;
+            ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(10,2) DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
+
+            UPDATE admission_fee_ledger SET academic_year_id = (SELECT id FROM academic_years WHERE is_active = TRUE ORDER BY id ASC LIMIT 1) WHERE academic_year_id IS NULL;
+            CREATE INDEX IF NOT EXISTS idx_afl_academic_year ON admission_fee_ledger(academic_year_id);
+
+            ALTER TABLE fee_payments ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
+            ALTER TABLE family_opb_payments ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
+            ALTER TABLE admission_fee_payments ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
+            
+            UPDATE fee_payments SET academic_year_id = (SELECT id FROM academic_years WHERE is_active = TRUE ORDER BY id ASC LIMIT 1) WHERE academic_year_id IS NULL;
+            UPDATE family_opb_payments SET academic_year_id = (SELECT id FROM academic_years WHERE is_active = TRUE ORDER BY id ASC LIMIT 1) WHERE academic_year_id IS NULL;
+            UPDATE admission_fee_payments SET academic_year_id = (SELECT id FROM academic_years WHERE is_active = TRUE ORDER BY id ASC LIMIT 1) WHERE academic_year_id IS NULL;
         `);
 
-        // 4.2 Expense tables updated_at column migration
+        // 4.2 Expense tables updated_at, attachment & approved_by column migration
         console.log("   → Checking expense_categories and expenses columns...");
         await client.query(`
             ALTER TABLE expense_categories ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
-            ALTER TABLE expenses ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+            ALTER TABLE expenses 
+                ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                ADD COLUMN IF NOT EXISTS attachment VARCHAR(255),
+                ADD COLUMN IF NOT EXISTS approved_by INTEGER REFERENCES app_users(id) ON DELETE SET NULL,
+                ADD COLUMN IF NOT EXISTS receipt_url TEXT,
+                ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
+            
+            UPDATE expenses SET academic_year_id = (SELECT id FROM academic_years WHERE is_active = TRUE ORDER BY id DESC LIMIT 1) WHERE academic_year_id IS NULL;
         `).catch(() => { /* Tables may not exist yet on fresh install, seeder will create them */ });
+
+        // 4.3 Student roles and user role assignment cleanup migration
+        console.log("   → Checking Student roles and user role assignments...");
+        await client.query(`
+            UPDATE app_roles 
+            SET dashboard_access = 'student', role_level = 10 
+            WHERE LOWER(role_name) = 'student' OR LOWER(role_name) LIKE '%student%';
+
+            UPDATE app_users 
+            SET role_id = (SELECT id FROM app_roles WHERE LOWER(role_name) = 'student' LIMIT 1)
+            WHERE (LOWER(username) LIKE 'stu-%' OR LOWER(username) LIKE 'fam-%')
+              AND (SELECT id FROM app_roles WHERE LOWER(role_name) = 'student' LIMIT 1) IS NOT NULL;
+        `).catch(() => { });
+
+        // 4.4 Fee Heads Arrears & Line Items Migration
+        console.log("   → Checking fee_heads and slip_line_items columns...");
+        await client.query(`
+            ALTER TABLE fee_heads ADD COLUMN IF NOT EXISTS track_arrears BOOLEAN NOT NULL DEFAULT TRUE;
+            UPDATE fee_heads 
+            SET track_arrears = FALSE 
+            WHERE head_type = 'prev_balance' 
+               OR LOWER(head_name) LIKE '%tuition%' 
+               OR LOWER(head_name) LIKE '%family%';
+
+            ALTER TABLE slip_line_items 
+                ADD COLUMN IF NOT EXISTS is_carried_forward BOOLEAN NOT NULL DEFAULT FALSE,
+                ADD COLUMN IF NOT EXISTS arrears_head_id INTEGER REFERENCES fee_heads(head_id) ON DELETE SET NULL,
+                ADD COLUMN IF NOT EXISTS source_slip_id INTEGER REFERENCES monthly_fee_slips(slip_id) ON DELETE SET NULL,
+                ADD COLUMN IF NOT EXISTS is_waived BOOLEAN NOT NULL DEFAULT FALSE,
+                ADD COLUMN IF NOT EXISTS waived_at TIMESTAMP;
+
+            CREATE INDEX IF NOT EXISTS idx_sli_arrears ON slip_line_items(arrears_head_id, is_carried_forward);
+
+            ALTER TABLE fee_plan_heads ADD COLUMN IF NOT EXISTS fine_after_day INTEGER DEFAULT NULL;
+
+            CREATE TABLE IF NOT EXISTS user_webauthn_credentials (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+                credential_id TEXT UNIQUE NOT NULL,
+                public_key TEXT NOT NULL,
+                counter BIGINT DEFAULT 0,
+                credential_type VARCHAR(50) DEFAULT 'fingerprint',
+                device_name TEXT,
+                transports TEXT[],
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_webauthn_user ON user_webauthn_credentials(user_id);
+            CREATE INDEX IF NOT EXISTS idx_webauthn_cred ON user_webauthn_credentials(credential_id);
+
+            CREATE TABLE IF NOT EXISTS webauthn_challenges (
+                challenge_id TEXT PRIMARY KEY,
+                user_id INTEGER,
+                challenge TEXT NOT NULL,
+                type VARCHAR(30) NOT NULL,
+                expires_at TIMESTAMP NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_webauthn_ch_exp ON webauthn_challenges(expires_at);
+        `).catch((err) => { console.error("Error migrating fee_heads/slip_line_items/webauthn:", err.message); });
 
 
 
@@ -185,7 +267,8 @@ async function runEssentialMigrations() {
             ALTER TABLE test_papers 
             ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'pending',
             ADD COLUMN IF NOT EXISTS approved_by INTEGER REFERENCES app_users(id) ON DELETE SET NULL,
-            ADD COLUMN IF NOT EXISTS published_by INTEGER REFERENCES app_users(id) ON DELETE SET NULL;
+            ADD COLUMN IF NOT EXISTS published_by INTEGER REFERENCES app_users(id) ON DELETE SET NULL,
+            ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
 
             CREATE TABLE IF NOT EXISTS exam_sheet_approvals (
                 id SERIAL PRIMARY KEY,
@@ -231,29 +314,6 @@ async function runEssentialMigrations() {
             ALTER TABLE fee_payments ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
             ALTER TABLE family_opb_payments ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
             ALTER TABLE admission_fee_payments ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
-            ALTER TABLE expenses ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
-        `);
-
-        // 7.1 Fee Heads Arrears & Line Items Migration
-        console.log("   → Checking fee_heads and slip_line_items columns...");
-        await client.query(`
-            ALTER TABLE fee_heads ADD COLUMN IF NOT EXISTS track_arrears BOOLEAN NOT NULL DEFAULT TRUE;
-            UPDATE fee_heads 
-            SET track_arrears = FALSE 
-            WHERE head_type = 'prev_balance' 
-               OR LOWER(head_name) LIKE '%tuition%' 
-               OR LOWER(head_name) LIKE '%family%';
-
-            ALTER TABLE slip_line_items 
-                ADD COLUMN IF NOT EXISTS is_carried_forward BOOLEAN NOT NULL DEFAULT FALSE,
-                ADD COLUMN IF NOT EXISTS arrears_head_id INTEGER REFERENCES fee_heads(head_id) ON DELETE SET NULL,
-                ADD COLUMN IF NOT EXISTS source_slip_id INTEGER REFERENCES monthly_fee_slips(slip_id) ON DELETE SET NULL,
-                ADD COLUMN IF NOT EXISTS is_waived BOOLEAN NOT NULL DEFAULT FALSE,
-                ADD COLUMN IF NOT EXISTS waived_at TIMESTAMP;
-
-            CREATE INDEX IF NOT EXISTS idx_sli_arrears ON slip_line_items(arrears_head_id, is_carried_forward);
-
-            ALTER TABLE fee_plan_heads ADD COLUMN IF NOT EXISTS fine_after_day INTEGER DEFAULT NULL;
         `);
 
         // 8. User Sessions & Login Security Migration
@@ -306,6 +366,7 @@ async function runEssentialMigrations() {
                 staff_in_time TIME DEFAULT '08:00',
                 staff_out_time TIME DEFAULT '14:00',
                 staff_grace_minutes INTEGER DEFAULT 15,
+                staff_biometric_mode VARCHAR(50) DEFAULT 'both',
                 staff_auto_absent_enabled BOOLEAN DEFAULT TRUE,
                 staff_notify_in_out BOOLEAN DEFAULT TRUE,
                 staff_notify_holidays BOOLEAN DEFAULT TRUE,
@@ -317,8 +378,8 @@ async function runEssentialMigrations() {
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
-            INSERT INTO attendance_settings (id, staff_in_time, staff_out_time, staff_grace_minutes)
-            VALUES (1, '08:00', '14:00', 15)
+            INSERT INTO attendance_settings (id, staff_in_time, staff_out_time, staff_grace_minutes, staff_biometric_mode)
+            VALUES (1, '08:00', '14:00', 15, 'both')
             ON CONFLICT (id) DO NOTHING;
 
             CREATE TABLE IF NOT EXISTS attendance_holidays (
@@ -354,6 +415,28 @@ async function runEssentialMigrations() {
             FROM app_roles
             WHERE role_level >= 80 OR LOWER(role_name) LIKE '%admin%' OR LOWER(role_name) LIKE '%principal%'
             ON CONFLICT (role_id, module_name) DO NOTHING;
+
+            -- 10. Staff Attendance Enhanced Biometrics & In/Out Columns
+            ALTER TABLE staff_attendance ADD COLUMN IF NOT EXISTS in_verified BOOLEAN DEFAULT FALSE;
+            ALTER TABLE staff_attendance ADD COLUMN IF NOT EXISTS out_verified BOOLEAN DEFAULT FALSE;
+            ALTER TABLE staff_attendance ADD COLUMN IF NOT EXISTS in_verification_mode VARCHAR(50);
+            ALTER TABLE staff_attendance ADD COLUMN IF NOT EXISTS out_verification_mode VARCHAR(50);
+            ALTER TABLE staff_attendance ADD COLUMN IF NOT EXISTS is_in_late BOOLEAN DEFAULT FALSE;
+            ALTER TABLE staff_attendance ADD COLUMN IF NOT EXISTS is_out_early BOOLEAN DEFAULT FALSE;
+            ALTER TABLE staff_attendance ADD COLUMN IF NOT EXISTS in_marked_by INTEGER REFERENCES app_users(id);
+            ALTER TABLE staff_attendance ADD COLUMN IF NOT EXISTS out_marked_by INTEGER REFERENCES app_users(id);
+            ALTER TABLE staff_attendance ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+        `);
+
+        // 11. Family Fee & Sibling Monthly Fee Auto-Sync Migration
+        console.log("   → Checking and synchronizing family members monthly fees...");
+        await client.query(`
+            UPDATE students s
+            SET monthly_fee = f.family_fee
+            FROM families f
+            WHERE s.family_id = f.family_id
+              AND (s.monthly_fee IS NULL OR s.monthly_fee <= 0)
+              AND f.family_fee > 0;
         `);
 
         const { syncAllSequences } = require('./utils/sequenceSync');
