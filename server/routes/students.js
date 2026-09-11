@@ -713,8 +713,10 @@ router.get('/families-directory', async (req, res) => {
             LEFT JOIN classes c ON s.class_id = c.class_id
             LEFT JOIN sections sec ON s.section_id = sec.section_id
             LEFT JOIN families f ON s.family_id = f.family_id
-            WHERE s.family_id IS NOT NULL AND TRIM(s.family_id) != ''
-            ORDER BY s.family_id, (CASE WHEN LOWER(COALESCE(s.status, 'Active')) = 'active' THEN 0 ELSE 1 END) ASC, c.class_id DESC NULLS LAST, s.first_name
+            WHERE s.family_id IS NOT NULL 
+              AND TRIM(s.family_id) != ''
+              AND LOWER(COALESCE(s.status, 'Active')) = 'active'
+            ORDER BY s.family_id, c.class_id DESC NULLS LAST, s.admission_no ASC
         `);
 
         const familiesMap = {};
@@ -790,7 +792,9 @@ router.get('/families-directory', async (req, res) => {
             };
         }
 
-        const familiesList = Object.values(familiesMap).map(fam => {
+        const familiesList = Object.values(familiesMap)
+            .filter(fam => fam.members && fam.members.length > 0)
+            .map(fam => {
             const members = fam.members;
 
             // Distinct Fathers & Multi-Household (Cousin) Detection
@@ -917,8 +921,8 @@ router.get('/families-directory', async (req, res) => {
                 combined_father_names: combinedFatherNames,
                 combined_phones: combinedPhones,
                 total_children: members.length,
-                active_children: members.filter(m => (m.status || '').toLowerCase() === 'active').length,
-                lead_student: members.find(m => (m.status || '').toLowerCase() === 'active') || members[0] || null,
+                active_children: members.length,
+                lead_student: members[0] || null,
                 children_names: childrenNames,
                 classes_list: classesList,
                 sections_list: sectionsList,
@@ -945,7 +949,7 @@ router.get('/families-directory', async (req, res) => {
             return a.family_id.localeCompare(b.family_id, undefined, { numeric: true });
         });
 
-        const totalStudents = result.rows.length;
+        const totalStudents = familiesList.reduce((sum, f) => sum + f.members.length, 0);
         const totalFamilies = familiesList.length;
 
         res.json({

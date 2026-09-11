@@ -205,19 +205,19 @@ export default function FamilyListPage() {
 
     // Helper: Identify the Eldest Child (Lead Student) representing the family unit
     // Seniority is determined by:
-    // 1. ACTIVE students first (an inactive child can never lead an active family unit)
+    // 1. ACTIVE students strictly (an inactive child cannot lead or represent a family unit)
     // 2. Highest class level (class_id DESC), then earliest admission
     const getEldestChild = (members: StudentMember[]): StudentMember | null => {
         if (!members || members.length === 0) return null;
         const activeMembers = members.filter(m => (m.status || 'Active').toLowerCase() === 'active');
-        const candidates = activeMembers.length > 0 ? activeMembers : members;
-        return candidates.reduce((eldest, curr) => {
+        if (activeMembers.length === 0) return null;
+        return activeMembers.reduce((eldest, curr) => {
             if (!eldest) return curr;
             const diff = (curr.class_id || 0) - (eldest.class_id || 0);
             if (diff > 0) return curr;
             if (diff < 0) return eldest;
             return eldest;
-        }, candidates[0]);
+        }, activeMembers[0]);
     };
 
     // Calculate Sibling vs Cousin breakdown stats
@@ -225,6 +225,8 @@ export default function FamilyListPage() {
         let pureSiblings = 0;
         let cousins = 0;
         families.forEach(f => {
+            const activeM = (f.members || []).filter(m => (m.status || 'Active').toLowerCase() === 'active');
+            if (activeM.length === 0) return;
             if (f.is_cousin_family || (f.fathers_list && f.fathers_list.length > 1)) {
                 cousins++;
             } else {
@@ -245,6 +247,10 @@ export default function FamilyListPage() {
 
         const list = families
             .map(fam => {
+                // Strictly consider only ACTIVE members of the family
+                const activeMembers = (fam.members || []).filter(m => (m.status || 'Active').toLowerCase() === 'active');
+                if (activeMembers.length === 0) return null;
+
                 // 1. Text Search matching
                 const matchesSearch = !s || (
                     fam.family_id.toLowerCase().includes(s) ||
@@ -255,15 +261,14 @@ export default function FamilyListPage() {
                     fam.father_phone.includes(s) ||
                     fam.mother_phone.includes(s) ||
                     (fam.combined_phones && fam.combined_phones.includes(s)) ||
-                    fam.children_names.some(c => c.toLowerCase().includes(s)) ||
-                    fam.members.some(m => m.admission_no.toLowerCase().includes(s)) ||
+                    activeMembers.some(m => m.full_name.toLowerCase().includes(s) || m.admission_no.toLowerCase().includes(s)) ||
                     (fam.fathers_list && fam.fathers_list.some(f => f.name.toLowerCase().includes(s) || f.phone.includes(s)))
                 );
 
                 if (!matchesSearch) return null;
 
-                // 2. Determine Eldest Child (Lead Student) of the Family (active prioritized)
-                const eldest = getEldestChild(fam.members);
+                // 2. Determine Eldest Child (Lead Student) of the Family (active only)
+                const eldest = getEldestChild(activeMembers);
 
                 // 3. Class & Section filter applied ONLY to the Eldest Child representing the family
                 if (hasClassFilter) {
@@ -282,16 +287,9 @@ export default function FamilyListPage() {
                     if (!matchS) return null;
                 }
 
-                // When matched, show the ENTIRE family with all its children
-                const activeMembers = fam.members;
-
                 // Sort members inside family:
-                // Active students come first, sorted by Class DESC (highest class active child is Lead), Section & Name.
-                // Inactive students are placed at the bottom, also sorted by Class DESC.
+                // Sorted by Class DESC (highest class active child is Lead), Section & Name.
                 const sortedMembers = [...activeMembers].sort((a, b) => {
-                    const aActive = (a.status || 'Active').toLowerCase() === 'active' ? 0 : 1;
-                    const bActive = (b.status || 'Active').toLowerCase() === 'active' ? 0 : 1;
-                    if (aActive !== bActive) return aActive - bActive;
                     const cDiff = (b.class_id || 0) - (a.class_id || 0);
                     if (cDiff !== 0) return cDiff;
                     const sComp = (a.section_name || '').localeCompare(b.section_name || '');
@@ -301,6 +299,7 @@ export default function FamilyListPage() {
 
                 return {
                     ...fam,
+                    total_children: sortedMembers.length,
                     eldest_child: eldest,
                     activeMembers: sortedMembers,
                     isFilteredChildCount: false
@@ -1157,11 +1156,6 @@ export default function FamilyListPage() {
                                                                             <i className="bi bi-shield-check me-1"></i>Trusted
                                                                         </span>
                                                                     )}
-                                                                    {m.status && m.status.toLowerCase() !== 'active' && (
-                                                                        <span className="badge rounded-pill bg-danger-subtle text-danger border border-danger-subtle px-1.5 py-0.5" style={{ fontSize: '0.65rem', fontWeight: 600 }}>
-                                                                            <i className="bi bi-person-x-fill me-0.5"></i>Inactive
-                                                                        </span>
-                                                                    )}
                                                                 </div>
                                                                 {/* For cousin families, show specific father tag under student name */}
                                                                 {isCousin && m.father_name && (
@@ -1435,11 +1429,6 @@ export default function FamilyListPage() {
                                                                                 {isMemberTrusted && (
                                                                                     <span className="badge rounded-pill px-1.5 py-0.5" style={{ backgroundColor: '#e0f2fe', color: '#0284c7', border: '1px solid #bae6fd', fontSize: '0.65rem' }}>
                                                                                         <i className="bi bi-shield-check me-1"></i>Trusted
-                                                                                    </span>
-                                                                                )}
-                                                                                {m.status && m.status.toLowerCase() !== 'active' && (
-                                                                                    <span className="badge rounded-pill bg-danger-subtle text-danger border border-danger-subtle px-1.5 py-0.5" style={{ fontSize: '0.62rem' }}>
-                                                                                        <i className="bi bi-person-x-fill me-0.5"></i>Inactive
                                                                                     </span>
                                                                                 )}
                                                                             </div>
