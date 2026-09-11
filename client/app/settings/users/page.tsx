@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { showToast } from '@/utils/toastHelper';
 
@@ -24,6 +24,7 @@ export default function UsersPage() {
     const [roles, setRoles] = useState<Role[]>([]);
     const [loading, setLoading] = useState(true);
     const [view, setView] = useState<'list' | 'form'>('list');
+    const [searchTerm, setSearchTerm] = useState('');
     const { hasPermission } = useAuth();
     const [formData, setFormData] = useState<User>({
         id: 0, username: '', full_name: '', email: '', role_id: 0, is_active: true, password: ''
@@ -89,21 +90,74 @@ export default function UsersPage() {
         } catch (err) { console.error(err); }
     };
 
+    const filteredUsers = useMemo(() => {
+        const q = searchTerm.toLowerCase().trim();
+        if (!q) return users;
+        return users.filter(user =>
+            (user.full_name && user.full_name.toLowerCase().includes(q)) ||
+            (user.username && user.username.toLowerCase().includes(q)) ||
+            (user.email && user.email.toLowerCase().includes(q)) ||
+            (user.role_name && user.role_name.toLowerCase().includes(q)) ||
+            ((user.is_active ? 'active' : 'inactive').includes(q))
+        );
+    }, [users, searchTerm]);
+
     if (loading) return <div>Loading...</div>;
 
     return (
         <div className="container-fluid animate__animated animate__fadeIn">
-            <div className="d-flex justify-content-between align-items-center mb-4">
-                <h2 className="h3 mb-0 text-primary-dark">System Users</h2>
-                {view === 'list' && hasPermission('settings', 'write') && (
-                    <button className="btn btn-primary-custom" onClick={handleCreate}>
-                        <i className="bi bi-person-plus me-2"></i>Create New User
-                    </button>
+            <div className="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-4">
+                <div>
+                    <h2 className="h3 mb-0 text-primary-dark">System Users</h2>
+                    <p className="text-muted small mb-0">Manage system user accounts, roles, and permissions.</p>
+                </div>
+                {view === 'list' && (
+                    <div className="d-flex flex-wrap align-items-center gap-2 w-100 w-md-auto justify-content-start justify-content-md-end">
+                        <div className="input-group" style={{ maxWidth: '320px', minWidth: '240px' }}>
+                            <span className="input-group-text bg-white border-end-0" style={{ borderRadius: '10px 0 0 10px', borderColor: '#d1d5db' }}>
+                                <i className="bi bi-search text-muted"></i>
+                            </span>
+                            <input
+                                type="text"
+                                className="form-control bg-white border-start-0 ps-0"
+                                placeholder="Search by name, username, role..."
+                                value={searchTerm}
+                                onChange={e => setSearchTerm(e.target.value)}
+                                style={{ borderRadius: searchTerm ? '0' : '0 10px 10px 0', borderColor: '#d1d5db', fontSize: '0.88rem' }}
+                            />
+                            {searchTerm && (
+                                <button
+                                    className="btn btn-outline-secondary border-start-0 bg-white"
+                                    type="button"
+                                    onClick={() => setSearchTerm('')}
+                                    style={{ borderRadius: '0 10px 10px 0', borderColor: '#d1d5db' }}
+                                    title="Clear search"
+                                >
+                                    <i className="bi bi-x-lg text-muted" style={{ fontSize: '0.75rem' }}></i>
+                                </button>
+                            )}
+                        </div>
+                        {hasPermission('settings', 'write') && (
+                            <button className="btn btn-primary-custom d-inline-flex align-items-center" onClick={handleCreate} style={{ borderRadius: '10px', whiteSpace: 'nowrap' }}>
+                                <i className="bi bi-person-plus me-2"></i>Create New User
+                            </button>
+                        )}
+                    </div>
                 )}
             </div>
 
             {view === 'list' && (
                 <div className="card card-custom">
+                    <div className="px-4 py-2 border-bottom bg-light bg-opacity-50 text-muted small d-flex justify-content-between align-items-center" style={{ borderTopLeftRadius: '12px', borderTopRightRadius: '12px' }}>
+                        <span>
+                            Showing <strong>{filteredUsers.length}</strong> of <strong>{users.length}</strong> user{users.length !== 1 ? 's' : ''}
+                        </span>
+                        {searchTerm && (
+                            <span className="badge bg-secondary-subtle text-secondary border">
+                                Filtered
+                            </span>
+                        )}
+                    </div>
                     <div className="card-body p-0">
                         <div className="table-responsive">
                             <table className="table table-hover align-middle mb-0">
@@ -117,35 +171,49 @@ export default function UsersPage() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {users.map(user => (
-                                        <tr key={user.id}>
-                                            <td className="px-4">
-                                                <div className="fw-bold text-dark">{user.full_name}</div>
-                                                <div className="small text-muted">{user.email}</div>
-                                            </td>
-                                            <td><span className="font-monospace text-secondary">{user.username}</span></td>
-                                            <td>
-                                                <span className="badge badge-role">{user.role_name || 'No Role'}</span>
-                                            </td>
-                                            <td>
-                                                <span className={`badge ${user.is_active ? 'bg-success' : 'bg-danger'} bg-opacity-75`}>
-                                                    {user.is_active ? 'Active' : 'Inactive'}
-                                                </span>
-                                            </td>
-                                            <td className="text-end px-4">
-                                                {hasPermission('settings', 'write') && (
-                                                    <button className="btn btn-sm btn-link text-primary p-0 me-3" onClick={() => handleEdit(user)} title="Edit">
-                                                        <i className="bi bi-pencil">✏️</i>
-                                                    </button>
-                                                )}
-                                                {hasPermission('settings', 'delete') && (
-                                                    <button className="btn btn-sm btn-link text-danger p-0" onClick={() => handleDelete(user.id)} title="Delete">
-                                                        <i className="bi bi-trash">🗑️</i>
+                                    {filteredUsers.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={5} className="text-center py-5 text-muted">
+                                                <i className="bi bi-search fs-2 d-block mb-2 text-secondary opacity-50"></i>
+                                                <div>No users found matching &ldquo;<strong>{searchTerm}</strong>&rdquo;</div>
+                                                {searchTerm && (
+                                                    <button className="btn btn-sm btn-outline-secondary mt-2" onClick={() => setSearchTerm('')}>
+                                                        Clear Search
                                                     </button>
                                                 )}
                                             </td>
                                         </tr>
-                                    ))}
+                                    ) : (
+                                        filteredUsers.map(user => (
+                                            <tr key={user.id}>
+                                                <td className="px-4">
+                                                    <div className="fw-bold text-dark">{user.full_name}</div>
+                                                    <div className="small text-muted">{user.email}</div>
+                                                </td>
+                                                <td><span className="font-monospace text-secondary">{user.username}</span></td>
+                                                <td>
+                                                    <span className="badge badge-role">{user.role_name || 'No Role'}</span>
+                                                </td>
+                                                <td>
+                                                    <span className={`badge ${user.is_active ? 'bg-success' : 'bg-danger'} bg-opacity-75`}>
+                                                        {user.is_active ? 'Active' : 'Inactive'}
+                                                    </span>
+                                                </td>
+                                                <td className="text-end px-4">
+                                                    {hasPermission('settings', 'write') && (
+                                                        <button className="btn btn-sm btn-link text-primary p-0 me-3" onClick={() => handleEdit(user)} title="Edit">
+                                                            <i className="bi bi-pencil">✏️</i>
+                                                        </button>
+                                                    )}
+                                                    {hasPermission('settings', 'delete') && (
+                                                        <button className="btn btn-sm btn-link text-danger p-0" onClick={() => handleDelete(user.id)} title="Delete">
+                                                            <i className="bi bi-trash">🗑️</i>
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
                                 </tbody>
                             </table>
                         </div>

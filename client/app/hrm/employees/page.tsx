@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { createPortal } from 'react-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -39,6 +39,7 @@ export default function EmployeesPage() {
     const [departments, setDepartments] = useState<Department[]>([]);
     const [roles, setRoles] = useState<Role[]>([]);
     const [loading, setLoading] = useState(true);
+    const [searchQuery, setSearchQuery] = useState('');
 
     // Modal State
     const [showModal, setShowModal] = useState(false);
@@ -170,18 +171,76 @@ export default function EmployeesPage() {
         } catch (err) { alert('Failed to delete'); }
     };
 
+    const filteredEmployees = useMemo(() => {
+        const q = searchQuery.toLowerCase().trim();
+        if (!q) return employees;
+        return employees.filter(emp => {
+            const fullName = `${emp.first_name || ''} ${emp.last_name || ''}`.toLowerCase();
+            return (
+                fullName.includes(q) ||
+                (emp.email && emp.email.toLowerCase().includes(q)) ||
+                (emp.phone && emp.phone.includes(q)) ||
+                (emp.designation && emp.designation.toLowerCase().includes(q)) ||
+                (emp.department_name && emp.department_name.toLowerCase().includes(q)) ||
+                (emp.system_username && emp.system_username.toLowerCase().includes(q)) ||
+                (emp.cnic && emp.cnic.includes(q)) ||
+                (emp.status && emp.status.toLowerCase().includes(q))
+            );
+        });
+    }, [employees, searchQuery]);
+
     return (
         <div className="container-fluid animate__animated animate__fadeIn">
-            <div className="d-flex justify-content-between align-items-center mb-4">
-                <h2 className="h3 mb-0 text-primary-dark">Employees</h2>
-                {hasPermission('hrm', 'write') && (
-                    <button className="btn btn-primary-custom" onClick={handleOpenCreate}>
-                        + New Employee
-                    </button>
-                )}
+            {/* Header with Searchbar & Add Button */}
+            <div className="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-4">
+                <div>
+                    <h2 className="h3 mb-0 text-primary-dark">Employees</h2>
+                    <p className="text-muted small mb-0">Manage staff records, contracts, and system access.</p>
+                </div>
+                <div className="d-flex flex-wrap align-items-center gap-2 w-100 w-md-auto justify-content-start justify-content-md-end">
+                    <div className="input-group" style={{ maxWidth: '340px', minWidth: '240px' }}>
+                        <span className="input-group-text bg-white border-end-0" style={{ borderRadius: '10px 0 0 10px', borderColor: '#d1d5db' }}>
+                            <i className="bi bi-search text-muted"></i>
+                        </span>
+                        <input
+                            type="text"
+                            className="form-control bg-white border-start-0 ps-0"
+                            placeholder="Search employee, designation, dept, phone..."
+                            value={searchQuery}
+                            onChange={e => setSearchQuery(e.target.value)}
+                            style={{ borderRadius: searchQuery ? '0' : '0 10px 10px 0', borderColor: '#d1d5db', fontSize: '0.88rem' }}
+                        />
+                        {searchQuery && (
+                            <button
+                                className="btn btn-outline-secondary border-start-0 bg-white"
+                                type="button"
+                                onClick={() => setSearchQuery('')}
+                                style={{ borderRadius: '0 10px 10px 0', borderColor: '#d1d5db' }}
+                                title="Clear search"
+                            >
+                                <i className="bi bi-x-lg text-muted" style={{ fontSize: '0.75rem' }}></i>
+                            </button>
+                        )}
+                    </div>
+                    {hasPermission('hrm', 'write') && (
+                        <button className="btn btn-primary-custom d-inline-flex align-items-center" onClick={handleOpenCreate} style={{ borderRadius: '10px', whiteSpace: 'nowrap' }}>
+                            <i className="bi bi-person-plus me-1.5"></i> Add Employee
+                        </button>
+                    )}
+                </div>
             </div>
 
-            <div className="card border-0 shadow-sm">
+            <div className="card border-0 shadow-sm" style={{ borderRadius: '12px' }}>
+                <div className="px-4 py-2 border-bottom bg-light bg-opacity-50 text-muted small d-flex justify-content-between align-items-center" style={{ borderTopLeftRadius: '12px', borderTopRightRadius: '12px' }}>
+                    <span>
+                        Showing <strong>{filteredEmployees.length}</strong> of <strong>{employees.length}</strong> employee{employees.length !== 1 ? 's' : ''}
+                    </span>
+                    {searchQuery && (
+                        <span className="badge bg-secondary-subtle text-secondary border">
+                            Filtered
+                        </span>
+                    )}
+                </div>
                 <div className="card-body p-0">
                     <div className="table-responsive">
                         <table className="table table-hover mb-0 align-middle">
@@ -199,10 +258,20 @@ export default function EmployeesPage() {
                             <tbody>
                                 {loading ? (
                                     <tr><td colSpan={7} className="text-center py-4">Loading...</td></tr>
-                                ) : employees.length === 0 ? (
-                                    <tr><td colSpan={7} className="text-center py-4">No employees found.</td></tr>
+                                ) : filteredEmployees.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={7} className="text-center py-5 text-muted">
+                                            <i className="bi bi-search fs-2 d-block mb-2 text-secondary opacity-50"></i>
+                                            <div>{searchQuery ? `No employees found matching "${searchQuery}"` : 'No employees found.'}</div>
+                                            {searchQuery && (
+                                                <button className="btn btn-sm btn-outline-secondary mt-2" onClick={() => setSearchQuery('')}>
+                                                    Clear Search
+                                                </button>
+                                            )}
+                                        </td>
+                                    </tr>
                                 ) : (
-                                    employees.map(emp => (
+                                    filteredEmployees.map(emp => (
                                         <tr key={emp.employee_id}>
                                             <td className="ps-4">
                                                 <div className="fw-bold">{emp.first_name} {emp.last_name}</div>
