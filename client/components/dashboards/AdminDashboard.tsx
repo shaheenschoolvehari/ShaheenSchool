@@ -108,6 +108,9 @@ export default function AdminDashboard({ userName }: { userName: string }) {
         </div>
       )}
 
+      {/* Daily Fee Collection & Receipts */}
+      <DailyFeeReceipts />
+
       {/* Attendance + Payments row */}
       <div className="dash-side-grid dash-side-grid-left" style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 14, marginBottom: 20, alignItems: 'start' }}>
 
@@ -140,7 +143,6 @@ export default function AdminDashboard({ userName }: { userName: string }) {
 
       {hasPermission('dash.admin_charts', 'read') && (
         <>
-          <DailyFeeReceipts />
           {/* Fee Area Chart */}
           <div style={{ marginBottom: 20 }}>
             <Panel title="Daily Fee Collection    Last 14 Days" icon="bi-graph-up-arrow"
