@@ -333,7 +333,7 @@ export function DashShell({
 }
 
 // Constants
-export const API = process.env.NEXT_PUBLIC_API_URL || "https://demo-school-soxa.onrender.com";
+export const API = process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com";
 export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export function fmt(n: number) {

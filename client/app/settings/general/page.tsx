@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { showToast } from '@/utils/toastHelper';
 
-const API = process.env.NEXT_PUBLIC_API_URL || "https://demo-school-soxa.onrender.com";
+const API = process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com";
 
 export default function GeneralSettings() {
     const [settings, setSettings] = useState({
@@ -118,7 +118,7 @@ export default function GeneralSettings() {
 
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Upload failed');
-            
+
             const savedLogo = data.logo_url || base64Data;
             setSettings(prev => ({ ...prev, logo_url: savedLogo }));
             setLogoPreview(savedLogo);

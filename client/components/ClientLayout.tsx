@@ -10,6 +10,7 @@ import { requestMobileNotificationPermissions, triggerNativeDeviceNotification, 
 import { NotificationBell } from '@/components/notifications/NotificationBell';
 
 const API = process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com";
+<<<<<<< HEAD
 
 function GlobalNotificationRunner({ user }: { user: any }) {
   const router = useRouter();
@@ -63,6 +64,8 @@ function GlobalNotificationRunner({ user }: { user: any }) {
 
   return null;
 }
+=======
+>>>>>>> ce92bb0 (feat: add general settings, attendance management modules, and cross-platform app icons)
 
 function useAutoBackup(isLoggedIn: boolean) {
   useEffect(() => {

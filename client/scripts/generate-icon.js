@@ -231,12 +231,23 @@ if (!fs.existsSync(SOURCE)) {
   process.exit(1);
 }
 
+const ADAPTIVE_FG = path.join(__dirname, '../public/android/adaptive-foreground.png');
+let adaptiveFgData = null;
+if (fs.existsSync(ADAPTIVE_FG)) {
+  try {
+    adaptiveFgData = readPng(ADAPTIVE_FG);
+    console.log('📷  Found adaptive foreground: public/android/adaptive-foreground.png');
+  } catch (e) {
+    console.warn('⚠️   Could not read adaptive-foreground.png:', e.message);
+  }
+}
+
 const mipmaps = [
-  { dir: 'mipmap-mdpi',    size: 48  },
-  { dir: 'mipmap-hdpi',    size: 72  },
-  { dir: 'mipmap-xhdpi',   size: 96  },
-  { dir: 'mipmap-xxhdpi',  size: 144 },
-  { dir: 'mipmap-xxxhdpi', size: 192 },
+  { dir: 'mipmap-mdpi',    size: 48,  adaptiveSize: 108 },
+  { dir: 'mipmap-hdpi',    size: 72,  adaptiveSize: 162 },
+  { dir: 'mipmap-xhdpi',   size: 96,  adaptiveSize: 216 },
+  { dir: 'mipmap-xxhdpi',  size: 144, adaptiveSize: 324 },
+  { dir: 'mipmap-xxxhdpi', size: 192, adaptiveSize: 432 },
 ];
 
 console.log('📷  Reading source: scripts/appicon.png');
@@ -250,7 +261,7 @@ console.log('🤖  Generating Android launcher icons for target res directories.
 
 for (const targetResDir of resDirs) {
   console.log(`   ➔ Output target: ${targetResDir}`);
-  for (const { dir, size } of mipmaps) {
+  for (const { dir, size, adaptiveSize } of mipmaps) {
     const folder = path.join(targetResDir, dir);
     fs.mkdirSync(folder, { recursive: true });
 
@@ -259,9 +270,15 @@ for (const targetResDir of resDirs) {
 
     fs.writeFileSync(path.join(folder, 'ic_launcher.png'),           writePng(scaled,  size, size));
     fs.writeFileSync(path.join(folder, 'ic_launcher_round.png'),     writePng(rounded, size, size));
-    fs.writeFileSync(path.join(folder, 'ic_launcher_foreground.png'),writePng(scaled,  size, size));
 
-    console.log(`      ✓  ${dir} — ${size}×${size}px`);
+    if (adaptiveFgData) {
+      const fgScaled = resizeRgba(adaptiveFgData.rgba, adaptiveFgData.width, adaptiveFgData.height, adaptiveSize, adaptiveSize);
+      fs.writeFileSync(path.join(folder, 'ic_launcher_foreground.png'), writePng(fgScaled, adaptiveSize, adaptiveSize));
+    } else {
+      fs.writeFileSync(path.join(folder, 'ic_launcher_foreground.png'), writePng(scaled, size, size));
+    }
+
+    console.log(`      ✓  ${dir} — legacy: ${size}×${size}px, adaptive: ${adaptiveSize}×${adaptiveSize}px`);
   }
 }
 
