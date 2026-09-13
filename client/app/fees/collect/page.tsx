@@ -52,6 +52,11 @@ function fmtDate(d: string | null) {
     if (!d) return '—'; return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+function getTodayDateStr() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function StatusBadge({ status }: { status: string }) {
     const map: Record<string, { bg: string; label: string }> = {
         paid: { bg: '#198754', label: 'Paid' },
@@ -135,7 +140,7 @@ export default function CollectFeePage() {
     const [headPayVals, setHeadPayVals] = useState<Record<string, string>>({});
     const [waivedItemIds, setWaivedItemIds] = useState<number[]>([]);
     const [payMethod, setPayMethod] = useState('cash');
-    const [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0]);
+    const [payDate, setPayDate] = useState(getTodayDateStr());
     const [receivedBy, setReceivedBy] = useState('');
     const [refNo, setRefNo] = useState('');
     const [notes, setNotes] = useState('');
@@ -255,7 +260,7 @@ export default function CollectFeePage() {
     const openPayModal = async (slip: SlipRow) => {
         setActiveSlip(slip);
         setWaivedItemIds([]);
-        const pDate = new Date().toISOString().split('T')[0];
+        const pDate = getTodayDateStr();
         setPayDate(pDate);
 
         const buildInitialHeads = (targetSlip: SlipRow, currentPayDate: string) => {

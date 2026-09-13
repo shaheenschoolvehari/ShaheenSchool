@@ -881,7 +881,10 @@ export function RecentPaymentsTable({ rows }: { rows: any[] }) {
 
 
 export function DailyFeeReceipts() {
-  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
   const [tab, setTab] = useState<'not_printed' | 'printed'>('not_printed');
   const [data, setData] = useState<any>({ stats: {}, payments: [] });
   const [loading, setLoading] = useState(true);
@@ -895,6 +898,23 @@ export function DailyFeeReceipts() {
         setLoading(false);
       }).catch(() => setLoading(false));
   }, [date]);
+
+  const handleMarkPrinted = async (paymentId: number) => {
+    try {
+      const res = await fetch(`${API}/fee-slips/payments/${paymentId}/print`, { method: 'PUT' });
+      if (res.ok) {
+        setData((prev: any) => ({
+          ...prev,
+          payments: (prev.payments || []).map((x: any) => x.payment_id === paymentId ? { ...x, is_printed: true } : x),
+          stats: {
+            ...prev.stats,
+            printed_count: (prev.stats?.printed_count || 0) + 1,
+            unprinted_count: Math.max(0, (prev.stats?.unprinted_count || 0) - 1),
+          }
+        }));
+      }
+    } catch (e) { }
+  };
 
   const filtered = data.payments?.filter((p: any) => tab === 'printed' ? p.is_printed : !p.is_printed) || [];
   const totalCollected = data.stats?.total_collected || 0;
@@ -1093,34 +1113,65 @@ export function DailyFeeReceipts() {
                               {p.is_printed ? 'Printed' : 'Not Printed'}
                             </span>
                           </td>
-                          <td style={{ padding: '11px 14px', textAlign: 'center' }}>
-                            <Link
-                              href={`/fees/collect?search=${encodeURIComponent(p.is_family_slip ? (p.family_id || '') : (p.student_name || ''))}`}
-                              title="Go to Fee Collection Page"
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                width: 32,
-                                height: 32,
-                                borderRadius: '50%',
-                                background: 'linear-gradient(135deg, #FE7F2D 0%, #d66418 100%)',
-                                color: '#ffffff',
-                                textDecoration: 'none',
-                                boxShadow: '0 3px 10px rgba(254,127,45,0.4)',
-                                transition: 'all 0.2s ease',
-                              }}
-                              onMouseEnter={e => {
-                                (e.currentTarget as HTMLElement).style.transform = 'scale(1.12)';
-                                (e.currentTarget as HTMLElement).style.boxShadow = '0 5px 15px rgba(254,127,45,0.6)';
-                              }}
-                              onMouseLeave={e => {
-                                (e.currentTarget as HTMLElement).style.transform = 'none';
-                                (e.currentTarget as HTMLElement).style.boxShadow = '0 3px 10px rgba(254,127,45,0.4)';
-                              }}
-                            >
-                              <i className="bi bi-arrow-right-short" style={{ fontSize: 20, fontWeight: 800 }} />
-                            </Link>
+                          <td style={{ padding: '11px 14px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              {!p.is_printed && (
+                                <button
+                                  onClick={() => handleMarkPrinted(p.payment_id)}
+                                  title="Mark as Printed"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    width: 32,
+                                    height: 32,
+                                    borderRadius: '50%',
+                                    background: '#f0fdf4',
+                                    color: '#16a34a',
+                                    border: '1px solid #bbf7d0',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s ease',
+                                  }}
+                                  onMouseEnter={e => {
+                                    (e.currentTarget as HTMLElement).style.background = '#16a34a';
+                                    (e.currentTarget as HTMLElement).style.color = '#fff';
+                                  }}
+                                  onMouseLeave={e => {
+                                    (e.currentTarget as HTMLElement).style.background = '#f0fdf4';
+                                    (e.currentTarget as HTMLElement).style.color = '#16a34a';
+                                  }}
+                                >
+                                  <i className="bi bi-printer" style={{ fontSize: 13 }} />
+                                </button>
+                              )}
+                              <Link
+                                href={`/fees/collect?search=${encodeURIComponent(p.is_family_slip ? (p.family_id || '') : (p.student_name || ''))}`}
+                                title="Open in Fee Collection"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: '50%',
+                                  background: 'linear-gradient(135deg, #FE7F2D 0%, #d66418 100%)',
+                                  color: '#ffffff',
+                                  textDecoration: 'none',
+                                  boxShadow: '0 3px 10px rgba(254,127,45,0.4)',
+                                  transition: 'all 0.2s ease',
+                                }}
+                                onMouseEnter={e => {
+                                  (e.currentTarget as HTMLElement).style.transform = 'scale(1.12)';
+                                  (e.currentTarget as HTMLElement).style.boxShadow = '0 5px 15px rgba(254,127,45,0.6)';
+                                }}
+                                onMouseLeave={e => {
+                                  (e.currentTarget as HTMLElement).style.transform = 'none';
+                                  (e.currentTarget as HTMLElement).style.boxShadow = '0 3px 10px rgba(254,127,45,0.4)';
+                                }}
+                              >
+                                <i className="bi bi-arrow-right-short" style={{ fontSize: 20, fontWeight: 800 }} />
+                              </Link>
+                            </div>
                           </td>
                         </tr>
                       ))}
