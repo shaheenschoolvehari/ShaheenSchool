@@ -248,7 +248,7 @@ async function checkMissedBackupsOnStartup(isEnabled) {
     }
 }
 
-const { createNotification } = require('./utils/notify');
+const { createNotification, getFamilyLeadStudent } = require('./utils/notify');
 
 /**
  * Automated Fee Reminder Notification Scheduler
@@ -283,6 +283,7 @@ async function dispatchFeeReminderNotifications(isUrgentSlot = false) {
             `);
 
             const today = new Date();
+            const leadStudentCache = new Map();
 
             for (const row of res.rows) {
                 const famId = (row.family_id || row.student_family_id || '').trim();
@@ -290,6 +291,15 @@ async function dispatchFeeReminderNotifications(isUrgentSlot = false) {
 
                 const balance = parseFloat(row.remaining_balance || 0);
                 if (balance <= 0) continue;
+
+                // Cache and resolve family lead student so reminder is addressed to lead student
+                let leadStudent = leadStudentCache.get(famId);
+                if (leadStudent === undefined) {
+                    leadStudent = await getFamilyLeadStudent(client, famId);
+                    leadStudentCache.set(famId, leadStudent);
+                }
+                const leadStudentName = leadStudent?.full_name || row.student_name;
+                const leadStudentId = leadStudent?.student_id || row.student_id;
 
                 const dueDate = row.due_date ? new Date(row.due_date) : null;
                 let daysToDue = 999;
@@ -312,20 +322,20 @@ async function dispatchFeeReminderNotifications(isUrgentSlot = false) {
 
                 if (isUrgent) {
                     title = `URGENT: Fee Overdue Alert | فوری: فیس کی یاد دہانی ⚠️`;
-                    message = `URGENT: Due date for ${row.student_name} (${monthName} ${row.year}) is near/passed! Remaining: PKR ${formattedBalance}. Please clear immediately. فوری نوٹس: ${row.student_name} کی فیس PKR ${formattedBalance} کی آخری تاریخ قریب یا گزر چکی ہے۔ برائے مہربانی فوراً جمع کروائیں۔`;
+                    message = `URGENT: Due date for ${leadStudentName} (${monthName} ${row.year}) is near/passed! Remaining: PKR ${formattedBalance}. Please clear immediately. فوری نوٹس: ${leadStudentName} کی فیس PKR ${formattedBalance} کی آخری تاریخ قریب یا گزر چکی ہے۔ برائے مہربانی فوراً جمع کروائیں۔`;
                 } else {
                     title = `Fee Reminder | فیس کی ادائیگی کی اطلاع 💳`;
-                    message = `Dear Parent, fee for ${row.student_name} (${monthName} ${row.year}) is pending: PKR ${formattedBalance}. Please clear dues. محترم والدین، ${row.student_name} کی فیس PKR ${formattedBalance} واجب الادا ہے۔ برائے مہربانی بروقت فیس جمع کروائیں۔`;
+                    message = `Dear Parent, fee for ${leadStudentName} (${monthName} ${row.year}) is pending: PKR ${formattedBalance}. Please clear dues. محترم والدین، ${leadStudentName} کی فیس PKR ${formattedBalance} واجب الادا ہے۔ برائے مہربانی بروقت فیس جمع کروائیں۔`;
                 }
 
                 await createNotification({
                     familyId: famId,
-                    studentId: row.student_id,
+                    studentId: leadStudentId,
                     role: 'student',
                     type: isUrgent ? 'fee_urgent' : 'fee_reminder',
                     title,
                     message,
-                    link: '/fees/collect',
+                    link: '/',
                     clientOrPool: client
                 });
             }

@@ -143,11 +143,53 @@ async function notifyBroadcast({
     });
 }
 
+/**
+ * Helper to fetch the lead student for a family (senior-most active student)
+ */
+async function getFamilyLeadStudent(clientOrPool, familyId) {
+    if (!familyId) return null;
+    try {
+        const CLASS_SENIORITY_ORDER = `
+            CASE 
+                WHEN c.class_name ~ '^[0-9]+' THEN CAST(SUBSTRING(c.class_name FROM '^[0-9]+') AS INTEGER)
+                WHEN c.class_name ILIKE '%Class 10%' OR c.class_name ILIKE '%10%' THEN 10
+                WHEN c.class_name ILIKE '%Class 9%' OR c.class_name ILIKE '%9%' THEN 9
+                WHEN c.class_name ILIKE '%Class 8%' OR c.class_name ILIKE '%8%' THEN 8
+                WHEN c.class_name ILIKE '%Class 7%' OR c.class_name ILIKE '%7%' THEN 7
+                WHEN c.class_name ILIKE '%Class 6%' OR c.class_name ILIKE '%6%' THEN 6
+                WHEN c.class_name ILIKE '%Class 5%' OR c.class_name ILIKE '%5%' THEN 5
+                WHEN c.class_name ILIKE '%Class 4%' OR c.class_name ILIKE '%4%' THEN 4
+                WHEN c.class_name ILIKE '%Class 3%' OR c.class_name ILIKE '%3%' THEN 3
+                WHEN c.class_name ILIKE '%Class 2%' OR c.class_name ILIKE '%2%' THEN 2
+                WHEN c.class_name ILIKE '%Class 1%' OR c.class_name ILIKE '%1%' THEN 1
+                WHEN c.class_name ILIKE '%Prep%' OR c.class_name ILIKE '%KG%' THEN 0
+                WHEN c.class_name ILIKE '%Nursery%' THEN -1
+                WHEN c.class_name ILIKE '%Reception%' OR c.class_name ILIKE '%Play%' THEN -2
+                ELSE COALESCE(c.class_id, 0)
+            END DESC, c.class_id DESC, s.student_id ASC
+        `;
+        const res = await (clientOrPool || pool).query(`
+            SELECT s.student_id, CONCAT(s.first_name, ' ', s.last_name) AS full_name, s.family_id, s.class_id
+            FROM students s
+            LEFT JOIN classes c ON s.class_id = c.class_id
+            WHERE s.family_id = $1 AND LOWER(COALESCE(s.status, 'Active')) = 'active'
+            ORDER BY ${CLASS_SENIORITY_ORDER}
+            LIMIT 1
+        `, [familyId]);
+
+        return res.rows[0] || null;
+    } catch (e) {
+        console.error("getFamilyLeadStudent error:", e.message);
+        return null;
+    }
+}
+
 module.exports = {
     createNotification,
     notifyPermission,
     notifyUser,
     notifyFamily,
-    notifyBroadcast
+    notifyBroadcast,
+    getFamilyLeadStudent
 };
 

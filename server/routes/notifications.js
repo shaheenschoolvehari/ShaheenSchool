@@ -51,11 +51,15 @@ async function buildNotificationFilter(query) {
             famSubConditions.push(`n.user_id = $${paramIdx++}`);
             params.push(parsedUserId);
         }
-        famSubConditions.push(`(LOWER(COALESCE(n.role, '')) IN ('student', 'parent', 'all') AND n.family_id IS NULL AND n.student_id IS NULL AND n.required_permission IS NULL)`);
+        // General circulars broadcast feature for students/parents is currently pending per user requirement
+        // famSubConditions.push(`(LOWER(COALESCE(n.role, '')) IN ('student', 'parent', 'all') AND n.family_id IS NULL AND n.student_id IS NULL AND n.required_permission IS NULL)`);
+        if (famSubConditions.length === 0) {
+            famSubConditions.push('1 = 0');
+        }
 
         conditions.push(`(${famSubConditions.join(' OR ')})`);
         conditions.push(`(n.required_permission IS NULL)`);
-        conditions.push(`(n.type NOT IN ('exam_approval', 'staff_attendance', 'admission', 'expense', 'fee_generation', 'student_status'))`);
+        conditions.push(`(n.type NOT IN ('exam_approval', 'staff_attendance', 'admission', 'expense', 'fee_generation', 'student_status', 'general'))`);
     } else {
         // ── Staff / Administration / PBAC View ──
         // Deliver alerts based on:

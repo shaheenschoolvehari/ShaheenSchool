@@ -674,27 +674,7 @@ router.post('/marks/save', async (req, res) => {
                 });
             }
 
-            // 2. Notify Families of students
-            for (const row of marks) {
-                const sId = Number(row.student_id);
-                const sInfo = await pool.query(
-                    `SELECT CONCAT(first_name, ' ', last_name) AS full_name, family_id FROM students WHERE student_id = $1`,
-                    [sId]
-                );
-                if (sInfo.rows[0]) {
-                    await createNotification({
-                        familyId: sInfo.rows[0].family_id,
-                        studentId: sId,
-                        role: 'student',
-                        type: 'test_marks',
-                        title: 'New Exam / Test Marks Entered 📊',
-                        message: `New marks recorded for ${sInfo.rows[0].full_name} in ${className} (${subName}): ${row.obtained_marks}/${totalMarks}.`,
-                        link: `/students/profile/${sId}`
-                    });
-                }
-            }
-
-            // Operational notice to Coordinators/Principals with academic.examination.approvals
+            // Operational notice to Coordinators/Principals with academic.examination.approvals (Students are only notified once marks are officially published)
             const { notifyPermission } = require('../utils/notify');
             await notifyPermission('academic.examination.approvals', {
                 type: 'exam_approval',
@@ -2373,7 +2353,7 @@ router.post('/approvals/change-status', async (req, res) => {
         await client.query('COMMIT');
 
         try {
-            const { notifyPermission, notifyUser } = require('../utils/notify');
+            const { notifyPermission, notifyUser, createNotification } = require('../utils/notify');
             
             // 1. Notify the teacher who submitted this marks sheet
             let submittedByUserId = null;
@@ -2410,7 +2390,7 @@ router.post('/approvals/change-status', async (req, res) => {
                 }
             }
 
-            // 2. If published to students, notify the academic team
+            // 2. If published to students, notify the academic team + notify families of each individual student
             if (targetStatus === 'published') {
                 await notifyPermission('academic.examination.approvals', {
                     type: 'exam_published',
@@ -2418,6 +2398,67 @@ router.post('/approvals/change-status', async (req, res) => {
                     message: `Official marks published to student portal by ${ctx.user?.full_name || 'Administration'}.`,
                     link: '/examination/result-card'
                 });
+
+                // Dispatch official marks notification to each individual student's family
+                try {
+                    if (sheet_type === 'term_exam') {
+                        const marksRes = await pool.query(`
+                            SELECT em.student_id, em.obtained_marks, em.total_marks,
+                                   CONCAT(s.first_name, ' ', s.last_name) AS student_name,
+                                   s.family_id, c.class_name, sub.subject_name
+                            FROM exam_marks em
+                            JOIN students s ON em.student_id = s.student_id
+                            JOIN classes c ON em.class_id = c.class_id
+                            JOIN subjects sub ON em.subject_id = sub.subject_id
+                            WHERE em.term_id = $1 AND em.class_id = $2 AND em.section_id = $3 AND em.subject_id = $4
+                              AND s.status = 'Active'
+                        `, [Number(term_id), Number(class_id), Number(section_id), Number(subject_id)]);
+
+                        for (const m of marksRes.rows) {
+                            if (m.family_id) {
+                                await createNotification({
+                                    familyId: m.family_id,
+                                    studentId: m.student_id,
+                                    role: 'student',
+                                    type: 'exam_published',
+                                    title: `Official Result Published: ${m.subject_name} 🏆`,
+                                    message: `Official result published for ${m.student_name} in ${m.class_name} (${m.subject_name}): ${m.obtained_marks}/${m.total_marks}. Report card is now available on Student Portal.`,
+                                    link: '/',
+                                    clientOrPool: pool
+                                });
+                            }
+                        }
+                    } else if (sheet_type === 'class_test') {
+                        const marksRes = await pool.query(`
+                            SELECT tm.student_id, tm.obtained_marks, tp.total_marks, tp.test_title,
+                                   CONCAT(s.first_name, ' ', s.last_name) AS student_name,
+                                   s.family_id, c.class_name, COALESCE(sub.subject_name, 'Test') AS subject_name
+                            FROM test_marks tm
+                            JOIN test_papers tp ON tm.test_id = tp.test_id
+                            JOIN students s ON tm.student_id = s.student_id
+                            JOIN classes c ON tp.class_id = c.class_id
+                            LEFT JOIN subjects sub ON tp.subject_id = sub.subject_id
+                            WHERE tm.test_id = $1 AND s.status = 'Active'
+                        `, [Number(test_id)]);
+
+                        for (const m of marksRes.rows) {
+                            if (m.family_id) {
+                                await createNotification({
+                                    familyId: m.family_id,
+                                    studentId: m.student_id,
+                                    role: 'student',
+                                    type: 'exam_published',
+                                    title: `Official Test Marks: ${m.test_title || m.subject_name} 🏆`,
+                                    message: `Official test marks published for ${m.student_name} (${m.class_name}): ${m.obtained_marks}/${m.total_marks}. Check results on Student Portal.`,
+                                    link: '/',
+                                    clientOrPool: pool
+                                });
+                            }
+                        }
+                    }
+                } catch (pubErr) {
+                    console.error("Error dispatching published marks notifications to families:", pubErr.message);
+                }
             }
         } catch (notifErr) {
             console.error("Exam approval status notification error:", notifErr.message);

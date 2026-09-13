@@ -1658,22 +1658,27 @@ router.post('/:id/pay', async (req, res) => {
 
         // Dispatch notification to Family Unit & Staff with fees.collect permission
         try {
-            const { createNotification, notifyPermission } = require('../utils/notify');
+            const { createNotification, notifyPermission, getFamilyLeadStudent } = require('../utils/notify');
             const slipObj = updated.rows[0];
             if (slipObj) {
                 const stuRes = await client.query(`SELECT CONCAT(first_name, ' ', last_name) AS full_name, family_id FROM students WHERE student_id = $1`, [slipObj.student_id]);
                 const stuName = stuRes.rows[0]?.full_name || 'Student';
                 const famId = slipObj.family_id || stuRes.rows[0]?.family_id;
 
-                // 1. Direct family receipt
+                // Fetch active lead student representing the family
+                const leadStudent = await getFamilyLeadStudent(client, famId);
+                const recipientName = leadStudent?.full_name || stuName;
+                const recipientStudentId = leadStudent?.student_id || slipObj.student_id;
+
+                // 1. Direct family receipt addressed to family lead student
                 await createNotification({
                     familyId: famId,
-                    studentId: slipObj.student_id,
+                    studentId: recipientStudentId,
                     role: 'student',
                     type: 'fee_payment',
                     title: 'Fee Payment Received 💳',
-                    message: `Payment of PKR ${parseFloat(paidNow).toLocaleString('en-PK')} received for ${stuName} (Family ID: ${famId || 'N/A'}). Status: ${newStatus.toUpperCase()}.`,
-                    link: '/fees/collect',
+                    message: `Payment of PKR ${parseFloat(paidNow).toLocaleString('en-PK')} received for ${recipientName} (Family ID: ${famId || 'N/A'}). Status: ${newStatus.toUpperCase()}.`,
+                    link: '/',
                     clientOrPool: client
                 });
 
@@ -1681,7 +1686,7 @@ router.post('/:id/pay', async (req, res) => {
                 await notifyPermission('fees.collect', {
                     type: 'fee_payment',
                     title: `Fee Collected: PKR ${parseFloat(paidNow).toLocaleString('en-PK')} 💳`,
-                    message: `Payment collected for ${stuName} (Family: ${famId || 'N/A'}). Status: ${newStatus.toUpperCase()}.`,
+                    message: `Payment collected for ${recipientName} (Family: ${famId || 'N/A'}). Status: ${newStatus.toUpperCase()}.`,
                     link: '/fees/collect',
                     clientOrPool: client
                 });
