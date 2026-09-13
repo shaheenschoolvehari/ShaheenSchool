@@ -422,7 +422,7 @@ async function runEssentialMigrations() {
             WHERE role_level >= 80 OR LOWER(role_name) LIKE '%admin%' OR LOWER(role_name) LIKE '%principal%'
             ON CONFLICT (role_id, module_name) DO NOTHING;
 
-            -- 10. Staff Attendance Enhanced Biometrics & In/Out Columns
+            -- 10. Staff Attendance Enhanced Biometrics & In/Out Columns & Academic Year Migration
             ALTER TABLE staff_attendance ADD COLUMN IF NOT EXISTS in_verified BOOLEAN DEFAULT FALSE;
             ALTER TABLE staff_attendance ADD COLUMN IF NOT EXISTS out_verified BOOLEAN DEFAULT FALSE;
             ALTER TABLE staff_attendance ADD COLUMN IF NOT EXISTS in_verification_mode VARCHAR(50);
@@ -432,6 +432,13 @@ async function runEssentialMigrations() {
             ALTER TABLE staff_attendance ADD COLUMN IF NOT EXISTS in_marked_by INTEGER REFERENCES app_users(id);
             ALTER TABLE staff_attendance ADD COLUMN IF NOT EXISTS out_marked_by INTEGER REFERENCES app_users(id);
             ALTER TABLE staff_attendance ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+            ALTER TABLE staff_attendance ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
+            CREATE INDEX IF NOT EXISTS idx_staff_att_academic_year ON staff_attendance(academic_year_id);
+            UPDATE staff_attendance SET academic_year_id = (SELECT id FROM academic_years WHERE is_active = TRUE ORDER BY id DESC LIMIT 1) WHERE academic_year_id IS NULL;
+
+            ALTER TABLE student_attendance ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
+            CREATE INDEX IF NOT EXISTS idx_student_att_academic_year ON student_attendance(academic_year_id);
+            UPDATE student_attendance SET academic_year_id = (SELECT id FROM academic_years WHERE is_active = TRUE ORDER BY id DESC LIMIT 1) WHERE academic_year_id IS NULL;
         `);
 
         // 11. Family Fee & Sibling Monthly Fee Auto-Sync Migration

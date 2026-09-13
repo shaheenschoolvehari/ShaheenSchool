@@ -730,6 +730,7 @@ async function runMasterSeeder() {
                     attendance_date DATE NOT NULL,
                     status VARCHAR(20) NOT NULL CHECK (status IN ('Present','Absent','Late','Leave')),
                     remarks VARCHAR(255),
+                    academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL,
                     created_at TIMESTAMP DEFAULT NOW(),
                     UNIQUE(student_id, attendance_date)
                 );
@@ -745,6 +746,16 @@ async function runMasterSeeder() {
                     check_in_time TIME,
                     check_out_time TIME,
                     remarks VARCHAR(255),
+                    in_verified BOOLEAN DEFAULT FALSE,
+                    out_verified BOOLEAN DEFAULT FALSE,
+                    in_verification_mode VARCHAR(50),
+                    out_verification_mode VARCHAR(50),
+                    is_in_late BOOLEAN DEFAULT FALSE,
+                    is_out_early BOOLEAN DEFAULT FALSE,
+                    in_marked_by INTEGER REFERENCES app_users(id),
+                    out_marked_by INTEGER REFERENCES app_users(id),
+                    academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     created_at TIMESTAMP DEFAULT NOW(),
                     UNIQUE(employee_id, attendance_date)
                 );
