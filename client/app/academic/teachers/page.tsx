@@ -336,7 +336,7 @@ export default function TeacherAssign() {
                                             <div className="d-flex align-items-center">
                                                 <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold me-3"
                                                     style={{ width: '45px', height: '45px', backgroundColor: 'var(--primary-teal)', fontSize: '1.2rem' }}>
-                                                    {teacher.first_name[0]}{teacher.last_name[0]}
+                                                    {(teacher.first_name?.[0] || 'T') + (teacher.last_name?.[0] || '')}
                                                 </div>
                                                 <div>
                                                     <h5 className="card-title fw-bold mb-0 text-dark">{teacher.first_name} {teacher.last_name}</h5>

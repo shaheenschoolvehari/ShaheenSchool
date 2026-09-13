@@ -426,7 +426,7 @@ export default function StudentAttendancePage() {
                             <div className="d-flex align-items-center gap-2">
                               <div className="d-flex align-items-center justify-content-center rounded-circle fw-bold text-white"
                                 style={{ width: 34, height: 34, background: `linear-gradient(135deg,var(--primary-dark),var(--primary-teal))`, fontSize: '0.75rem', flexShrink: 0 }}>
-                                {s.first_name[0]}{s.last_name[0]}
+                                {(s.first_name?.[0] || 'S') + (s.last_name?.[0] || '')}
                               </div>
                               <span className="fw-semibold" style={{ color: 'var(--primary-dark)', fontSize: '0.9rem' }}>{s.first_name} {s.last_name}</span>
                             </div>

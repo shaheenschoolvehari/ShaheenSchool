@@ -409,7 +409,7 @@ export default function StudentAttendanceHistoryPage() {
                                                         <div className="d-flex align-items-center gap-2">
                                                             <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold"
                                                                 style={{ width: 30, height: 30, background: 'linear-gradient(135deg,var(--primary-dark),var(--primary-teal))', fontSize: '0.65rem', flexShrink: 0 }}>
-                                                                {s.first_name[0]}{s.last_name[0]}
+                                                                {(s.first_name?.[0] || 'S') + (s.last_name?.[0] || '')}
                                                             </div>
                                                             <div>
                                                                 <div className="fw-semibold" style={{ color: 'var(--primary-dark)', fontSize: '0.85rem' }}>{s.first_name} {s.last_name}</div>
