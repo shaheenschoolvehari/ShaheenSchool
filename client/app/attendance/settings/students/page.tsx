@@ -845,11 +845,7 @@ export default function StudentAttendanceSettingsPage() {
                                                                         type="checkbox"
                                                                         className="form-check-input cursor-pointer m-0"
                                                                         checked={isChecked}
-<<<<<<< HEAD
-                                                                        onChange={() => {}}
-=======
                                                                         onChange={() => { }}
->>>>>>> ce92bb0 (feat: add general settings, attendance management modules, and cross-platform app icons)
                                                                         style={{ width: 18, height: 18, accentColor: 'var(--primary-teal)' }}
                                                                     />
                                                                     <span className="fw-bold text-dark small">

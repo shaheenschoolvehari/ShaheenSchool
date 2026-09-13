@@ -258,11 +258,7 @@ function getSessionMonths(startDateStr, endDateStr) {
     }
     const s = new Date(startDateStr + 'T00:00:00');
     const e = new Date(endDateStr + 'T00:00:00');
-<<<<<<< HEAD
-    
-=======
 
->>>>>>> ce92bb0 (feat: add general settings, attendance management modules, and cross-platform app icons)
     const months = [];
     let cur = new Date(s.getFullYear(), s.getMonth(), 1);
     const end = new Date(e.getFullYear(), e.getMonth(), 1);
@@ -784,13 +780,9 @@ router.get('/staff/daily', async (req, res) => {
             `SELECT e.employee_id, e.first_name, e.last_name, e.designation, e.app_user_id,
                     d.department_name, d.department_id,
                     sa.attendance_id, sa.status, sa.check_in_time, sa.check_out_time, sa.remarks, sa.attendance_date,
-<<<<<<< HEAD
                     sa.in_verified, sa.out_verified, sa.in_verification_mode, sa.out_verification_mode,
-                    sa.is_in_late, sa.is_out_early,
+                    sa.is_in_late, sa.is_out_early, sa.academic_year_id,
                     (SELECT COUNT(*)::int FROM user_webauthn_credentials uwc WHERE uwc.user_id = e.app_user_id) as enrolled_biometrics_count
-=======
-                    sa.academic_year_id
->>>>>>> ce92bb0 (feat: add general settings, attendance management modules, and cross-platform app icons)
              FROM employees e
              LEFT JOIN departments d ON e.department_id = d.department_id
              LEFT JOIN staff_attendance sa ON sa.employee_id = e.employee_id AND sa.attendance_date = $1
@@ -804,12 +796,8 @@ router.get('/staff/daily', async (req, res) => {
         const settings = setRes.rows[0] || {
             staff_in_time: '08:00',
             staff_out_time: '14:00',
-<<<<<<< HEAD
             staff_grace_minutes: 15,
             staff_biometric_mode: 'both'
-=======
-            staff_grace_minutes: 15
->>>>>>> ce92bb0 (feat: add general settings, attendance management modules, and cross-platform app icons)
         };
 
         const holidayInfo = await checkHolidayForDate(pool, date, 'staff_only');
@@ -828,7 +816,6 @@ router.get('/staff/daily', async (req, res) => {
         console.error('staff/daily error:', err);
         res.status(500).json({ error: err.message });
     }
-<<<<<<< HEAD
 });
 
 // POST /attendance/staff/verify-biometric
@@ -1066,13 +1053,7 @@ router.post('/staff/verify-biometric', async (req, res) => {
 });
 
 // POST /attendance/staff/daily
-// body: { date, records: [{employee_id, status, check_in_time, check_out_time, remarks, in_verified, out_verified}], session_type, user_id }
-=======
-});
-
-// POST /attendance/staff/daily
-// body: { date, records: [{employee_id, status, check_in_time, check_out_time, remarks}], session_type, user_id, academic_year_id }
->>>>>>> ce92bb0 (feat: add general settings, attendance management modules, and cross-platform app icons)
+// body: { date, records: [{employee_id, status, check_in_time, check_out_time, remarks, in_verified, out_verified}], session_type, user_id, academic_year_id }
 router.post('/staff/daily', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -1080,7 +1061,12 @@ router.post('/staff/daily', async (req, res) => {
         if (!date || !records || !Array.isArray(records) || records.length === 0)
             return res.status(400).json({ error: 'date and records[] required' });
 
-<<<<<<< HEAD
+        let yearId = parseUserId(req.body.academic_year_id);
+        if (!yearId) {
+            const targetYear = await getAcademicYearContext(client, null);
+            yearId = targetYear?.id || null;
+        }
+
         const markedById = parseUserId(user_id);
 
         // Fetch settings for late/early calculations
@@ -1094,16 +1080,6 @@ router.post('/staff/daily', async (req, res) => {
 
         const currentTimeStr = getPKTTimeString(); // "HH:MM:SS" in Pakistan Timezone (Asia/Karachi)
 
-=======
-        let yearId = parseUserId(req.body.academic_year_id);
-        if (!yearId) {
-            const targetYear = await getAcademicYearContext(client, null);
-            yearId = targetYear?.id || null;
-        }
-
-        const markedById = parseUserId(user_id);
-
->>>>>>> ce92bb0 (feat: add general settings, attendance management modules, and cross-platform app icons)
         await client.query('BEGIN');
         let saved = 0;
         for (const r of records) {
@@ -1114,7 +1090,6 @@ router.post('/staff/daily', async (req, res) => {
             let checkIn = r.check_in_time || null;
             let checkOut = r.check_out_time || null;
             const remarks = r.remarks || null;
-<<<<<<< HEAD
             const inVerified = r.in_verified === true;
             const outVerified = r.out_verified === true;
 
@@ -1145,23 +1120,14 @@ router.post('/staff/daily', async (req, res) => {
                 const outLimitMins = timeStringToMinutes(settings.staff_out_time);
                 isOutEarly = checkOutMins < outLimitMins;
             }
-=======
->>>>>>> ce92bb0 (feat: add general settings, attendance management modules, and cross-platform app icons)
 
             await client.query(
                 `INSERT INTO staff_attendance (
                     employee_id, attendance_date, status, check_in_time, check_out_time, 
-<<<<<<< HEAD
-                    remarks, in_verified, out_verified, is_in_late, is_out_early, in_marked_by, updated_at
+                    remarks, in_verified, out_verified, is_in_late, is_out_early, in_marked_by, academic_year_id, updated_at
                 ) VALUES (
                     $1, $2, $3, $4, $5, 
-                    $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP
-=======
-                    remarks, in_marked_by, academic_year_id, updated_at
-                ) VALUES (
-                    $1, $2, $3, $4, $5, 
-                    $6, $7, $8, CURRENT_TIMESTAMP
->>>>>>> ce92bb0 (feat: add general settings, attendance management modules, and cross-platform app icons)
+                    $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP
                 )
                 ON CONFLICT (employee_id, attendance_date)
                 DO UPDATE SET 
@@ -1169,18 +1135,13 @@ router.post('/staff/daily', async (req, res) => {
                     check_in_time = COALESCE($4, staff_attendance.check_in_time), 
                     check_out_time = COALESCE($5, staff_attendance.check_out_time), 
                     remarks = COALESCE($6, staff_attendance.remarks),
-<<<<<<< HEAD
                     in_verified = CASE WHEN $7 = TRUE THEN TRUE ELSE staff_attendance.in_verified END,
                     out_verified = CASE WHEN $8 = TRUE THEN TRUE ELSE staff_attendance.out_verified END,
                     is_in_late = CASE WHEN $9::boolean IS NOT NULL THEN $9 ELSE staff_attendance.is_in_late END,
                     is_out_early = CASE WHEN $10::boolean IS NOT NULL THEN $10 ELSE staff_attendance.is_out_early END,
+                    academic_year_id = COALESCE($12, staff_attendance.academic_year_id),
                     updated_at = CURRENT_TIMESTAMP`,
-                [empId, date, status, checkIn, checkOut, remarks, inVerified, outVerified, isInLate, isOutEarly, markedById]
-=======
-                    academic_year_id = COALESCE($8, staff_attendance.academic_year_id),
-                    updated_at = CURRENT_TIMESTAMP`,
-                [empId, date, status, checkIn, checkOut, remarks, markedById, yearId]
->>>>>>> ce92bb0 (feat: add general settings, attendance management modules, and cross-platform app icons)
+                [empId, date, status, checkIn, checkOut, remarks, inVerified, outVerified, isInLate, isOutEarly, markedById, yearId]
             );
             saved++;
         }
