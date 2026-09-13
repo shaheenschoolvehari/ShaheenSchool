@@ -7,7 +7,28 @@ const { createNotification } = require('../utils/notify');
 async function buildNotificationFilter(query) {
     const { user_id, family_id, student_id, role } = query;
     const normalizedRole = (role || '').trim().toLowerCase();
-    const isFamilyTargeted = Boolean(family_id || student_id || ['student', 'parent'].includes(normalizedRole));
+    const parsedUserId = user_id && !isNaN(parseInt(user_id, 10)) ? parseInt(user_id, 10) : null;
+
+    let effectiveFamilyId = family_id ? String(family_id).trim() : null;
+    let effectiveStudentId = student_id && !isNaN(parseInt(student_id, 10)) ? parseInt(student_id, 10) : null;
+
+    // If user_id is provided and family_id or student_id are missing, auto-resolve from students table
+    if (parsedUserId && (!effectiveFamilyId || !effectiveStudentId)) {
+        try {
+            const sRow = await pool.query(
+                `SELECT student_id, family_id FROM students WHERE user_id = $1 LIMIT 1`,
+                [parsedUserId]
+            );
+            if (sRow.rows.length > 0) {
+                if (!effectiveFamilyId) effectiveFamilyId = sRow.rows[0].family_id;
+                if (!effectiveStudentId) effectiveStudentId = sRow.rows[0].student_id;
+            }
+        } catch (e) {
+            console.error("Error auto-resolving student/family in notifications:", e.message);
+        }
+    }
+
+    const isFamilyTargeted = Boolean(effectiveFamilyId || effectiveStudentId || ['student', 'parent'].includes(normalizedRole));
 
     let conditions = [];
     let params = [];
@@ -18,19 +39,19 @@ async function buildNotificationFilter(query) {
         // Only fetch notifications addressed to this family, student, or broadcast to students/parents.
         // MUST NEVER return staff/operational notices (e.g. exam approvals, staff attendance, fee collection totals).
         let famSubConditions = [];
-        if (family_id && String(family_id).trim()) {
+        if (effectiveFamilyId) {
             famSubConditions.push(`n.family_id = $${paramIdx++}`);
-            params.push(String(family_id).trim());
+            params.push(effectiveFamilyId);
         }
-        if (student_id && !isNaN(parseInt(student_id, 10))) {
+        if (effectiveStudentId) {
             famSubConditions.push(`n.student_id = $${paramIdx++}`);
-            params.push(parseInt(student_id, 10));
+            params.push(effectiveStudentId);
         }
-        if (famSubConditions.length === 0) {
-            famSubConditions.push(`LOWER(COALESCE(n.role, '')) IN ('student', 'parent')`);
-        } else {
-            famSubConditions.push(`(LOWER(COALESCE(n.role, '')) IN ('student', 'parent') AND n.family_id IS NULL AND n.student_id IS NULL)`);
+        if (parsedUserId) {
+            famSubConditions.push(`n.user_id = $${paramIdx++}`);
+            params.push(parsedUserId);
         }
+        famSubConditions.push(`(LOWER(COALESCE(n.role, '')) IN ('student', 'parent', 'all') AND n.family_id IS NULL AND n.student_id IS NULL AND n.required_permission IS NULL)`);
 
         conditions.push(`(${famSubConditions.join(' OR ')})`);
         conditions.push(`(n.required_permission IS NULL)`);

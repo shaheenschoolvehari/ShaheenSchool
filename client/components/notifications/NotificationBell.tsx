@@ -108,7 +108,12 @@ export function NotificationBell({ role = 'all', familyId = '', userId = '', stu
         }
         setOpen(false);
         if (notif.link) {
-            router.push(notif.link);
+            const isStudent = role === 'student' || (user?.role_name || '').toLowerCase().includes('student') || user?.dashboard_access === 'student';
+            if (isStudent && (notif.link.startsWith('/fees/collect') || notif.link.startsWith('/students/profile'))) {
+                router.push('/');
+            } else {
+                router.push(notif.link);
+            }
         }
     };
 
