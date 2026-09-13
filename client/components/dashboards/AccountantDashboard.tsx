@@ -76,6 +76,11 @@ export default function AccountantDashboard({ userName }: { userName: string }) 
         </div>
       )}
 
+      {/* Daily Fee Collection & Receipts */}
+      {hasPermission('dash.acc_charts', 'read') && (
+        <DailyFeeReceipts />
+      )}
+
       {/* Daily chart + Recent Payments */}
       {hasPermission('dash.acc_charts', 'read') && (
         <div className="dash-side-grid dash-side-grid-right" style={{ display: 'grid', gridTemplateColumns: '1fr 420px', gap: 14, marginBottom: 20, alignItems: 'start' }}>

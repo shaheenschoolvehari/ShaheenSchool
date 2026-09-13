@@ -604,25 +604,26 @@ router.get('/daily-fee-receipts', async (req, res) => {
 
         const statsQuery = pool.query(
             `SELECT 
-                COALESCE(SUM(CASE WHEN is_printed = true THEN amount_paid ELSE 0 END), 0) as printed_amount,
-                COALESCE(SUM(CASE WHEN is_printed = false THEN amount_paid ELSE 0 END), 0) as unprinted_amount,
-                COUNT(CASE WHEN is_printed = true THEN 1 END) as printed_count,
-                COUNT(CASE WHEN is_printed = false THEN 1 END) as unprinted_count,
+                COALESCE(SUM(CASE WHEN is_printed IS TRUE THEN amount_paid ELSE 0 END), 0) as printed_amount,
+                COALESCE(SUM(CASE WHEN is_printed IS NOT TRUE THEN amount_paid ELSE 0 END), 0) as unprinted_amount,
+                COUNT(CASE WHEN is_printed IS TRUE THEN 1 END) as printed_count,
+                COUNT(CASE WHEN is_printed IS NOT TRUE THEN 1 END) as unprinted_count,
                 COALESCE(SUM(amount_paid), 0) as total_amount
              FROM fee_payments
-             WHERE payment_date::date = $1`,
+             WHERE (payment_date::date = $1::date OR created_at::date = $1::date)`,
             [targetDate]
         );
 
         const listQuery = pool.query(
-            `SELECT fp.payment_id, fp.amount_paid, fp.payment_date, fp.payment_method, fp.is_printed,
+            `SELECT fp.payment_id, fp.amount_paid, TO_CHAR(fp.payment_date, 'YYYY-MM-DD') AS payment_date, fp.payment_method, COALESCE(fp.is_printed, false) AS is_printed,
                     s.student_id, s.admission_no, s.first_name||' '||COALESCE(s.last_name, '') AS student_name,
-                    c.class_name, mfs.month, mfs.year, mfs.is_family_slip, mfs.family_id
+                    COALESCE(c.class_name, c_slip.class_name, '—') AS class_name, mfs.month, mfs.year, mfs.is_family_slip, mfs.family_id
              FROM fee_payments fp
              JOIN monthly_fee_slips mfs ON fp.slip_id=mfs.slip_id
              LEFT JOIN students s ON mfs.student_id=s.student_id
              LEFT JOIN classes c ON s.class_id=c.class_id
-             WHERE fp.payment_date::date = $1
+             LEFT JOIN classes c_slip ON mfs.class_id=c_slip.class_id
+             WHERE (fp.payment_date::date = $1::date OR fp.created_at::date = $1::date)
              ORDER BY fp.payment_date DESC, fp.payment_id DESC`,
             [targetDate]
         );
