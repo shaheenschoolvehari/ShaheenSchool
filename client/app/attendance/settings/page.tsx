@@ -1,9 +1,22 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 
 export default function AttendanceSettingsHubPage() {
+    const [activeYear, setActiveYear] = useState<{ id: number; year_name: string; is_active: boolean; status?: string } | null>(null);
+
+    useEffect(() => {
+        const API = (process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com").replace(/\/+$/, '');
+        fetch(`${API}/attendance/academic-years`)
+            .then(r => r.json())
+            .then(d => {
+                const act = d?.active_year || (Array.isArray(d?.years) ? d.years.find((y: any) => y.is_active || y.status === 'active') || d.years[0] : null);
+                if (act) setActiveYear(act);
+            })
+            .catch(() => { });
+    }, []);
+
     return (
         <div className="container-fluid px-3 px-md-4 py-3 animate__animated animate__fadeIn">
             {/* Header */}
@@ -13,9 +26,28 @@ export default function AttendanceSettingsHubPage() {
                         <i className="bi bi-sliders me-2" style={{ color: 'var(--accent-orange)' }} />
                         Attendance Settings
                     </h2>
-                    <p className="text-muted mb-0 small">
-                        Configure duty shift timings, biometric verification, coordinator delegations, and official holiday calendars.
-                    </p>
+                    <div className="d-flex align-items-center gap-2 flex-wrap">
+                        <p className="text-muted mb-0 small">
+                            Configure duty shift timings, biometric verification, coordinator delegations, and official holiday calendars.
+                        </p>
+                        {activeYear && (
+                            <span className="badge rounded-pill border px-3 py-1.5 fw-semibold d-inline-flex align-items-center gap-1.5 shadow-sm ms-md-2"
+                                style={{
+                                    background: 'linear-gradient(135deg, rgba(33, 94, 97, 0.08), rgba(254, 127, 45, 0.12))',
+                                    color: 'var(--primary-dark)',
+                                    borderColor: 'rgba(33, 94, 97, 0.25)',
+                                    fontSize: '0.82rem'
+                                }}>
+                                <i className="bi bi-mortarboard-fill" style={{ color: 'var(--accent-orange)' }} />
+                                <span>Academic Year: <strong className="text-dark">{activeYear.year_name}</strong></span>
+                                {(activeYear.is_active || activeYear.status === 'active') && (
+                                    <span className="badge rounded-pill bg-success text-white ms-1 px-2 py-0.5" style={{ fontSize: '0.65rem' }}>
+                                        Active
+                                    </span>
+                                )}
+                            </span>
+                        )}
+                    </div>
                 </div>
             </div>
 

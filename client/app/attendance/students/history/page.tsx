@@ -186,9 +186,20 @@ export default function StudentAttendanceHistoryPage() {
                     <div className="d-flex align-items-center gap-2 flex-wrap">
                         <p className="text-muted mb-0 small">Monthly records with daily breakdown</p>
                         {activeAy && (
-                            <span className="badge rounded-pill bg-light text-dark border px-2.5 py-1 small fw-semibold">
-                                <i className="bi bi-mortarboard-fill text-primary me-1" />
-                                Session: <strong>{activeAy.year_name}</strong>
+                            <span className="badge rounded-pill border px-3 py-1.5 fw-semibold d-inline-flex align-items-center gap-1.5 shadow-sm"
+                                style={{
+                                    background: 'linear-gradient(135deg, rgba(33, 94, 97, 0.08), rgba(254, 127, 45, 0.12))',
+                                    color: 'var(--primary-dark)',
+                                    borderColor: 'rgba(33, 94, 97, 0.25)',
+                                    fontSize: '0.82rem'
+                                }}>
+                                <i className="bi bi-mortarboard-fill" style={{ color: 'var(--accent-orange)' }} />
+                                <span>Academic Year: <strong className="text-dark">{activeAy.year_name}</strong></span>
+                                {(activeAy.is_active || activeAy.status === 'active') && (
+                                    <span className="badge rounded-pill bg-success text-white ms-1 px-2 py-0.5" style={{ fontSize: '0.65rem' }}>
+                                        Active
+                                    </span>
+                                )}
                             </span>
                         )}
                     </div>

@@ -102,17 +102,25 @@ export default function StudentAttendanceSettingsPage() {
     const [holidayDesc, setHolidayDesc] = useState('');
     const [holidayBroadcast, setHolidayBroadcast] = useState(true);
     const [savingHoliday, setSavingHoliday] = useState(false);
+    const [activeYear, setActiveYear] = useState<{ id: number; year_name: string; is_active: boolean; status?: string } | null>(null);
 
     const loadAllData = async () => {
         setLoading(true);
         try {
-            const [setRes, coordRes, classRes, secRes, holRes] = await Promise.all([
+            const [setRes, coordRes, classRes, secRes, holRes, yearsRes] = await Promise.all([
                 fetch(`${API}/attendance/settings`),
                 fetch(`${API}/attendance/coordinators`),
                 fetch(`${API}/academic/classes`),
                 fetch(`${API}/academic/sections`),
-                fetch(`${API}/attendance/holidays?holiday_type=students_only`)
+                fetch(`${API}/attendance/holidays?holiday_type=students_only`),
+                fetch(`${API}/attendance/academic-years`).catch(() => null)
             ]);
+
+            if (yearsRes && yearsRes.ok) {
+                const yData = await yearsRes.json();
+                const act = yData?.active_year || (Array.isArray(yData?.years) ? yData.years.find((y: any) => y.is_active || y.status === 'active') || yData.years[0] : null);
+                if (act) setActiveYear(act);
+            }
 
             if (setRes.ok) {
                 const setData = await setRes.json();
@@ -330,9 +338,28 @@ export default function StudentAttendanceSettingsPage() {
                             <i className="bi bi-mortarboard-fill me-2" style={{ color: 'var(--accent-orange)' }} />
                             Student Attendance Settings
                         </h2>
-                        <p className="text-muted mb-0 small">
-                            Coordinator class delegations, family per-child notifications, and student holidays
-                        </p>
+                        <div className="d-flex align-items-center gap-2 flex-wrap mt-0.5">
+                            <p className="text-muted mb-0 small">
+                                Coordinator class delegations, family per-child notifications, and student holidays
+                            </p>
+                            {activeYear && (
+                                <span className="badge rounded-pill border px-3 py-1 fw-semibold d-inline-flex align-items-center gap-1.5 shadow-sm"
+                                    style={{
+                                        background: 'linear-gradient(135deg, rgba(33, 94, 97, 0.08), rgba(254, 127, 45, 0.12))',
+                                        color: 'var(--primary-dark)',
+                                        borderColor: 'rgba(33, 94, 97, 0.25)',
+                                        fontSize: '0.8rem'
+                                    }}>
+                                    <i className="bi bi-mortarboard-fill" style={{ color: 'var(--accent-orange)' }} />
+                                    <span>Academic Year: <strong className="text-dark">{activeYear.year_name}</strong></span>
+                                    {(activeYear.is_active || activeYear.status === 'active') && (
+                                        <span className="badge rounded-pill bg-success text-white ms-1 px-2 py-0.5" style={{ fontSize: '0.65rem' }}>
+                                            Active
+                                        </span>
+                                    )}
+                                </span>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>

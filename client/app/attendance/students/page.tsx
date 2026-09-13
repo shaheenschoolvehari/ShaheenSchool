@@ -63,22 +63,29 @@ export default function StudentAttendancePage() {
           queryParams.append('employee_id', String(user.employee_id));
         }
 
-        const res = await fetch(`${API}/attendance/my-classes?${queryParams.toString()}`);
-        const data = await res.json();
+        const [classesRes, yearsRes] = await Promise.all([
+          fetch(`${API}/attendance/my-classes?${queryParams.toString()}`).then(r => r.json()).catch(() => ({})),
+          fetch(`${API}/attendance/academic-years`).then(r => r.json()).catch(() => ({}))
+        ]);
 
-        if (Array.isArray(data.classes)) {
-          setClasses(data.classes);
-          if (data.classes.length > 0) {
+        if (Array.isArray(classesRes?.classes)) {
+          setClasses(classesRes.classes);
+          if (classesRes.classes.length > 0) {
             setClassId(prev => {
-              if (prev && data.classes.some((c: ClassItem) => String(c.class_id) === prev)) {
+              if (prev && classesRes.classes.some((c: ClassItem) => String(c.class_id) === prev)) {
                 return prev;
               }
-              return String(data.classes[0].class_id);
+              return String(classesRes.classes[0].class_id);
             });
           }
         }
-        if (Array.isArray(data.sections)) {
-          setSections(data.sections);
+        if (Array.isArray(classesRes?.sections)) {
+          setSections(classesRes.sections);
+        }
+
+        const actYear = yearsRes?.active_year || (Array.isArray(yearsRes?.years) ? yearsRes.years.find((y: any) => y.is_active || y.status === 'active') || yearsRes.years[0] : null);
+        if (actYear) {
+          setActiveYear(actYear);
         }
       } catch (err) {
         console.error('Failed to load my-classes:', err);
@@ -216,9 +223,20 @@ export default function StudentAttendancePage() {
           <div className="d-flex align-items-center gap-2 flex-wrap">
             <p className="text-muted mb-0 small">Mark daily attendance &amp; track records</p>
             {activeYear && (
-              <span className="badge rounded-pill bg-light text-dark border px-2.5 py-1 small fw-semibold">
-                <i className="bi bi-mortarboard-fill text-primary me-1" />
-                Session: <strong>{activeYear.year_name}</strong>
+              <span className="badge rounded-pill border px-3 py-1.5 fw-semibold d-inline-flex align-items-center gap-1.5 shadow-sm"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(33, 94, 97, 0.08), rgba(254, 127, 45, 0.12))',
+                  color: 'var(--primary-dark)',
+                  borderColor: 'rgba(33, 94, 97, 0.25)',
+                  fontSize: '0.82rem'
+                }}>
+                <i className="bi bi-mortarboard-fill" style={{ color: 'var(--accent-orange)' }} />
+                <span>Academic Year: <strong className="text-dark">{activeYear.year_name}</strong></span>
+                {((activeYear as any).is_active || (activeYear as any).status === 'active') && (
+                  <span className="badge rounded-pill bg-success text-white ms-1 px-2 py-0.5" style={{ fontSize: '0.65rem' }}>
+                    Active
+                  </span>
+                )}
               </span>
             )}
           </div>
