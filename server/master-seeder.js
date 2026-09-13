@@ -1264,6 +1264,7 @@ async function runMasterSeeder() {
                     family_id VARCHAR(50),
                     student_id INT REFERENCES students(student_id) ON DELETE CASCADE,
                     role VARCHAR(50),
+                    required_permission VARCHAR(100),
                     type VARCHAR(50) NOT NULL,
                     title VARCHAR(255) NOT NULL,
                     message TEXT NOT NULL,
@@ -1272,10 +1273,15 @@ async function runMasterSeeder() {
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
 
+                ALTER TABLE notifications ADD COLUMN IF NOT EXISTS required_permission VARCHAR(100);
                 CREATE INDEX IF NOT EXISTS idx_notif_family ON notifications(family_id);
                 CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id);
                 CREATE INDEX IF NOT EXISTS idx_notif_role ON notifications(role);
                 CREATE INDEX IF NOT EXISTS idx_notif_read ON notifications(is_read);
+                CREATE INDEX IF NOT EXISTS idx_notif_required_perm ON notifications(required_permission);
+                CREATE INDEX IF NOT EXISTS idx_notif_user_unread ON notifications(user_id, is_read, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_notif_family_unread ON notifications(family_id, is_read, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_notif_student_unread ON notifications(student_id, is_read, created_at DESC);
             `);
 
             console.log("   ✅ Notifications Table & Indexes created successfully.");

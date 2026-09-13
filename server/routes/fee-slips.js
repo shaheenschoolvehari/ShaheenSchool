@@ -557,16 +557,23 @@ router.post('/generate', async (req, res) => {
 
         await client.query('COMMIT');
 
-        // Trigger instant initial fee notification delivery to families
-        try {
-            const { dispatchFeeReminderNotifications } = require('../scheduler');
-            dispatchFeeReminderNotifications(false);
-        } catch (schedErr) {
-            console.error("Initial fee reminder trigger error:", schedErr.message);
+        if (generatedCount > 0) {
+            try {
+                const { notifyPermission } = require('../utils/notify');
+                await notifyPermission('fees.generate', {
+                    type: 'fee_generation',
+                    title: `Monthly Fee Slips Generated 🧾`,
+                    message: `${generatedCount} fee slips generated for Year ${actualYear} (Months: ${monthsArray.join(', ')}). Total students covered: ${coveredByFamilySlips + coveredByIndividual}.`,
+                    link: '/fees/generate',
+                    clientOrPool: pool
+                });
+            } catch (notifErr) {
+                console.error("Fee generation notification error:", notifErr.message);
+            }
         }
 
-        res.status(201).json({
-            message: 'Fee slips generated',
+        res.json({
+            message: `Generated ${generatedCount} fee slips (${skippedCount} already existed/skipped)`,
             generated: generatedCount,
             skipped: skippedCount,
             total_students: studentsResult.rows.length,
@@ -1649,15 +1656,16 @@ router.post('/:id/pay', async (req, res) => {
             [total, newPaid, newStatus, id]
         );
 
-        // Dispatch notification to Family Unit
+        // Dispatch notification to Family Unit & Staff with fees.collect permission
         try {
-            const { createNotification } = require('../utils/notify');
+            const { createNotification, notifyPermission } = require('../utils/notify');
             const slipObj = updated.rows[0];
             if (slipObj) {
                 const stuRes = await client.query(`SELECT CONCAT(first_name, ' ', last_name) AS full_name, family_id FROM students WHERE student_id = $1`, [slipObj.student_id]);
                 const stuName = stuRes.rows[0]?.full_name || 'Student';
                 const famId = slipObj.family_id || stuRes.rows[0]?.family_id;
 
+                // 1. Direct family receipt
                 await createNotification({
                     familyId: famId,
                     studentId: slipObj.student_id,
@@ -1665,6 +1673,15 @@ router.post('/:id/pay', async (req, res) => {
                     type: 'fee_payment',
                     title: 'Fee Payment Received 💳',
                     message: `Payment of PKR ${parseFloat(paidNow).toLocaleString('en-PK')} received for ${stuName} (Family ID: ${famId || 'N/A'}). Status: ${newStatus.toUpperCase()}.`,
+                    link: '/fees/collect',
+                    clientOrPool: client
+                });
+
+                // 2. Operational alert to staff with fees.collect permission
+                await notifyPermission('fees.collect', {
+                    type: 'fee_payment',
+                    title: `Fee Collected: PKR ${parseFloat(paidNow).toLocaleString('en-PK')} 💳`,
+                    message: `Payment collected for ${stuName} (Family: ${famId || 'N/A'}). Status: ${newStatus.toUpperCase()}.`,
                     link: '/fees/collect',
                     clientOrPool: client
                 });

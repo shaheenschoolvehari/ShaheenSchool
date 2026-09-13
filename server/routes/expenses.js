@@ -429,9 +429,24 @@ router.post('/', async (req, res) => {
             ]
         );
         
+        const newExpense = result.rows[0];
+
+        try {
+            const { notifyPermission } = require('../utils/notify');
+            await notifyPermission('expenses.list', {
+                type: 'expense',
+                title: `New Expense: PKR ${parseFloat(amount).toLocaleString('en-PK')} 💸`,
+                message: `${expense_title} recorded (Paid to: ${paid_to || 'N/A'}). Status: ${(status || 'pending').toUpperCase()}.`,
+                link: '/expenses/list',
+                clientOrPool: pool
+            });
+        } catch (notifErr) {
+            console.error("Expense notification error:", notifErr.message);
+        }
+        
         res.status(201).json({
             message: 'Expense created successfully',
-            expense: result.rows[0]
+            expense: newExpense
         });
     } catch (err) {
         console.error(err);

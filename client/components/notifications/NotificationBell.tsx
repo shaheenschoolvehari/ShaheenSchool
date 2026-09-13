@@ -115,10 +115,12 @@ export function NotificationBell({ role = 'all', familyId = '', userId = '', stu
     // Mark all as read
     const markAllAsRead = async () => {
         try {
+            const activeRole = (role && role !== 'all') ? role : (user?.role_name || user?.dashboard_access || 'all');
+            const activeUserId = userId || user?.id || '';
             await fetch(`${API}/notifications/mark-all-read`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ role, family_id: familyId, user_id: userId })
+                body: JSON.stringify({ role: activeRole, family_id: familyId, user_id: activeUserId, student_id: studentId })
             });
             setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
             setUnreadCount(0);
@@ -147,10 +149,20 @@ export function NotificationBell({ role = 'all', familyId = '', userId = '', stu
         switch (type) {
             case 'fee_payment':
                 return { icon: 'bi-cash-coin', bg: '#ecfdf5', color: '#10b981' };
+            case 'fee_generation':
+                return { icon: 'bi-receipt', bg: '#eff6ff', color: '#2563eb' };
+            case 'admission':
+                return { icon: 'bi-person-plus-fill', bg: '#ecfdf5', color: '#059669' };
+            case 'student_status':
+                return { icon: 'bi-person-gear', bg: '#fffbeb', color: '#d97706' };
+            case 'expense':
+                return { icon: 'bi-receipt-cutoff', bg: '#fef2f2', color: '#dc2626' };
             case 'attendance':
                 return { icon: 'bi-calendar-check-fill', bg: '#ecfeff', color: '#06b6d4' };
             case 'exam_approval':
                 return { icon: 'bi-clipboard-check-fill', bg: '#f5f3ff', color: '#8b5cf6' };
+            case 'exam_published':
+                return { icon: 'bi-trophy-fill', bg: '#faf5ff', color: '#7c3aed' };
             case 'test_marks':
                 return { icon: 'bi-journal-check', bg: '#f0fdf4', color: '#14b8a6' };
             case 'staff_attendance':

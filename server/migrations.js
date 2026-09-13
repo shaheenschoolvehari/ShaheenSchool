@@ -345,6 +345,7 @@ async function runEssentialMigrations() {
                 family_id VARCHAR(50) NULL,
                 student_id INT NULL,
                 role VARCHAR(50) NULL,
+                required_permission VARCHAR(100) NULL,
                 type VARCHAR(50) NOT NULL,
                 title VARCHAR(255) NOT NULL,
                 message TEXT NOT NULL,
@@ -352,10 +353,15 @@ async function runEssentialMigrations() {
                 is_read BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+            ALTER TABLE notifications ADD COLUMN IF NOT EXISTS required_permission VARCHAR(100);
             CREATE INDEX IF NOT EXISTS idx_notifications_family ON notifications(family_id);
             CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
             CREATE INDEX IF NOT EXISTS idx_notifications_role ON notifications(role);
             CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read);
+            CREATE INDEX IF NOT EXISTS idx_notifications_required_perm ON notifications(required_permission);
+            CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id, is_read, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_notifications_family_unread ON notifications(family_id, is_read, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_notifications_student_unread ON notifications(student_id, is_read, created_at DESC);
         `);
 
         // 9. Attendance Settings, Holidays & Coordinator Assignments Migration

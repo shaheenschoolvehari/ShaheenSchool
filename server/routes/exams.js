@@ -693,6 +693,15 @@ router.post('/marks/save', async (req, res) => {
                     });
                 }
             }
+
+            // Operational notice to Coordinators/Principals with academic.examination.approvals
+            const { notifyPermission } = require('../utils/notify');
+            await notifyPermission('academic.examination.approvals', {
+                type: 'exam_approval',
+                title: 'Marks Sheet Submitted 📝',
+                message: `Marks sheet submitted for ${className} (${subName}) by ${ctx.user?.full_name || 'Teacher'}. Pending review & approval.`,
+                link: '/examination/approvals'
+            });
         } catch (notifErr) {
             console.error("Exam notification error:", notifErr.message);
         }
@@ -2362,6 +2371,58 @@ router.post('/approvals/change-status', async (req, res) => {
         }
 
         await client.query('COMMIT');
+
+        try {
+            const { notifyPermission, notifyUser } = require('../utils/notify');
+            
+            // 1. Notify the teacher who submitted this marks sheet
+            let submittedByUserId = null;
+            if (sheet_type === 'term_exam') {
+                const appRow = await pool.query(
+                    `SELECT submitted_by FROM exam_sheet_approvals 
+                     WHERE sheet_type = 'term_exam' AND term_id = $1 AND class_id = $2 AND section_id = $3 AND subject_id = $4`,
+                    [Number(term_id), Number(class_id), Number(section_id), Number(subject_id)]
+                );
+                submittedByUserId = appRow.rows[0]?.submitted_by;
+            } else if (sheet_type === 'class_test') {
+                const appRow = await pool.query(
+                    `SELECT submitted_by FROM exam_sheet_approvals WHERE sheet_type = 'class_test' AND test_id = $1`,
+                    [Number(test_id)]
+                );
+                submittedByUserId = appRow.rows[0]?.submitted_by;
+            }
+
+            if (submittedByUserId) {
+                if (targetStatus === 'approved') {
+                    await notifyUser(submittedByUserId, {
+                        type: 'exam_approval',
+                        title: 'Marks Sheet Approved ✅',
+                        message: 'Your submitted marks sheet has been approved by administration.',
+                        link: '/examination/marks'
+                    });
+                } else if (targetStatus === 'published') {
+                    await notifyUser(submittedByUserId, {
+                        type: 'exam_approval',
+                        title: 'Marks Sheet Published 🏆',
+                        message: 'Your approved marks sheet is now published to the Student Portal.',
+                        link: '/examination/result-card'
+                    });
+                }
+            }
+
+            // 2. If published to students, notify the academic team
+            if (targetStatus === 'published') {
+                await notifyPermission('academic.examination.approvals', {
+                    type: 'exam_published',
+                    title: 'Exam Marks Published 🏆',
+                    message: `Official marks published to student portal by ${ctx.user?.full_name || 'Administration'}.`,
+                    link: '/examination/result-card'
+                });
+            }
+        } catch (notifErr) {
+            console.error("Exam approval status notification error:", notifErr.message);
+        }
+
         res.json({ message: `Sheet status successfully changed to ${targetStatus}` });
     } catch (err) {
         await client.query('ROLLBACK');

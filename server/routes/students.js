@@ -1321,6 +1321,21 @@ router.post('/', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'documen
         }
 
         await client.query('COMMIT');
+
+        try {
+            const { notifyPermission } = require('../utils/notify');
+            const sName = `${first_name || ''} ${last_name || ''}`.trim() || 'Student';
+            await notifyPermission('students.admission', {
+                type: 'admission',
+                title: 'New Student Admitted 🎓',
+                message: `New admission: ${sName} (Roll: ${roll_no || 'N/A'}) enrolled. Family ID: ${family_id || 'N/A'}.`,
+                link: '/students/details',
+                clientOrPool: pool
+            });
+        } catch (notifErr) {
+            console.error("Student admission notification error:", notifErr.message);
+        }
+
         // Return student with family_fee info
         const familyInfo = await pool.query(`SELECT family_fee FROM families WHERE family_id = $1`, [family_id]);
         const studentRow = newStudent.rows[0];
@@ -2073,6 +2088,22 @@ router.patch('/:id/status', async (req, res) => {
         }
 
         await client.query('COMMIT');
+
+        try {
+            const { notifyPermission } = require('../utils/notify');
+            const stuData = studentRes.rows[0];
+            const sName = `${stuData.first_name || ''} ${stuData.last_name || ''}`.trim() || 'Student';
+            await notifyPermission('students.details', {
+                type: 'student_status',
+                title: `Student Status: ${status} 👤`,
+                message: `${sName} status changed to ${status}. (Family ID: ${family_id || 'N/A'})`,
+                link: '/students/details',
+                clientOrPool: pool
+            });
+        } catch (notifErr) {
+            console.error("Student status notification error:", notifErr.message);
+        }
+
         res.json({ message: "Status updated successfully", status });
     } catch (err) {
         await client.query('ROLLBACK');

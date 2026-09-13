@@ -6,8 +6,54 @@ import { usePathname, useRouter } from 'next/navigation';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { useAuth } from '@/contexts/AuthContext';
+import { requestMobileNotificationPermissions, triggerNativeDeviceNotification, setupNativeNotificationActionListener } from '@/utils/nativeNotifications';
+import { NotificationBell } from '@/components/notifications/NotificationBell';
 
 const API = process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com";
+
+function GlobalNotificationRunner({ user }: { user: any }) {
+  const router = useRouter();
+  const notifiedIdsRef = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    if (!user) return;
+
+    // 1. Request permissions & setup native Android channel
+    requestMobileNotificationPermissions();
+
+    // 2. Attach native action listener to navigate on notification tap
+    setupNativeNotificationActionListener((url) => {
+      if (url) router.push(url);
+    });
+
+    // 3. Polling runner for real-time background notifications across all pages
+    const pollNotifications = async () => {
+      try {
+        const params = new URLSearchParams();
+        if (user.id) params.append('user_id', String(user.id));
+        if (user.role_name) params.append('role', user.role_name);
+
+        const res = await fetch(`${API}/notifications?${params.toString()}&limit=20`);
+        if (res.ok) {
+          const data = await res.json();
+          const list = data.notifications || [];
+          for (const n of list) {
+            if (!n.is_read && !notifiedIdsRef.current.has(n.id)) {
+              notifiedIdsRef.current.add(n.id);
+              triggerNativeDeviceNotification(n.id, n.title, n.message, n.link);
+            }
+          }
+        }
+      } catch (e) { }
+    };
+
+    pollNotifications();
+    const interval = setInterval(pollNotifications, 12000);
+    return () => clearInterval(interval);
+  }, [user, router]);
+
+  return null;
+}
 
 function useAutoBackup(isLoggedIn: boolean) {
   useEffect(() => {
@@ -331,6 +377,9 @@ const SidebarInner = memo(function SidebarInner({ user, isLoggedIn, logout, hasP
           )}
           <span className="sl-topbar-brand">{schoolSettings.school_name}</span>
         </div>
+        <div style={{ marginRight: 6, display: 'flex', alignItems: 'center' }}>
+          <NotificationBell />
+        </div>
       </div>
 
       {/* Mobile overlay */}
@@ -592,6 +641,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
     <div className="sl-layout">
       {splashElement}
       <AuthRedirect />
+      <GlobalNotificationRunner user={user} />
       <SidebarInner
         user={user}
         isLoggedIn={isLoggedIn}
