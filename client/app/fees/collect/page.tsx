@@ -484,16 +484,25 @@ export default function CollectFeePage() {
         const totalReceivedNow = totalReceivedBefore + receivingAmt;
         const remainingBalance = Math.max(0, totalPayable - totalReceivedNow);
 
-        const fmtMoney = (n: number) => `${Number(n || 0).toLocaleString('en-PK')}/-`;
-        const fmtD = (d: string | null) => {
+        const fmtMoney = (n: number) => {
+            const num = Number(n) || 0;
+            return num.toLocaleString('en-PK') + '/-';
+        };
+
+        const fmtD = (d: string | Date | null) => {
             if (!d) return '\u2014';
             try {
+                if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}/.test(d)) {
+                    const parts = d.split('T')[0].split('-');
+                    return `${parts[2]}-${parts[1]}-${parts[0]}`;
+                }
                 const dt = new Date(d);
                 return ("0" + dt.getDate()).slice(-2) + "-" + ("0" + (dt.getMonth() + 1)).slice(-2) + "-" + dt.getFullYear();
             } catch {
                 return String(d);
             }
         };
+
         const zeroPad = (n: number) => String(n).padStart(5, '0');
 
         // Students list: exactly 1 row per student, no blank filler rows
@@ -507,33 +516,36 @@ export default function CollectFeePage() {
                 section_name: slip.section_name
             }];
 
-        const studentRows = members.map(m =>
-            `<tr>
-                <td>${escStr(m.first_name || '')} ${escStr(m.last_name || '')}</td>
-                <td>${escStr(m.father_name || slip.father_name || '')}</td>
-                <td>${escStr(m.class_name || '')}${m.section_name ? ` (${escStr(m.section_name)})` : ''}</td>
-            </tr>`
-        ).join('');
+        const studentRows = members.map(m => {
+            const stuName = `${m.first_name || ''} ${m.last_name || ''}`.trim() || '—';
+            const fName = (m.father_name || slip.father_name || '').trim();
+            const cls = `${m.class_name || ''}${m.section_name ? ` (${m.section_name})` : ''}`.trim();
+            return `<tr>
+                <td>${escStr(stuName)}</td>
+                <td>${escStr(fName)}</td>
+                <td>${escStr(cls)}</td>
+            </tr>`;
+        }).join('');
 
         // Fee Details: 1 row per fee head with Sr.#
         const lineItems = slip.line_items || [];
-        let srNo = 0;
         let feeRows = '';
+        let srNo = 0;
 
-        lineItems.forEach(li => {
-            srNo++;
-            let desc = li.head_name.replace('Family Monthly Fee', 'Monthly Fee') + (li.note ? ` (${li.note})` : '');
-            if (li.class_collected_amount && li.class_collected_amount > 0) {
-                desc += ` [Class Coll: PKR ${li.class_collected_amount.toLocaleString('en-PK')}]`;
-            }
-            feeRows += `<tr>
-                <td>${srNo}</td>
-                <td>${escStr(desc)}</td>
-                <td>${fmtMoney(parseFloat(li.amount as any) || 0)}</td>
-            </tr>`;
-        });
-
-        if (lineItems.length === 0) {
+        if (lineItems.length > 0) {
+            lineItems.forEach(li => {
+                srNo++;
+                let desc = li.head_name.replace('Family Monthly Fee', 'Monthly Fee') + (li.note ? ` (${li.note})` : '');
+                if (li.class_collected_amount && li.class_collected_amount > 0) {
+                    desc += ` [Class Coll: PKR ${li.class_collected_amount.toLocaleString('en-PK')}]`;
+                }
+                feeRows += `<tr>
+                    <td>${srNo}</td>
+                    <td>${escStr(desc)}</td>
+                    <td>${fmtMoney(parseFloat(li.amount as any) || 0)}</td>
+                </tr>`;
+            });
+        } else {
             srNo++;
             feeRows += `<tr>
                 <td>${srNo}</td>
@@ -542,7 +554,7 @@ export default function CollectFeePage() {
             </tr>`;
         }
 
-        // Subtotal row
+        // Subtotal row (Total Payable)
         srNo++;
         feeRows += `<tr class="subtotal-row">
             <td>${srNo}</td>
@@ -550,7 +562,7 @@ export default function CollectFeePage() {
             <td>${fmtMoney(totalPayable)}</td>
         </tr>`;
 
-        // Receiving Amount & Remaining Balance
+        // Divider row and bold row (Receiving Amount and Remaining Balance)
         feeRows += `
             <tr class="divider-row">
                 <td colspan="2">Receiving Amount</td>
@@ -561,14 +573,33 @@ export default function CollectFeePage() {
                 <td>${fmtMoney(remainingBalance)}</td>
             </tr>`;
 
-        const phones = [school.phone_number, school.school_phone2, school.school_phone3].filter(Boolean).join(' ; ') || '0300-7730141 ; 0308-7696430 ; 067-3366383';
-        const API_URL = (process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com").replace(/\/+$/, '');
-        const logoUrl = school.school_logo_url || `${API_URL}/icon.png`;
-        const schoolNameFormatted = (school.school_name || 'Falcon School System\nVehari').split('\n').join('<br>');
+        // School details & contacts
+        const phoneParts: string[] = [];
+        if (school.phone_number) {
+            phoneParts.push(...school.phone_number.split(/[\/,;]+/).map(p => p.trim()).filter(Boolean));
+        }
+        if (school.school_phone2) {
+            phoneParts.push(...school.school_phone2.split(/[\/,;]+/).map(p => p.trim()).filter(Boolean));
+        }
+        if (school.school_phone3) {
+            phoneParts.push(...school.school_phone3.split(/[\/,;]+/).map(p => p.trim()).filter(Boolean));
+        }
+        const phones = phoneParts.length > 0
+            ? phoneParts.join(' ; ')
+            : '0300-7730141 ; 0308-7696430 ; 067-3366383';
+
+        const logoUrl = school.school_logo_url || '';
+        const rawSchoolName = (school.school_name || 'Shaheen English Model School\nVehari').trim();
+        let schoolNameFormatted = escStr(rawSchoolName);
+        if (schoolNameFormatted.includes('\n')) {
+            schoolNameFormatted = schoolNameFormatted.split('\n').join('<br>');
+        } else if (/Vehari$/i.test(schoolNameFormatted)) {
+            schoolNameFormatted = schoolNameFormatted.replace(/\s+(Vehari)$/i, '<br>$1');
+        }
         const schoolAddress = school.school_address || '83/M Madina Colony Vehari';
 
         const logoImgHtml = logoUrl
-            ? `<img src="${escStr(logoUrl)}" alt="Logo" style="width:100%;height:100%;object-fit:contain;border-radius:1.5mm;display:block;" />`
+            ? `<img src="${escStr(logoUrl)}" alt="Logo" style="width:100%;height:100%;object-fit:contain;border-radius:2mm;display:block;" />`
             : '';
 
         const html = `<!DOCTYPE html>
@@ -577,42 +608,37 @@ export default function CollectFeePage() {
 <meta charset="UTF-8">
 <title>Fee Receipt</title>
 <style>
-  @page { margin: 0; size: auto; }
-  html, body {
-    margin: 0; padding: 0; width: 72mm; box-sizing: border-box;
-    font-family: 'Times New Roman', Times, serif; color: #000; background: #fff;
-  }
+  @page { size: 72mm auto; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; width: 100%; max-width: 72mm; font-family: 'Times New Roman', Times, serif; color: #000; }
   .voucher {
     width: 100%; padding: 3mm; display: flex; flex-direction: column; box-sizing: border-box;
-    border: 2px solid #000; border-radius: 4mm; position: relative; background: #fff;
+    border: 2px solid #000; border-radius: 4mm; position: relative;
   }
   .voucher::before {
     content: ""; position: absolute; inset: 2px; border: 1px solid #000; border-radius: 3.3mm; pointer-events: none;
   }
 
   .header { display: flex; align-items: center; gap: 2mm; margin-bottom: 2mm; }
-  .logo-box {
-    width: 16mm; height: 16mm; border: none; background: transparent;
-    flex-shrink: 0; display: flex; align-items: center; justify-content: center; overflow: hidden;
-  }
-  .school-name { font-size: 11pt; font-weight: bold; line-height: 1.25; text-transform: uppercase; color: #000; }
+  .logo-box { width: 16mm; height: 16mm; border: 1.2px solid #000; border-radius: 2mm; flex-shrink: 0; background-size: cover; background-position: center; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .school-name { font-size: 11pt; font-weight: bold; line-height: 1.25; text-transform: uppercase; }
 
-  .address-block { text-align: center; font-size: 8pt; margin-bottom: 1mm; line-height: 1.3; color: #000; }
+  .address-block { text-align: center; font-size: 8pt; margin-bottom: 1mm; line-height: 1.3; }
   .address-block p { margin: 0; }
   hr { border: 0; border-top: 1px dashed #000; margin: 1.5mm 0; }
-  .voucher-title { text-align: center; font-size: 10.5pt; font-weight: bold; text-transform: uppercase; margin: 1mm 0; color: #000; }
+  .voucher-title { text-align: center; font-size: 10.5pt; font-weight: bold; text-transform: uppercase; margin: 1mm 0; }
 
-  .info { font-size: 8pt; margin-bottom: 2mm; line-height: 1.4; color: #000; }
+  .info { font-size: 8pt; margin-bottom: 2mm; line-height: 1.4; }
   .info-row { display: flex; align-items: baseline; gap: 2mm; white-space: nowrap; margin-bottom: 0.5mm; }
   .info-row .voucher-no { flex-shrink: 0; }
   .info-row .family-id { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: right; }
   .info-row2 { margin-bottom: 0.5mm; }
 
-  .section-label { font-size: 9.5pt; font-weight: bold; margin: 3mm 0 1mm; color: #000; }
+  .section-label { font-size: 9.5pt; font-weight: bold; margin: 3mm 0 1mm; }
 
-  table { width: 100%; border-collapse: collapse; font-size: 8pt; margin-bottom: 3mm; table-layout: fixed; word-wrap: break-word; color: #000; }
+  table { width: 100%; border-collapse: collapse; font-size: 8pt; margin-bottom: 3mm; table-layout: fixed; word-wrap: break-word; }
   th, td { border: 1px solid #000; padding: 1.2mm 0.8mm; text-align: center; }
-  th { font-weight: bold; background: #e9e9e9; }
+  th { font-weight: bold; }
 
   .students th:nth-child(1), .students td:nth-child(1) { text-align: left; }
   .students th:nth-child(2), .students td:nth-child(2) { text-align: left; }
@@ -620,29 +646,66 @@ export default function CollectFeePage() {
   .details th:nth-child(1), .details td:nth-child(1) { width: 12%; }
   .details th:nth-child(2), .details td:nth-child(2) { text-align: left; }
   .details th:nth-child(3), .details td:nth-child(3) { text-align: right; }
-  .details tr.subtotal-row td { font-weight: bold; background: #e9e9e9; }
+  .details tr.subtotal-row td { font-weight: bold; }
   .details tr.divider-row td { font-weight: bold; border-top: 2px solid #000; }
   .details tr.bold-row td { font-weight: bold; }
   .details tr.divider-row td:first-child,
   .details tr.bold-row td:first-child { text-align: left; }
 
-  .thank-you { text-align: center; font-size: 9.5pt; font-weight: bold; margin-top: 3mm; margin-bottom: 2mm; color: #000; }
+  .thank-you { text-align: center; font-size: 9.5pt; font-weight: bold; margin-top: 3mm; margin-bottom: 2mm; }
   .spacer { flex-grow: 1; }
 
-  .print-btn {
-    display: block; width: 100%; margin-top: 4mm; padding: 8px; font-size: 10pt; font-weight: bold;
-    background: #215E61; color: #fff; border: none; border-radius: 4px; cursor: pointer; text-align: center;
+  .dev-branding {
+    margin-top: 2.5mm;
+    padding-top: 1.8mm;
+    border-top: 0.8px dashed #000;
+    text-align: center;
+    font-size: 6.2pt;
+    line-height: 1.35;
+    letter-spacing: 0.1px;
   }
+  .dev-branding .dev-title {
+    margin: 0 0 0.5mm 0;
+    font-weight: normal;
+  }
+  .dev-branding .dev-title strong {
+    font-weight: bold;
+    letter-spacing: 0.3px;
+  }
+  .dev-branding .dev-contact {
+    margin: 0;
+    font-size: 5.8pt;
+    letter-spacing: 0.1px;
+  }
+
+  .no-print { margin-top: 4mm; text-align: center; padding-bottom: 6mm; }
+  .print-btn {
+    display: inline-block;
+    padding: 7px 18px;
+    font-size: 9pt;
+    font-weight: bold;
+    font-family: Arial, sans-serif;
+    background: #000;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .print-btn:hover { background: #333; }
+
   @media print {
-    .print-btn { display: none !important; }
-    body { width: 72mm !important; }
+    @page { size: 72mm auto; margin: 0; }
+    html, body { width: 72mm !important; margin: 0 !important; padding: 0 !important; }
+    .no-print { display: none !important; }
   }
 </style>
 </head>
 <body>
   <div class="voucher">
     <div class="header">
-      <div class="logo-box">${logoImgHtml}</div>
+      <div class="logo-box" style="${logoUrl ? 'border: none;' : ''}">
+        ${logoImgHtml}
+      </div>
       <div class="school-name">${schoolNameFormatted}</div>
     </div>
     <div class="address-block">
@@ -672,8 +735,17 @@ export default function CollectFeePage() {
 
     <div class="thank-you">Thank You</div>
     <div class="spacer"></div>
+
+    <div class="dev-branding">
+      <p class="dev-title">Software Designed &amp; Developed by <strong>FALCON SWIFT PVT. LTD.</strong></p>
+      <p class="dev-contact">Website: www.falconswift.online &bull; Contact: 03208624173, 03263392082</p>
+    </div>
   </div>
-  <button class="print-btn" onclick="window.print()">🖨️ Print Receipt</button>
+
+  <div class="no-print">
+    <button class="print-btn" onclick="window.print()">🖨️ Print Receipt</button>
+  </div>
+
   <script>
     window.onload = function() {
       var img = document.querySelector('.logo-box img');
@@ -681,7 +753,7 @@ export default function CollectFeePage() {
         img.onload = function() { window.print(); };
         img.onerror = function() { window.print(); };
       } else {
-        window.print();
+        setTimeout(function() { window.print(); }, 120);
       }
     };
   </script>

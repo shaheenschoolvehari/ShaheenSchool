@@ -385,7 +385,7 @@ export default function EmployeesPage() {
                     </button>
                 </div>
                 <div class="header">
-                    <h1>Shaheen Public School & College</h1>
+                    <h1>Shaheen English Model School</h1>
                     <h2>Official Employee Directory & Staff Roster</h2>
                     <div class="meta">
                         <span><strong>Total Records:</strong> ${filteredEmployees.length} Employee(s)</span>
@@ -414,7 +414,7 @@ export default function EmployeesPage() {
                     </tbody>
                 </table>
                 <div class="footer">
-                    <div>Report automatically compiled from Shaheen School Management System</div>
+                    <div>Report automatically compiled from Shaheen English Model School</div>
                     <div class="sig-box">HR / Principal Signature</div>
                 </div>
                 <script>
