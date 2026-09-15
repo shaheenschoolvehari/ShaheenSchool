@@ -300,7 +300,13 @@ async function runEssentialMigrations() {
 
             -- Fees & Exam Collections Academic Year Migration
             ALTER TABLE exam_fee_collections ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
+            ALTER TABLE exam_fee_collections ADD COLUMN IF NOT EXISTS collection_source VARCHAR(20) DEFAULT 'Class';
+            ALTER TABLE exam_fee_collections ADD COLUMN IF NOT EXISTS month INTEGER;
+            ALTER TABLE exam_fee_collections ADD COLUMN IF NOT EXISTS year INTEGER;
+            ALTER TABLE exam_fee_collections ADD COLUMN IF NOT EXISTS fee_slip_id INTEGER REFERENCES monthly_fee_slips(slip_id) ON DELETE SET NULL;
             CREATE INDEX IF NOT EXISTS idx_efc_academic_year ON exam_fee_collections(academic_year_id);
+            CREATE INDEX IF NOT EXISTS idx_efc_student_month_year ON exam_fee_collections(student_id, month, year);
+            CREATE INDEX IF NOT EXISTS idx_efc_source ON exam_fee_collections(collection_source);
             UPDATE exam_fee_collections SET academic_year_id = (SELECT id FROM academic_years WHERE is_active = TRUE ORDER BY id DESC LIMIT 1) WHERE academic_year_id IS NULL;
 
             ALTER TABLE monthly_fee_slips ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
