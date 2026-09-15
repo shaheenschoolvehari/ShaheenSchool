@@ -1097,6 +1097,8 @@ async function runMasterSeeder() {
                 ALTER TABLE exam_fee_collections ADD COLUMN IF NOT EXISTS month INTEGER;
                 ALTER TABLE exam_fee_collections ADD COLUMN IF NOT EXISTS year INTEGER;
                 ALTER TABLE exam_fee_collections ADD COLUMN IF NOT EXISTS fee_slip_id INTEGER REFERENCES monthly_fee_slips(slip_id) ON DELETE SET NULL;
+                ALTER TABLE monthly_fee_slips ADD COLUMN IF NOT EXISTS class_exam_deducted NUMERIC(10,2) DEFAULT 0;
+                ALTER TABLE slip_line_items ADD COLUMN IF NOT EXISTS class_exam_deducted NUMERIC(10,2) DEFAULT 0;
             `);
 
             console.log("   ✅ Fee Management Module Tables set up successfully.");

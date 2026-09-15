@@ -27,11 +27,39 @@ interface SlipRow {
     issue_date: string | null;
     month: number;
     year: number;
-    line_items: { item_id: number; head_name: string; amount: number; paid_amount?: number; note?: string }[];
+    line_items: { 
+        item_id: number; 
+        head_name: string; 
+        amount: number; 
+        paid_amount?: number; 
+        note?: string;
+        class_collected_amount?: number;
+        class_collected_students?: {
+            student_id: number;
+            name: string;
+            admission_no?: string;
+            class_name?: string;
+            amount: number;
+            collector_name?: string;
+            collection_date?: string;
+        }[];
+        original_amount?: number;
+    }[];
     family_members?: { student_id: number; first_name: string; last_name: string; class_name: string; admission_no: string; section_name?: string; father_name?: string; }[];
     academic_year_id?: number;
     academic_year_name?: string;
     is_active_year?: boolean;
+    class_collected_amount?: number;
+    class_collected_students?: {
+        student_id: number;
+        name: string;
+        admission_no?: string;
+        class_name?: string;
+        amount: number;
+        collector_name?: string;
+        collection_date?: string;
+    }[];
+    original_total_amount?: number;
 }
 interface Stats {
     total_students: number; total_amount: number; paid_amount: number;
@@ -494,7 +522,10 @@ export default function CollectFeePage() {
 
         lineItems.forEach(li => {
             srNo++;
-            const desc = li.head_name.replace('Family Monthly Fee', 'Monthly Fee') + (li.note ? ` (${li.note})` : '');
+            let desc = li.head_name.replace('Family Monthly Fee', 'Monthly Fee') + (li.note ? ` (${li.note})` : '');
+            if (li.class_collected_amount && li.class_collected_amount > 0) {
+                desc += ` [Class Coll: PKR ${li.class_collected_amount.toLocaleString('en-PK')}]`;
+            }
             feeRows += `<tr>
                 <td>${srNo}</td>
                 <td>${escStr(desc)}</td>
@@ -1156,6 +1187,13 @@ export default function CollectFeePage() {
                                                             {isTrustedGroup && parseFloat(g.latest_unpaid.total_amount as any) <= 0 ? 'Free Tuition • ' : ''}
                                                             {MONTHS[(g.latest_unpaid.month ?? 1) - 1]?.slice(0, 3)} {g.latest_unpaid.year} Slip
                                                         </div>
+                                                        {g.latest_unpaid.class_collected_amount && g.latest_unpaid.class_collected_amount > 0 ? (
+                                                            <div className="mt-0.5">
+                                                                <span className="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle py-0.5 px-1" style={{ fontSize: '0.62rem' }} title={`PKR ${g.latest_unpaid.class_collected_amount} Exam Fee collected by teacher in class`}>
+                                                                    <i className="bi bi-mortarboard-fill me-1"></i>PKR {g.latest_unpaid.class_collected_amount.toLocaleString('en-PK')} in Class
+                                                                </span>
+                                                            </div>
+                                                        ) : null}
                                                     </td>
                                                     <td className="px-2 text-end fw-bold" style={{ color: '#198754' }}>
                                                         {groupTotalPaid > 0
@@ -1353,6 +1391,17 @@ export default function CollectFeePage() {
                                                                                             {item.head_name}
                                                                                         </div>
                                                                                         {item.note && <div className="text-muted" style={{ fontSize: '0.72rem' }}>{item.note}</div>}
+                                                                                        {item.class_collected_amount && item.class_collected_amount > 0 ? (
+                                                                                            <div className="text-warning-emphasis fw-semibold mt-0.5" style={{ fontSize: '0.7rem' }}>
+                                                                                                <i className="bi bi-mortarboard-fill text-warning me-1"></i>
+                                                                                                PKR {item.class_collected_amount.toLocaleString('en-PK')} collected in class
+                                                                                                {item.class_collected_students && item.class_collected_students.length > 0 && (
+                                                                                                    <span className="text-muted ms-1">
+                                                                                                        ({item.class_collected_students.map((st: any) => `${st.name}${st.class_name ? ` - ${st.class_name}` : ''}`).join(', ')})
+                                                                                                    </span>
+                                                                                                )}
+                                                                                            </div>
+                                                                                        ) : null}
                                                                                     </td>
                                                                                     <td className="py-1 text-end fw-semibold" style={{ color: 'var(--primary-dark)' }}>
                                                                                         {fmt(itemAmt)}
@@ -1818,6 +1867,24 @@ export default function CollectFeePage() {
                                                                                     Billed: {amtB.toLocaleString('en-PK')} {paid > 0 ? ' • Paid: ' + paid.toLocaleString('en-PK') : ''}
                                                                                     {item.is_waived ? ' • Waived off' : ''}
                                                                                 </span>
+                                                                                {item.class_collected_amount && item.class_collected_amount > 0 ? (
+                                                                                    <div className="mt-1.5 p-2 rounded-2 border border-warning-subtle bg-warning-subtle text-dark" style={{ fontSize: '0.74rem', maxWidth: '100%' }}>
+                                                                                        <div className="d-flex align-items-center gap-1 fw-bold text-warning-emphasis">
+                                                                                            <i className="bi bi-mortarboard-fill text-warning"></i>
+                                                                                            <span>Collected in Class (PKR {item.class_collected_amount.toLocaleString('en-PK')} deducted):</span>
+                                                                                        </div>
+                                                                                        {item.class_collected_students && item.class_collected_students.length > 0 && (
+                                                                                            <div className="d-flex flex-wrap gap-1 mt-1">
+                                                                                                {item.class_collected_students.map((st: any, sIdx: number) => (
+                                                                                                    <span key={sIdx} className="badge bg-white text-dark border border-warning-subtle py-1 px-1.5 fw-semibold" style={{ fontSize: '0.68rem' }}>
+                                                                                                        <i className="bi bi-person-check text-success me-1"></i>
+                                                                                                        {st.name} {st.class_name ? `(${st.class_name})` : ''} — PKR {st.amount.toLocaleString('en-PK')}
+                                                                                                    </span>
+                                                                                                ))}
+                                                                                            </div>
+                                                                                        )}
+                                                                                    </div>
+                                                                                ) : null}
                                                                             </div>
                                                                             <div className="d-flex align-items-center gap-2 flex-wrap ms-auto">
                                                                                 {isLateFine && (
@@ -1850,6 +1917,12 @@ export default function CollectFeePage() {
                                                                                     </span>
                                                                                 )}
 
+                                                                                {remNum <= 0 && item.class_collected_amount && item.class_collected_amount > 0 && (
+                                                                                    <span className="badge bg-success-subtle text-success border border-success-subtle fw-bold py-1.5 px-2" style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+                                                                                        <i className="bi bi-check-circle-fill me-1"></i>Class Paid
+                                                                                    </span>
+                                                                                )}
+
                                                                                 <div className="input-group input-group-sm w-auto" style={{ width: '130px', maxWidth: '140px' }}>
                                                                                     <span className="input-group-text bg-light text-muted small px-2 fw-bold" style={{ fontSize: '0.78rem' }}>PKR</span>
                                                                                     <input type="number" className="form-control form-control-sm text-end fw-bold no-spinner" placeholder="0"
@@ -1869,7 +1942,7 @@ export default function CollectFeePage() {
                                                                                             setHeadPayVals({ ...headPayVals, [headId]: val > 0 ? val.toString() : '' });
                                                                                         }}
                                                                                         style={{ fontSize: '0.9rem', fontWeight: 600, padding: '4px 8px' }}
-                                                                                        disabled={(remNum <= 0 && paid > 0) || isWaived || (!isFineDatePassed && isLateFine)}
+                                                                                        disabled={(remNum <= 0) || isWaived || (!isFineDatePassed && isLateFine)}
                                                                                         min="0" />
                                                                                 </div>
                                                                             </div>

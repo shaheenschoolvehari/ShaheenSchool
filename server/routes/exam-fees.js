@@ -470,13 +470,30 @@ router.post('/collect', async (req, res) => {
 
         let savedCount = 0;
         for (const st of students) {
+            // 1. Look up matching fee slip if one exists
+            const slipLookup = await client.query(`
+                SELECT mfs.slip_id
+                FROM monthly_fee_slips mfs
+                JOIN students s ON (mfs.student_id = s.student_id OR (mfs.is_family_slip = TRUE AND mfs.family_id IS NOT NULL AND mfs.family_id = s.family_id))
+                WHERE s.student_id = $1
+                  AND ($2::int IS NULL OR mfs.month = $2 OR (mfs.has_multi_months = TRUE AND $2 = ANY(mfs.months_list)))
+                  AND ($3::int IS NULL OR mfs.year = $3 OR ($4::int IS NOT NULL AND mfs.academic_year_id = $4))
+                ORDER BY mfs.slip_id DESC
+                LIMIT 1
+            `, [st.student_id, parsedMonth, parsedYear, yearId]);
+
+            const slipId = slipLookup.rows[0]?.slip_id || null;
+
             const resInsert = await client.query(`
                 INSERT INTO exam_fee_collections 
-                (collection_name, student_id, class_id, section_id, amount, remarks, collected_by, collection_date, academic_year_id, collection_source, month, year)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE, $8, 'Class', $9, $10)
-                ON CONFLICT (collection_name, student_id) DO NOTHING
+                (collection_name, student_id, class_id, section_id, amount, remarks, collected_by, collection_date, academic_year_id, collection_source, month, year, fee_slip_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE, $8, 'Class', $9, $10, $11)
+                ON CONFLICT (collection_name, student_id) DO UPDATE
+                SET amount = EXCLUDED.amount,
+                    remarks = EXCLUDED.remarks,
+                    fee_slip_id = COALESCE(EXCLUDED.fee_slip_id, exam_fee_collections.fee_slip_id)
                 RETURNING id
-            `, [collection_name, st.student_id, class_id, section_id, st.amount, st.remarks, user_id, yearId, parsedMonth, parsedYear]);
+            `, [collection_name, st.student_id, class_id, section_id, st.amount, st.remarks, user_id, yearId, parsedMonth, parsedYear, slipId]);
 
             if (resInsert.rows.length > 0) {
                 savedCount++;

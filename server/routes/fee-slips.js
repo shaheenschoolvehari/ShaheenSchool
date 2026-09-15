@@ -29,6 +29,140 @@ async function getActiveAcademicYear(clientPool) {
     return yearRes.rows[0] || null;
 }
 
+// Helper to attach class exam fee collections to slips and line items,
+// and deduct the class-collected portion from the monthly fee voucher's exam head and total bill
+async function attachClassExamCollections(slips, clientPool) {
+    if (!slips || slips.length === 0) return slips;
+
+    const slipIds = slips.map(s => s.slip_id).filter(Boolean);
+    const familyIds = [...new Set(slips.filter(s => s.is_family_slip && s.family_id).map(s => s.family_id))];
+    const studentIds = [...new Set(slips.map(s => s.student_id).filter(Boolean))];
+
+    if (slipIds.length === 0) return slips;
+
+    try {
+        const efcRes = await clientPool.query(`
+            SELECT 
+                efc.id,
+                efc.fee_slip_id,
+                efc.student_id,
+                efc.amount,
+                efc.month,
+                efc.year,
+                efc.academic_year_id,
+                efc.collection_name,
+                efc.collection_source,
+                efc.collection_date,
+                s.family_id,
+                s.first_name,
+                s.last_name,
+                s.admission_no,
+                c.class_name,
+                COALESCE(u.full_name, u.username) AS collector_name
+            FROM exam_fee_collections efc
+            JOIN students s ON s.student_id = efc.student_id
+            LEFT JOIN classes c ON c.class_id = s.class_id
+            LEFT JOIN app_users u ON u.id = efc.collected_by
+            WHERE efc.collection_source = 'Class'
+              AND (
+                  efc.fee_slip_id = ANY($1::int[])
+                  OR (s.family_id IS NOT NULL AND s.family_id = ANY($2::varchar[]))
+                  OR s.student_id = ANY($3::int[])
+              )
+        `, [slipIds, familyIds, studentIds]);
+
+        const efcRows = efcRes.rows;
+
+        for (const slip of slips) {
+            const slipMonthsList = slip.months_list && Array.isArray(slip.months_list) && slip.months_list.length > 0
+                ? slip.months_list
+                : (slip.month ? [slip.month] : []);
+            const slipYear = slip.year;
+            const slipAcadId = slip.academic_year_id;
+
+            const matchedEfc = efcRows.filter(efc => {
+                if (efc.fee_slip_id && efc.fee_slip_id === slip.slip_id) return true;
+
+                const targetMatch = slip.is_family_slip && slip.family_id
+                    ? efc.family_id === slip.family_id
+                    : efc.student_id === slip.student_id;
+
+                if (!targetMatch) return false;
+
+                const monthMatch = efc.month 
+                    ? slipMonthsList.includes(efc.month) 
+                    : true;
+
+                const yearMatch = efc.year && slipYear
+                    ? efc.year === slipYear
+                    : (efc.academic_year_id && slipAcadId ? efc.academic_year_id === slipAcadId : true);
+
+                return monthMatch && yearMatch;
+            });
+
+            // Deduplicate by efc.id
+            const uniqueMap = new Map();
+            matchedEfc.forEach(e => uniqueMap.set(e.id, e));
+            const uniqueList = Array.from(uniqueMap.values());
+
+            const totalClassCollected = uniqueList.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
+            const studentDetails = uniqueList.map(e => ({
+                student_id: e.student_id,
+                name: `${e.first_name} ${e.last_name || ''}`.trim(),
+                admission_no: e.admission_no,
+                class_name: e.class_name,
+                amount: parseFloat(e.amount) || 0,
+                collector_name: e.collector_name,
+                collection_date: e.collection_date
+            }));
+
+            slip.class_collected_amount = totalClassCollected;
+            slip.class_collected_students = studentDetails;
+
+            // Calculate unapplied deduction
+            const alreadyDeducted = parseFloat(slip.class_exam_deducted || 0);
+            const unapplied = Math.max(0, totalClassCollected - alreadyDeducted);
+
+            // Deduct unapplied from total_amount and adjust status
+            slip.original_total_amount = parseFloat(slip.total_amount || 0);
+            if (unapplied > 0) {
+                slip.total_amount = Math.max(0, parseFloat((slip.original_total_amount - unapplied).toFixed(2)));
+                const sPaid = parseFloat(slip.paid_amount || 0);
+                if (slip.is_trusted && slip.total_amount <= 0) {
+                    slip.status = 'satteled';
+                } else if (sPaid >= slip.total_amount && slip.total_amount > 0) {
+                    slip.status = 'paid';
+                }
+            }
+
+            // Also deduct unapplied from the Exam Fee line item
+            let lineItems = slip.line_items;
+            if (typeof lineItems === 'string') {
+                try { lineItems = JSON.parse(lineItems); } catch { lineItems = []; }
+            }
+            if (Array.isArray(lineItems)) {
+                lineItems.forEach(item => {
+                    const hn = (item.head_name || '').toLowerCase();
+                    const isExamHead = hn.includes('exam') || hn.includes('paper fund') || item.head_type === 'exam';
+                    if (isExamHead) {
+                        item.class_collected_amount = totalClassCollected;
+                        item.class_collected_students = studentDetails;
+                        item.original_amount = parseFloat(item.amount || 0);
+                        if (unapplied > 0) {
+                            item.amount = Math.max(0, parseFloat((item.original_amount - unapplied).toFixed(2)));
+                        }
+                    }
+                });
+                slip.line_items = lineItems;
+            }
+        }
+    } catch (err) {
+        console.error("Error in attachClassExamCollections:", err.message);
+    }
+
+    return slips;
+}
+
 // POST /fee-slips/generate
 router.post('/generate', async (req, res) => {
     const client = await pool.connect();
@@ -875,6 +1009,9 @@ router.get('/', async (req, res) => {
             }
         }
 
+        // Attach class exam collections and deduct from vouchers
+        await attachClassExamCollections(result.rows, pool);
+
         // Evaluate trusted category and all-trusted families
         result.rows.forEach(r => {
             if (r.is_family_slip && r.family_id) {
@@ -1259,6 +1396,7 @@ router.get('/print-queue', async (req, res) => {
         `, params);
 
         const allSlips = result.rows;
+        await attachClassExamCollections(allSlips, pool);
 
         // Pre-calculate pending months count for all families and solo students in active session
         const pendingMonthsRes = await pool.query(`
@@ -1496,6 +1634,9 @@ router.get('/:id', async (req, res) => {
         const items = await pool.query('SELECT * FROM slip_line_items WHERE slip_id=$1 ORDER BY item_id', [id]);
         const payments = await pool.query('SELECT * FROM fee_payments WHERE slip_id=$1 ORDER BY payment_date DESC', [id]);
         const r = slip.rows[0];
+        r.line_items = items.rows;
+        await attachClassExamCollections([r], pool);
+        items.rows = r.line_items;
 
         let familyMembers = [];
         if (r.is_family_slip && r.family_id) {
@@ -1637,6 +1778,60 @@ router.post('/:id/pay', async (req, res) => {
             effectiveTotal = nonTuitionSum;
         }
 
+        // Check any class exam fee collections for this slip / student / family
+        const efcPayRes = await client.query(`
+            SELECT COALESCE(SUM(efc.amount), 0) AS total_class_collected
+            FROM exam_fee_collections efc
+            JOIN students s ON s.student_id = efc.student_id
+            WHERE efc.collection_source = 'Class'
+              AND (
+                  efc.fee_slip_id = $1
+                  OR (
+                      ($2::bool = TRUE AND s.family_id IS NOT NULL AND s.family_id = $3)
+                      OR s.student_id = $4
+                  )
+              )
+              AND ($5::int IS NULL OR efc.month = $5 OR efc.month = ANY($6::int[]))
+              AND ($7::int IS NULL OR efc.year = $7 OR ($8::int IS NOT NULL AND efc.academic_year_id = $8))
+        `, [id, cur.is_family_slip, cur.family_id, cur.student_id, cur.month, cur.months_list || (cur.month ? [cur.month] : []), cur.year, cur.academic_year_id]);
+
+        const classExamTotal = parseFloat(efcPayRes.rows[0]?.total_class_collected || 0);
+        const alreadyDeducted = parseFloat(cur.class_exam_deducted || 0);
+        const unappliedExamDeduction = Math.max(0, classExamTotal - alreadyDeducted);
+
+        if (unappliedExamDeduction > 0) {
+            effectiveTotal = Math.max(0, effectiveTotal - unappliedExamDeduction);
+
+            // Deduct unapplied exam amount from slip_line_items for exam head
+            await client.query(`
+                UPDATE slip_line_items
+                SET amount = GREATEST(0, amount - $1),
+                    class_exam_deducted = COALESCE(class_exam_deducted, 0) + $1,
+                    note = CASE
+                        WHEN note IS NULL OR note = '' THEN $2
+                        ELSE note || ' (' || $2 || ')'
+                    END
+                WHERE slip_id = $3
+                  AND (head_name ILIKE '%exam%' OR head_name ILIKE '%paper fund%')
+            `, [unappliedExamDeduction, `PKR ${unappliedExamDeduction} collected in class`, id]);
+
+            // Link fee_slip_id in exam_fee_collections for any unlinked records
+            await client.query(`
+                UPDATE exam_fee_collections efc
+                SET fee_slip_id = $1
+                FROM students s
+                WHERE s.student_id = efc.student_id
+                  AND efc.fee_slip_id IS NULL
+                  AND efc.collection_source = 'Class'
+                  AND (
+                      ($2::bool = TRUE AND s.family_id IS NOT NULL AND s.family_id = $3)
+                      OR s.student_id = $4
+                  )
+                  AND ($5::int IS NULL OR efc.month = $5 OR efc.month = ANY($6::int[]))
+                  AND ($7::int IS NULL OR efc.year = $7 OR ($8::int IS NOT NULL AND efc.academic_year_id = $8))
+            `, [id, cur.is_family_slip, cur.family_id, cur.student_id, cur.month, cur.months_list || (cur.month ? [cur.month] : []), cur.year, cur.academic_year_id]);
+        }
+
         const prevPaid = parseFloat(cur.paid_amount);
         const paidNow = parseFloat(amount_paid || 0);
         const newPaid = prevPaid + paidNow;
@@ -1652,8 +1847,14 @@ router.post('/:id/pay', async (req, res) => {
             );
         }
         const updated = await client.query(
-            `UPDATE monthly_fee_slips SET total_amount=$1, paid_amount=$2, status=$3 WHERE slip_id=$4 RETURNING *`,
-            [total, newPaid, newStatus, id]
+            `UPDATE monthly_fee_slips 
+             SET total_amount=$1, 
+                 paid_amount=$2, 
+                 status=$3,
+                 class_exam_deducted = COALESCE(class_exam_deducted, 0) + $4
+             WHERE slip_id=$5 
+             RETURNING *`,
+            [total, newPaid, newStatus, unappliedExamDeduction, id]
         );
 
         // Dispatch notification to Family Unit & Staff with fees.collect permission

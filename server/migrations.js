@@ -310,6 +310,8 @@ async function runEssentialMigrations() {
             UPDATE exam_fee_collections SET academic_year_id = (SELECT id FROM academic_years WHERE is_active = TRUE ORDER BY id DESC LIMIT 1) WHERE academic_year_id IS NULL;
 
             ALTER TABLE monthly_fee_slips ADD COLUMN IF NOT EXISTS academic_year_id INTEGER REFERENCES academic_years(id) ON DELETE SET NULL;
+            ALTER TABLE monthly_fee_slips ADD COLUMN IF NOT EXISTS class_exam_deducted NUMERIC(10,2) DEFAULT 0;
+            ALTER TABLE slip_line_items ADD COLUMN IF NOT EXISTS class_exam_deducted NUMERIC(10,2) DEFAULT 0;
             CREATE INDEX IF NOT EXISTS idx_mfs_academic_year ON monthly_fee_slips(academic_year_id);
             UPDATE monthly_fee_slips SET academic_year_id = (SELECT id FROM academic_years WHERE is_active = TRUE ORDER BY id DESC LIMIT 1) WHERE academic_year_id IS NULL;
 
