@@ -468,7 +468,10 @@ export default function FamilyListPage() {
 
         filteredFamilies.forEach(f => {
             const isSettled = (f.is_trusted_family && (f.total_balance || 0) <= 0 && (f.total_billed || 0) <= 0) || ['settled', 'satteled'].includes((f.fee_status || '').toLowerCase());
-            const monthlyFeeVal = f.effective_monthly_fee || f.family_fee || 0;
+            const memberFeeSum = (f.activeMembers || f.members || [])
+                .filter(m => (m.status || '').toLowerCase() === 'active')
+                .reduce((sum, m) => sum + (parseFloat((m.monthly_fee || 0) as any) || 0), 0);
+            const monthlyFeeVal = f.effective_monthly_fee || f.family_fee || memberFeeSum || 0;
             const opbVal = f.opb_remaining !== undefined ? f.opb_remaining : (f.opening_balance || 0);
 
             f.activeMembers.forEach(m => {
@@ -536,7 +539,10 @@ export default function FamilyListPage() {
             const M = f.activeMembers.length;
             const isSettled = f.is_trusted_family || ['settled', 'satteled'].includes((f.fee_status || '').toLowerCase());
             const isCousin = f.is_cousin_family;
-            const monthlyFeeVal = f.effective_monthly_fee || f.family_fee || 0;
+            const memberFeeSum = (f.activeMembers || f.members || [])
+                .filter(m => (m.status || '').toLowerCase() === 'active')
+                .reduce((sum, m) => sum + (parseFloat((m.monthly_fee || 0) as any) || 0), 0);
+            const monthlyFeeVal = f.effective_monthly_fee || f.family_fee || memberFeeSum || 0;
             const opbVal = f.opb_remaining !== undefined ? f.opb_remaining : (f.opening_balance || 0);
 
             return f.activeMembers.map((m, mIdx) => {
@@ -1011,7 +1017,10 @@ export default function FamilyListPage() {
                                         const isUnpaid = !isSettled && feeStatus === 'unpaid';
                                         const isPartial = !isSettled && feeStatus === 'partial';
                                         const isCousin = fam.is_cousin_family;
-                                        const monthlyFeeVal = fam.effective_monthly_fee || fam.family_fee || 0;
+                                        const memberFeeSum = (fam.activeMembers || fam.members || [])
+                                            .filter(m => (m.status || '').toLowerCase() === 'active')
+                                            .reduce((sum, m) => sum + (parseFloat((m.monthly_fee || 0) as any) || 0), 0);
+                                        const monthlyFeeVal = fam.effective_monthly_fee || fam.family_fee || memberFeeSum || 0;
                                         const opbVal = fam.opb_remaining !== undefined ? fam.opb_remaining : (fam.opening_balance || 0);
 
                                         return fam.activeMembers.map((m, mIdx) => {
@@ -1327,7 +1336,10 @@ export default function FamilyListPage() {
                                     const feeStatus = (fam.fee_status || 'paid').toLowerCase();
                                     const isSettled = fam.is_trusted_family || ['settled', 'satteled'].includes(feeStatus);
                                     const isCousin = fam.is_cousin_family;
-                                    const monthlyFeeVal = fam.effective_monthly_fee || fam.family_fee || 0;
+                                    const memberFeeSum = (fam.activeMembers || fam.members || [])
+                                        .filter(m => (m.status || '').toLowerCase() === 'active')
+                                        .reduce((sum, m) => sum + (parseFloat((m.monthly_fee || 0) as any) || 0), 0);
+                                    const monthlyFeeVal = fam.effective_monthly_fee || fam.family_fee || memberFeeSum || 0;
                                     const opbVal = fam.opb_remaining !== undefined ? fam.opb_remaining : (fam.opening_balance || 0);
 
                                     return (

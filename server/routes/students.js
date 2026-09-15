@@ -901,7 +901,7 @@ router.get('/families-directory', async (req, res) => {
 
             // Effective monthly tuition fee calculation
             const memberMonthlySum = members
-                .filter(m => (m.status || '').toLowerCase() === 'active' && !m.is_trusted)
+                .filter(m => (m.status || '').toLowerCase() === 'active')
                 .reduce((sum, m) => sum + (parseFloat(m.monthly_fee) || 0), 0);
             const effectiveMonthlyFee = fam.family_fee > 0 ? fam.family_fee : memberMonthlySum;
 
