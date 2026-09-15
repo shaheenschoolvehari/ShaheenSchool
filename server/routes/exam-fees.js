@@ -163,13 +163,39 @@ router.get('/months', async (req, res) => {
         ];
 
         // 1. Query fee slips that contain exam fee heads (either in line items or fee_heads)
+        // Note: For family slips, line items may have multiplied amounts (e.g. 300 * 9 = 2700).
+        // We resolve the base per-student head amount using fee_plan_heads or individual slips (is_family_slip = false) or MIN(amount).
         const slipsQuery = `
             SELECT 
                 m.month,
                 m.year,
                 m.academic_year_id,
                 m.head_name,
-                ROUND(MAX(m.amount), 2) AS amount
+                ROUND(
+                    COALESCE(
+                        (
+                            SELECT fph.amount 
+                            FROM fee_plan_heads fph
+                            JOIN fee_plans fp ON fp.plan_id = fph.plan_id
+                            JOIN fee_heads fh ON fh.head_id = fph.head_id
+                            WHERE (fp.class_id = $1 OR fp.applies_to_all = TRUE)
+                              AND (fh.head_name ILIKE m.head_name OR fh.head_type = 'exam' OR fh.head_name ILIKE '%exam%')
+                              AND fp.is_active = TRUE
+                            ORDER BY (fp.class_id = $1) DESC, fph.id DESC
+                            LIMIT 1
+                        ),
+                        (
+                            SELECT MIN(sli2.amount)
+                            FROM monthly_fee_slips mfs2
+                            JOIN slip_line_items sli2 ON sli2.slip_id = mfs2.slip_id
+                            WHERE ($1::int IS NULL OR mfs2.class_id = $1)
+                              AND (mfs2.month = m.month OR m.month = ANY(mfs2.months_list))
+                              AND sli2.head_name = m.head_name
+                              AND mfs2.is_family_slip = FALSE
+                        ),
+                        MIN(m.amount)
+                    ), 2
+                ) AS amount
             FROM (
                 SELECT 
                     unnest(COALESCE(mfs.months_list, ARRAY[mfs.month])) AS month,
@@ -342,7 +368,7 @@ router.get('/students', async (req, res) => {
                     e.remarks, 
                     e.collection_date, 
                     COALESCE(e.collection_source, 'Class') AS collection_source,
-                    u.name AS collector_name
+                    COALESCE(u.full_name, u.username) AS collector_name
                 FROM exam_fee_collections e
                 LEFT JOIN app_users u ON u.id = e.collected_by
                 WHERE e.student_id = s.student_id
@@ -360,7 +386,7 @@ router.get('/students', async (req, res) => {
                 SELECT 
                     mfs.slip_id,
                     sli.amount AS exam_amount,
-                    COALESCE(mfs.updated_at::date, mfs.generated_at::date, CURRENT_DATE) AS paid_date
+                    COALESCE(mfs.generated_at::date, CURRENT_DATE) AS paid_date
                 FROM monthly_fee_slips mfs
                 JOIN slip_line_items sli ON sli.slip_id = mfs.slip_id
                 LEFT JOIN fee_heads fh ON fh.head_id = sli.head_id
@@ -459,7 +485,7 @@ router.post('/collect', async (req, res) => {
 
         // Fetch collector and class details for notifications
         const collectorRes = await client.query(`
-            SELECT u.name, r.role_name, e.first_name, e.last_name
+            SELECT COALESCE(u.full_name, u.username) AS name, r.role_name, e.first_name, e.last_name
             FROM app_users u
             LEFT JOIN app_roles r ON u.role_id = r.id
             LEFT JOIN employees e ON e.app_user_id = u.id
@@ -484,7 +510,7 @@ router.post('/collect', async (req, res) => {
         // Query target users for instant push/in-app notifications:
         // Coordinator, Vice Principal, Principal, Admin, Super Admin, Accountant
         const targetUsers = await client.query(`
-            SELECT DISTINCT u.id, u.name, r.role_name
+            SELECT DISTINCT u.id, COALESCE(u.full_name, u.username) AS name, r.role_name
             FROM app_users u
             JOIN app_roles r ON u.role_id = r.id
             WHERE u.is_active = TRUE
@@ -536,4 +562,5 @@ router.post('/collect', async (req, res) => {
 });
 
 module.exports = router;
+
 

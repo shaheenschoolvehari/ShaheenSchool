@@ -553,9 +553,9 @@ export default function ExamCollectionPage() {
                                     ))
                                 )}
                             </select>
-                            <div className="form-text small text-muted">
+                            {/* <div className="form-text small text-muted">
                                 Only months with generated fee slips containing an Exam Head appear here.
-                            </div>
+                            </div> */}
                         </div>
 
                         {/* Amount (Locked & Fixed from Fee Head) */}

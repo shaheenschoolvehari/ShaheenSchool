@@ -2,9 +2,14 @@ import { toast } from 'react-toastify';
 
 export const playNotifySound = (type: 'success' | 'error' | 'warning' = 'success') => {
     try {
+        if (typeof window === 'undefined') return;
+        if (typeof navigator !== 'undefined' && (navigator as any).userActivation && !(navigator as any).userActivation.hasBeenActive) {
+            return;
+        }
         const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
         if (!AudioContext) return;
         const ctx = new AudioContext();
+        if (ctx.state === 'suspended') return;
         const osc = ctx.createOscillator();
         const gainNode = ctx.createGain();
         osc.connect(gainNode);

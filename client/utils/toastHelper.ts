@@ -3,7 +3,14 @@ import { toast, ToastOptions } from 'react-toastify';
 // Minor beep sound using AudioContext
 const playMinorBeep = () => {
   try {
-    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    if (typeof window === 'undefined') return;
+    if (typeof navigator !== 'undefined' && (navigator as any).userActivation && !(navigator as any).userActivation.hasBeenActive) {
+      return;
+    }
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+    const audioCtx = new AudioCtx();
+    if (audioCtx.state === 'suspended') return;
     const oscillator = audioCtx.createOscillator();
     const gainNode = audioCtx.createGain();
 
@@ -19,7 +26,7 @@ const playMinorBeep = () => {
     oscillator.start();
     oscillator.stop(audioCtx.currentTime + 0.1);
   } catch (error) {
-    console.log('Error playing beep:', error);
+    // Silent fallback
   }
 };
 

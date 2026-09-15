@@ -14,6 +14,7 @@ const API = process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.c
 function GlobalNotificationRunner({ user }: { user: any }) {
   const router = useRouter();
   const notifiedIdsRef = useRef<Set<number>>(new Set());
+  const isInitialPollRef = useRef(true);
 
   useEffect(() => {
     if (!user) return;
@@ -46,10 +47,19 @@ function GlobalNotificationRunner({ user }: { user: any }) {
         if (res.ok) {
           const data = await res.json();
           const list = data.notifications || [];
-          for (const n of list) {
-            if (!n.is_read && !notifiedIdsRef.current.has(n.id)) {
+          
+          if (isInitialPollRef.current) {
+            // Seed current unread IDs so we only alert for fresh incoming notices
+            for (const n of list) {
               notifiedIdsRef.current.add(n.id);
-              triggerNativeDeviceNotification(n.id, n.title, n.message, n.link);
+            }
+            isInitialPollRef.current = false;
+          } else {
+            for (const n of list) {
+              if (!n.is_read && !notifiedIdsRef.current.has(n.id)) {
+                notifiedIdsRef.current.add(n.id);
+                triggerNativeDeviceNotification(n.id, n.title, n.message, n.link);
+              }
             }
           }
         }

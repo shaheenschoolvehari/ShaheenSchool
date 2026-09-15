@@ -6,11 +6,16 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 export function playNotificationChime() {
     try {
         if (typeof window === 'undefined') return;
+        // Don't start AudioContext before the user has interacted with the document
+        if (typeof navigator !== 'undefined' && (navigator as any).userActivation && !(navigator as any).userActivation.hasBeenActive) {
+            return;
+        }
         const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
         if (!AudioCtx) return;
         const ctx = new AudioCtx();
         if (ctx.state === 'suspended') {
-            ctx.resume();
+            // Do not call resume without gesture
+            return;
         }
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -24,7 +29,7 @@ export function playNotificationChime() {
         osc.start();
         osc.stop(ctx.currentTime + 0.35);
     } catch (e) {
-        // AudioContext may be blocked before first user gesture
+        // AudioContext silent fallback
     }
 }
 
