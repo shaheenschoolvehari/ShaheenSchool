@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { notify } from '@/app/utils/notify';
 
 export default function EmployeeProfile() {
     const { id } = useParams();
@@ -38,11 +39,13 @@ export default function EmployeeProfile() {
 
     const fetchEmployee = async () => {
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/hrm/employees/${id}`);
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/hrm/employees/${id}`, {
+                cache: 'no-store'
+            });
             if (res.ok) {
                 setEmployee(await res.json());
             } else {
-                alert('Employee not found');
+                notify.error('Employee not found');
                 router.push('/hrm/employees');
             }
         } catch (err) { console.error(err); }
@@ -50,17 +53,30 @@ export default function EmployeeProfile() {
     };
 
     const toggleStatus = async () => {
-        const newStatus = employee.status === 'Active' ? 'Inactive' : 'Active';
-        if (!confirm(`Mark this employee as ${newStatus}?`)) return;
+        if (!employee) return;
+        const isCurrentActive = (employee.status || '').trim().toLowerCase() === 'active';
+        const newStatus = isCurrentActive ? 'Inactive' : 'Active';
+        const confirmMsg = isCurrentActive
+            ? `Are you sure you want to DEACTIVATE this employee?\nThey will be marked as Inactive/Resigned.`
+            : `Are you sure you want to RE-ACTIVATE this employee?\nThey will be marked as Active/Joined.`;
+        if (!confirm(confirmMsg)) return;
+
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/hrm/employees/${id}/status`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status: newStatus }),
             });
-            if (res.ok) fetchEmployee();
-            else alert('Failed to update status');
-        } catch { alert('Error updating status'); }
+            if (res.ok) {
+                setEmployee((prev: any) => prev ? ({ ...prev, status: newStatus }) : prev);
+                notify.success(`Employee status changed to ${newStatus} successfully!`);
+                fetchEmployee();
+            } else {
+                notify.error('Failed to update employee status');
+            }
+        } catch {
+            notify.error('Error updating status');
+        }
     };
 
     const handleChangePassword = async () => {
@@ -125,24 +141,66 @@ export default function EmployeeProfile() {
                                     style={{ width: '130px', height: '130px', fontSize: '2.8rem', background: 'var(--primary-dark)' }}>
                                     {initials}
                                 </div>
-                                <span className="position-absolute bottom-0 end-0 border border-3 border-white rounded-circle"
-                                    style={{ width: '22px', height: '22px', background: employee.status === 'Active' ? '#198754' : '#6c757d' }}></span>
+                                <span className="position-absolute bottom-0 end-0 border border-3 border-white rounded-circle shadow-sm"
+                                    style={{ width: '22px', height: '22px', background: (employee.status || '').trim().toLowerCase() === 'active' ? '#198754' : '#dc3545' }}
+                                    title={(employee.status || '').trim().toLowerCase() === 'active' ? 'Active Employee' : 'Inactive / Resigned Employee'}></span>
                             </div>
 
                             {/* Name / role */}
                             <div className="mb-5 text-white animate__animated animate__fadeInUp">
                                 <h1 className="fw-bold mb-1 fs-3">{employee.first_name} {employee.last_name}</h1>
-                                <div className="d-flex flex-wrap gap-2 align-items-center" style={{ opacity: 0.85 }}>
-                                    <span className="badge bg-white bg-opacity-20 border border-white border-opacity-25">
-                                        <i className="bi bi-briefcase me-1"></i>{employee.designation || 'Employee'}
+                                <div className="d-flex flex-wrap gap-2 align-items-center mt-2">
+                                    <span
+                                        className="badge d-inline-flex align-items-center"
+                                        style={{
+                                            backgroundColor: 'rgba(255, 255, 255, 0.22)',
+                                            color: '#ffffff',
+                                            border: '1px solid rgba(255, 255, 255, 0.4)',
+                                            backdropFilter: 'blur(8px)',
+                                            WebkitBackdropFilter: 'blur(8px)',
+                                            fontSize: '0.85rem',
+                                            fontWeight: 600,
+                                            padding: '0.45rem 0.85rem',
+                                            borderRadius: '8px',
+                                            textShadow: '0 1px 2px rgba(0,0,0,0.35)'
+                                        }}
+                                    >
+                                        <i className="bi bi-briefcase-fill me-1.5" style={{ color: '#fde047' }}></i>
+                                        <span>{employee.designation || 'Employee'}</span>
                                     </span>
                                     {employee.department_name && (
-                                        <span className="badge bg-white bg-opacity-20 border border-white border-opacity-25">
-                                            <i className="bi bi-diagram-3 me-1"></i>{employee.department_name}
+                                        <span
+                                            className="badge d-inline-flex align-items-center"
+                                            style={{
+                                                backgroundColor: 'rgba(255, 255, 255, 0.22)',
+                                                color: '#ffffff',
+                                                border: '1px solid rgba(255, 255, 255, 0.4)',
+                                                backdropFilter: 'blur(8px)',
+                                                WebkitBackdropFilter: 'blur(8px)',
+                                                fontSize: '0.85rem',
+                                                fontWeight: 600,
+                                                padding: '0.45rem 0.85rem',
+                                                borderRadius: '8px',
+                                                textShadow: '0 1px 2px rgba(0,0,0,0.35)'
+                                            }}
+                                        >
+                                            <i className="bi bi-diagram-3-fill me-1.5" style={{ color: '#67e8f9' }}></i>
+                                            <span>{employee.department_name}</span>
                                         </span>
                                     )}
-                                    <span className={`badge ${employee.status === 'Active' ? 'bg-success' : 'bg-secondary'}`}>
-                                        {employee.status}
+                                    <span
+                                        className={`badge d-inline-flex align-items-center ${(employee.status || '').trim().toLowerCase() === 'active' ? 'bg-success' : 'bg-danger'} text-white shadow-sm`}
+                                        style={{
+                                            fontSize: '0.85rem',
+                                            fontWeight: 600,
+                                            padding: '0.45rem 0.85rem',
+                                            borderRadius: '8px',
+                                            border: '1px solid rgba(255, 255, 255, 0.35)',
+                                            textShadow: '0 1px 2px rgba(0,0,0,0.25)'
+                                        }}
+                                    >
+                                        <i className={`bi ${(employee.status || '').trim().toLowerCase() === 'active' ? 'bi-check-circle-fill' : 'bi-slash-circle-fill'} me-1.5`}></i>
+                                        <span>{(employee.status || '').trim().toLowerCase() === 'active' ? 'Active' : 'Inactive'}</span>
                                     </span>
                                 </div>
                             </div>
@@ -199,9 +257,12 @@ export default function EmployeeProfile() {
                                         onClick={() => router.push(`/hrm/employees`)}>
                                         <i className="bi bi-pencil-square me-2"></i>Edit Profile
                                     </button>
-                                    <button className={`btn btn-outline-${employee.status === 'Active' ? 'danger' : 'success'}`} onClick={toggleStatus}>
-                                        <i className={`bi bi-${employee.status === 'Active' ? 'slash-circle' : 'check-circle'} me-2`}></i>
-                                        {employee.status === 'Active' ? 'Deactivate / Resign' : 'Re-Activate / Join'}
+                                    <button
+                                        className={`btn ${(employee.status || '').trim().toLowerCase() === 'active' ? 'btn-outline-danger' : 'btn-outline-success'} fw-medium`}
+                                        onClick={toggleStatus}
+                                    >
+                                        <i className={`bi ${(employee.status || '').trim().toLowerCase() === 'active' ? 'bi-slash-circle' : 'bi-check-circle'} me-2`}></i>
+                                        {(employee.status || '').trim().toLowerCase() === 'active' ? 'Deactivate / Resign' : 'Re-Activate / Join'}
                                     </button>
                                 </div>
                             </div>

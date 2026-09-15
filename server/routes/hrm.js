@@ -163,13 +163,31 @@ router.get('/employees/:id', async (req, res) => {
 router.patch('/employees/:id/status', async (req, res) => {
     try {
         const { id } = req.params;
-        const { status } = req.body; // 'Active' or 'Inactive'
+        let { status } = req.body;
+        if (!status) return res.status(400).json({ error: "Status is required" });
         
-        await pool.query("UPDATE employees SET status = $1 WHERE employee_id = $2", [status, id]);
-        res.json("Status updated");
+        // Normalize status to 'Active' or 'Inactive'
+        const normalizedStatus = status.trim().toLowerCase() === 'active' ? 'Active' : 'Inactive';
+        
+        const result = await pool.query(
+            "UPDATE employees SET status = $1 WHERE employee_id = $2 RETURNING employee_id, status, app_user_id",
+            [normalizedStatus, id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: "Employee not found" });
+        }
+
+        const emp = result.rows[0];
+        if (emp.app_user_id) {
+            const isUserActive = normalizedStatus === 'Active';
+            await pool.query("UPDATE app_users SET is_active = $1 WHERE id = $2", [isUserActive, emp.app_user_id]);
+        }
+
+        res.json({ message: "Status updated successfully", status: normalizedStatus });
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send("Server Error");
+        console.error("Error updating employee status:", err.message);
+        res.status(500).json({ error: "Server Error" });
     }
 });
 
@@ -196,14 +214,15 @@ router.put('/employees/:id', async (req, res) => {
             department_id, joining_date, salary, address,
             gender, dob, marital_status, father_name,
             emergency_contact, qualification, experience, blood_group,
-            create_system_user, username, password, role_id
+            status, create_system_user, username, password, role_id
         } = req.body;
 
         // Check if employee already has a system user
-        const empCheck = await client.query("SELECT app_user_id FROM employees WHERE employee_id = $1", [id]);
+        const empCheck = await client.query("SELECT app_user_id, status FROM employees WHERE employee_id = $1", [id]);
         if (empCheck.rows.length === 0) return res.status(404).json({ error: 'Employee not found' });
 
         let app_user_id = empCheck.rows[0].app_user_id; // keep existing
+        const empStatus = status ? (status.trim().toLowerCase() === 'active' ? 'Active' : 'Inactive') : empCheck.rows[0].status;
         let setUserCol = '';
 
         // Only create a system user if:
@@ -219,11 +238,14 @@ router.put('/employees/:id', async (req, res) => {
             const fullName = `${first_name} ${last_name}`;
 
             const newUser = await client.query(
-                "INSERT INTO app_users (username, password_hash, full_name, role_id) VALUES ($1, $2, $3, $4) RETURNING id",
-                [username, hashedPassword, fullName, role_id]
+                "INSERT INTO app_users (username, password_hash, full_name, role_id, is_active) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+                [username, hashedPassword, fullName, role_id, empStatus === 'Active']
             );
             app_user_id = newUser.rows[0].id;
             setUserCol = ', app_user_id = $19';
+        } else if (app_user_id && status) {
+            // If user exists and status was updated, sync is_active
+            await client.query("UPDATE app_users SET is_active = $1 WHERE id = $2", [empStatus === 'Active', app_user_id]);
         }
 
         if (setUserCol) {
@@ -233,12 +255,12 @@ router.put('/employees/:id', async (req, res) => {
                     designation=$6, department_id=$7, joining_date=$8, salary=$9,
                     address=$10, gender=$11, dob=$12, marital_status=$13,
                     father_name=$14, emergency_contact=$15, qualification=$16,
-                    experience=$17, blood_group=$18, app_user_id=$19
-                WHERE employee_id=$20`,
+                    experience=$17, blood_group=$18, app_user_id=$19, status=$20
+                WHERE employee_id=$21`,
                 [first_name, last_name, email, phone, cnic, designation,
                  department_id, joining_date, salary, address, gender, dob,
                  marital_status, father_name, emergency_contact, qualification,
-                 experience, blood_group, app_user_id, id]
+                 experience, blood_group, app_user_id, empStatus, id]
             );
         } else {
             await client.query(`
@@ -247,12 +269,12 @@ router.put('/employees/:id', async (req, res) => {
                     designation=$6, department_id=$7, joining_date=$8, salary=$9,
                     address=$10, gender=$11, dob=$12, marital_status=$13,
                     father_name=$14, emergency_contact=$15, qualification=$16,
-                    experience=$17, blood_group=$18
-                WHERE employee_id=$19`,
+                    experience=$17, blood_group=$18, status=$19
+                WHERE employee_id=$20`,
                 [first_name, last_name, email, phone, cnic, designation,
                  department_id, joining_date, salary, address, gender, dob,
                  marital_status, father_name, emergency_contact, qualification,
-                 experience, blood_group, id]
+                 experience, blood_group, empStatus, id]
             );
         }
 
