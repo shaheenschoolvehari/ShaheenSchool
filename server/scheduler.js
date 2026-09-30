@@ -11,11 +11,11 @@ const DEFAULT_BACKUP_DIR = path.join(__dirname, 'backups');
 async function generatePureSqlBackup(filepath) {
     const client = await pool.connect();
     try {
-        let schoolName = 'School Management System';
+        let schoolName = 'Shaheen English Model School Vehari';
         try {
-            const sRes = await client.query("SELECT setting_value FROM school_settings WHERE setting_key = 'school_name' UNION SELECT setting_value FROM system_settings WHERE setting_key = 'school_name'");
-            if (sRes.rows.length > 0 && sRes.rows[0].setting_value) {
-                schoolName = sRes.rows[0].setting_value;
+            const sRes = await client.query("SELECT school_name FROM school_settings LIMIT 1");
+            if (sRes.rows.length > 0 && sRes.rows[0].school_name) {
+                schoolName = sRes.rows[0].school_name;
             }
         } catch (e) {}
 
@@ -45,6 +45,40 @@ async function generatePureSqlBackup(filepath) {
             } catch (e) {}
         }
 
+        // Fetch Primary Keys & Unique constraints across all tables
+        const pkRes = await client.query(`
+            SELECT tc.table_name, kcu.column_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+              ON tc.constraint_name = kcu.constraint_name
+             AND tc.table_schema = kcu.table_schema
+            WHERE tc.constraint_type = 'PRIMARY KEY' 
+              AND tc.table_schema = 'public'
+            ORDER BY tc.table_name, kcu.ordinal_position;
+        `);
+        const tablePks = {};
+        for (const row of pkRes.rows) {
+            if (!tablePks[row.table_name]) tablePks[row.table_name] = [];
+            tablePks[row.table_name].push(`"${row.column_name}"`);
+        }
+
+        const uqRes = await client.query(`
+            SELECT tc.table_name, tc.constraint_name, kcu.column_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+              ON tc.constraint_name = kcu.constraint_name
+             AND tc.table_schema = kcu.table_schema
+            WHERE tc.constraint_type = 'UNIQUE' 
+              AND tc.table_schema = 'public'
+            ORDER BY tc.table_name, tc.constraint_name, kcu.ordinal_position;
+        `);
+        const tableUqs = {};
+        for (const row of uqRes.rows) {
+            if (!tableUqs[row.table_name]) tableUqs[row.table_name] = {};
+            if (!tableUqs[row.table_name][row.constraint_name]) tableUqs[row.table_name][row.constraint_name] = [];
+            tableUqs[row.table_name][row.constraint_name].push(`"${row.column_name}"`);
+        }
+
         // 2. Public Tables DDL & Data
         const tablesRes = await client.query(`
             SELECT table_name 
@@ -64,7 +98,7 @@ async function generatePureSqlBackup(filepath) {
                 ORDER BY ordinal_position;
             `, [table]);
 
-            const colDefs = colsRes.rows.map(col => {
+            let colDefs = colsRes.rows.map(col => {
                 let typeStr = col.data_type.toUpperCase();
                 if (typeStr === 'USER-DEFINED') typeStr = 'VARCHAR(255)';
                 if (typeStr === 'ARRAY') typeStr = 'TEXT[]';
@@ -73,6 +107,18 @@ async function generatePureSqlBackup(filepath) {
                 const defaultStr = col.column_default ? ` DEFAULT ${col.column_default}` : '';
                 return `"${col.column_name}" ${typeStr}${nullStr}${defaultStr}`;
             }).join(',\n    ');
+
+            // Attach Primary Key constraint if available
+            if (tablePks[table] && tablePks[table].length > 0) {
+                colDefs += `,\n    PRIMARY KEY (${tablePks[table].join(', ')})`;
+            }
+
+            // Attach Unique constraints if available
+            if (tableUqs[table]) {
+                for (const [cName, uqCols] of Object.entries(tableUqs[table])) {
+                    colDefs += `,\n    CONSTRAINT "${cName}" UNIQUE (${uqCols.join(', ')})`;
+                }
+            }
 
             sqlDump += `-- ========================================================\n`;
             sqlDump += `-- Table structure & data for: "${table}"\n`;

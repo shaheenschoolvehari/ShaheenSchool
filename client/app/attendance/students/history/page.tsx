@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 interface ClassItem { class_id: number; class_name: string; }
 interface StudentHistory {
     student_id: number; first_name: string; last_name: string;
+    father_name?: string;
     admission_no: string; roll_no: string | null;
     present: number; absent: number; late: number; leave: number; holiday?: number;
     total_days: number; daily: Record<string, string>;
@@ -159,7 +160,7 @@ export default function StudentAttendanceHistoryPage() {
         }
         : totals;
     const filtered = students.filter(s =>
-        `${s.first_name} ${s.last_name} ${s.admission_no}`.toLowerCase().includes(search.toLowerCase())
+        `${s.first_name} ${s.last_name} ${s.father_name || ''} ${s.admission_no}`.toLowerCase().includes(search.toLowerCase())
     );
     const avgPct = students.length ? Math.round(students.reduce((a, s) => a + (s.total_days ? ((s.present + s.late) / s.total_days) * 100 : 0), 0) / students.length) : 0;
 
@@ -413,7 +414,10 @@ export default function StudentAttendanceHistoryPage() {
                                                             </div>
                                                             <div>
                                                                 <div className="fw-semibold" style={{ color: 'var(--primary-dark)', fontSize: '0.85rem' }}>{s.first_name} {s.last_name}</div>
-                                                                <div className="text-muted" style={{ fontSize: '0.68rem' }}>{s.admission_no}</div>
+                                                                <div className="text-muted" style={{ fontSize: '0.68rem' }}>
+                                                                    {s.father_name && <span className="me-1">S/D: <strong style={{ color: 'var(--primary-dark)', fontWeight: 500 }}>{s.father_name}</strong> ·</span>}
+                                                                    {s.admission_no}
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     </td>

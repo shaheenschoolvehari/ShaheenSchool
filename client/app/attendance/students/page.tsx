@@ -402,7 +402,7 @@ export default function StudentAttendancePage() {
                 <table className="table table-hover align-middle mb-0">
                   <thead style={{ background: 'var(--primary-dark)' }}>
                     <tr>
-                      {['#', 'Student', 'Roll', 'Attendance Status', 'Remarks'].map(h => (
+                      {['#', 'Student', 'Father Name', 'Roll', 'Attendance Status', 'Remarks'].map(h => (
                         <th key={h} className="fw-semibold border-0"
                           style={{ color: 'rgba(255,255,255,0.85)', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.07em', padding: '12px 16px', whiteSpace: 'nowrap' }}>
                           {h}
@@ -428,8 +428,14 @@ export default function StudentAttendancePage() {
                                 style={{ width: 34, height: 34, background: `linear-gradient(135deg,var(--primary-dark),var(--primary-teal))`, fontSize: '0.75rem', flexShrink: 0 }}>
                                 {(s.first_name?.[0] || 'S') + (s.last_name?.[0] || '')}
                               </div>
-                              <span className="fw-semibold" style={{ color: 'var(--primary-dark)', fontSize: '0.9rem' }}>{s.first_name} {s.last_name}</span>
+                              <div>
+                                <span className="fw-semibold d-block" style={{ color: 'var(--primary-dark)', fontSize: '0.9rem' }}>{s.first_name} {s.last_name}</span>
+                                {s.admission_no && <span className="text-muted" style={{ fontSize: '0.72rem' }}>Adm: {s.admission_no}</span>}
+                              </div>
                             </div>
+                          </td>
+                          <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
+                            <span className="fw-medium" style={{ color: 'var(--primary-dark)', fontSize: '0.88rem' }}>{s.father_name || '—'}</span>
                           </td>
                           <td className="text-muted" style={{ fontSize: '0.85rem' }}>{s.roll_no || '—'}</td>
                           <td style={{ padding: '12px 16px' }}>

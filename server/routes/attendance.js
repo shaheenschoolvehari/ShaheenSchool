@@ -536,7 +536,7 @@ router.get('/students/history', async (req, res) => {
 
         // All active students in class
         const students = await pool.query(
-            `SELECT s.student_id, s.first_name, s.last_name, s.roll_no, s.admission_no
+            `SELECT s.student_id, s.first_name, s.last_name, s.father_name, s.roll_no, s.admission_no
              FROM students s WHERE s.class_id = $1 AND s.status = 'Active'
              ORDER BY s.roll_no NULLS LAST, s.first_name`,
             [class_id]
