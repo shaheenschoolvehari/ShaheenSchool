@@ -16,6 +16,7 @@ interface StaffRow {
     designation: string;
     department_name: string;
     department_id: number;
+    employee_status?: string;
     attendance_id: number | null;
     status: string | null;
     remarks?: string | null;
@@ -73,7 +74,6 @@ export default function StaffAttendancePage() {
     const [statuses, setStatuses] = useState<Record<number, StatusType>>({});
     const [remarks, setRemarks] = useState<Record<number, string>>({});
     const [lockedIds, setLockedIds] = useState<Set<number>>(new Set());
-    const [allSaved, setAllSaved] = useState(false);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [holidayInfo, setHolidayInfo] = useState<HolidayInfo | null>(null);
@@ -82,9 +82,6 @@ export default function StaffAttendancePage() {
     const [selectedYearId, setSelectedYearId] = useState<string>('');
 
     const { hasPermission, user } = useAuth();
-    const isAdmin = (user?.role_level || 0) >= 90;
-    const canEditLocked = isAdmin || hasPermission('attendance.edit_locked', 'write');
-    const canMarkAdvance = isAdmin || hasPermission('attendance.mark_advance', 'write');
 
     const API = (process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com").replace(/\/+$/, '');
 
@@ -143,7 +140,7 @@ export default function StaffAttendancePage() {
             const locked = new Set<number>();
 
             records.forEach((e: StaffRow) => {
-                st[e.employee_id] = (e.status as StatusType) || 'Present';
+                st[e.employee_id] = (e.status as StatusType) || 'Absent';
                 rm[e.employee_id] = e.remarks || '';
                 if (e.attendance_id !== null) {
                     locked.add(e.employee_id);
@@ -153,7 +150,6 @@ export default function StaffAttendancePage() {
             setStatuses(st);
             setRemarks(rm);
             setLockedIds(locked);
-            setAllSaved(records.length > 0 && records.every((e: StaffRow) => e.attendance_id !== null));
         } catch {
             notify.error('Server error loading staff attendance');
         }
@@ -166,10 +162,6 @@ export default function StaffAttendancePage() {
     }, [loadAttendance]);
 
     const toggleLock = (empId: number) => {
-        if (!canEditLocked) {
-            notify.warning('You do not have permission to unlock locked attendance');
-            return;
-        }
         setLockedIds(prev => {
             const next = new Set(prev);
             if (next.has(empId)) next.delete(empId);
@@ -182,10 +174,10 @@ export default function StaffAttendancePage() {
         if (holidayInfo?.is_holiday) return;
         const next: Record<number, StatusType> = {};
         staff.forEach(e => {
-            if (!lockedIds.has(e.employee_id) || canEditLocked) {
+            if (!lockedIds.has(e.employee_id)) {
                 next[e.employee_id] = status;
             } else {
-                next[e.employee_id] = statuses[e.employee_id] || 'Present';
+                next[e.employee_id] = statuses[e.employee_id] || 'Absent';
             }
         });
         setStatuses(p => ({ ...p, ...next }));
@@ -197,7 +189,7 @@ export default function StaffAttendancePage() {
         try {
             const payload = staff.map(e => ({
                 employee_id: e.employee_id,
-                status: statuses[e.employee_id] || 'Present',
+                status: statuses[e.employee_id] || 'Absent',
                 remarks: remarks[e.employee_id] || ''
             }));
 
@@ -215,11 +207,9 @@ export default function StaffAttendancePage() {
             const data = await res.json();
             if (res.ok) {
                 notify.success(data.message || 'Staff attendance saved successfully!');
-                // Lock rows that were saved
                 const locked = new Set<number>();
                 staff.forEach(e => locked.add(e.employee_id));
                 setLockedIds(locked);
-                setAllSaved(true);
             } else {
                 notify.error(data.error || 'Failed to save staff attendance');
             }
@@ -243,7 +233,7 @@ export default function StaffAttendancePage() {
     const counts = useMemo(() => {
         const c: Record<string, number> = { Present: 0, Absent: 0, Leave: 0 };
         staff.forEach(e => {
-            const st = statuses[e.employee_id] || 'Present';
+            const st = statuses[e.employee_id] || 'Absent';
             if (c[st] !== undefined) c[st]++;
         });
         return c;
@@ -295,15 +285,14 @@ export default function StaffAttendancePage() {
                             <button
                                 key={s}
                                 onClick={() => markAll(s)}
-                                disabled={allSaved && !canEditLocked}
-                                className="btn btn-sm fw-semibold"
+                                disabled={saving}
+                                className="btn btn-sm fw-semibold shadow-sm"
                                 style={{
                                     background: S_BG[s],
                                     border: `1.5px solid ${S_COLOR[s]}`,
                                     color: S_COLOR[s],
                                     borderRadius: 8,
-                                    fontSize: '0.78rem',
-                                    opacity: (allSaved && !canEditLocked) ? 0.5 : 1
+                                    fontSize: '0.78rem'
                                 }}>
                                 <i className={`bi ${S_ICON[s]} me-1`} />All {s}
                             </button>
@@ -362,7 +351,6 @@ export default function StaffAttendancePage() {
                                 type="date"
                                 className="form-control rounded-3"
                                 value={date}
-                                max={canMarkAdvance ? undefined : today}
                                 onChange={e => setDate(e.target.value)}
                                 style={{ border: '1.5px solid #dee2e6', height: 42 }}
                             />
@@ -449,15 +437,16 @@ export default function StaffAttendancePage() {
                                     <th className="ps-3 ps-md-4 py-2.5 small text-uppercase text-muted" style={{ width: 40 }}>#</th>
                                     <th className="py-2.5 small text-uppercase text-muted">Employee</th>
                                     <th className="py-2.5 small text-uppercase text-muted">Designation</th>
-                                    <th className="py-2.5 small text-uppercase text-muted">Attendance Status</th>
+                                    <th className="py-2.5 small text-uppercase text-muted text-center" style={{ width: 140 }}>Employee Status</th>
+                                    <th className="py-2.5 small text-uppercase text-muted text-center">Attendance Status</th>
                                     <th className="py-2.5 small text-uppercase text-muted" style={{ minWidth: 180 }}>Remarks</th>
                                     <th className="pe-3 pe-md-4 py-2.5 small text-uppercase text-muted text-center" style={{ width: 60 }}>Lock</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {members.map((e, idx) => {
-                                    const cur = statuses[e.employee_id] || 'Present';
-                                    const isRowLocked = (lockedIds.has(e.employee_id) && !canEditLocked) || Boolean(holidayInfo?.is_holiday);
+                                    const cur = statuses[e.employee_id] || 'Absent';
+                                    const isRowLocked = lockedIds.has(e.employee_id) || Boolean(holidayInfo?.is_holiday);
 
                                     return (
                                         <tr key={e.employee_id} style={{ borderLeft: `3px solid ${S_COLOR[cur]}` }}>
@@ -481,7 +470,12 @@ export default function StaffAttendancePage() {
                                                     {e.designation || 'Staff'}
                                                 </span>
                                             </td>
-                                            <td>
+                                            <td className="text-center">
+                                                <span className="badge rounded-pill bg-success-subtle text-success border border-success-subtle px-2.5 py-1 fw-semibold" style={{ fontSize: '0.75rem' }}>
+                                                    <i className="bi bi-check-circle-fill me-1" />{e.employee_status || 'Active'}
+                                                </span>
+                                            </td>
+                                            <td className="text-center">
                                                 {holidayInfo?.is_holiday ? (
                                                     <span className="badge rounded-pill px-3 py-2 fw-semibold d-inline-flex align-items-center gap-1"
                                                         style={{ background: '#f3e8ff', color: '#7c3aed', border: '1.5px solid #c4b5fd', fontSize: '0.8rem' }}>
@@ -500,6 +494,7 @@ export default function StaffAttendancePage() {
                                                             <button
                                                                 key={opt}
                                                                 type="button"
+                                                                disabled={saving}
                                                                 onClick={() => setStatuses(p => ({ ...p, [e.employee_id]: opt }))}
                                                                 className="btn btn-sm fw-semibold"
                                                                 style={{
@@ -530,8 +525,9 @@ export default function StaffAttendancePage() {
                                             </td>
                                             <td className="pe-3 pe-md-4 text-center">
                                                 <button
+                                                    type="button"
                                                     onClick={() => toggleLock(e.employee_id)}
-                                                    title={lockedIds.has(e.employee_id) ? 'Unlock row' : 'Lock row'}
+                                                    title={lockedIds.has(e.employee_id) ? 'Click to unlock' : 'Click to lock'}
                                                     disabled={Boolean(holidayInfo?.is_holiday)}
                                                     className="btn btn-sm d-inline-flex align-items-center justify-content-center"
                                                     style={{
@@ -576,19 +572,17 @@ export default function StaffAttendancePage() {
                             <button
                                 className="btn fw-bold px-4 rounded-3 text-white"
                                 onClick={saveAttendance}
-                                disabled={saving || holidayInfo?.is_holiday || (allSaved && !canEditLocked)}
+                                disabled={saving || Boolean(holidayInfo?.is_holiday)}
                                 style={{
-                                    background: (holidayInfo?.is_holiday || (allSaved && !canEditLocked)) ? '#adb5bd' : 'var(--accent-orange)',
+                                    background: holidayInfo?.is_holiday ? '#adb5bd' : 'var(--accent-orange)',
                                     border: 'none',
-                                    boxShadow: (holidayInfo?.is_holiday || (allSaved && !canEditLocked)) ? 'none' : '0 4px 14px rgba(254,127,45,0.4)',
-                                    cursor: (holidayInfo?.is_holiday || (allSaved && !canEditLocked)) ? 'not-allowed' : 'pointer'
+                                    boxShadow: holidayInfo?.is_holiday ? 'none' : '0 4px 14px rgba(254,127,45,0.4)',
+                                    cursor: holidayInfo?.is_holiday ? 'not-allowed' : 'pointer'
                                 }}>
                                 {saving ? (
                                     <><span className="spinner-border spinner-border-sm me-2" />Saving...</>
                                 ) : holidayInfo?.is_holiday ? (
                                     <><i className="bi bi-calendar-check-fill me-2" />Holiday Attendance Exempt</>
-                                ) : (allSaved && !canEditLocked) ? (
-                                    <><i className="bi bi-lock-fill me-2" />Attendance Locked</>
                                 ) : (
                                     <><i className="bi bi-cloud-check-fill me-2" />Save Attendance ({total})</>
                                 )}

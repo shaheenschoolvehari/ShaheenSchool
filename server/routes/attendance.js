@@ -777,7 +777,7 @@ router.get('/staff/daily', async (req, res) => {
         }
 
         const result = await pool.query(
-            `SELECT e.employee_id, e.first_name, e.last_name, e.designation, e.app_user_id,
+            `SELECT e.employee_id, e.first_name, e.last_name, e.designation, e.status as employee_status, e.app_user_id,
                     d.department_name, d.department_id,
                     sa.attendance_id, sa.status, sa.check_in_time, sa.check_out_time, sa.remarks, sa.attendance_date,
                     sa.in_verified, sa.out_verified, sa.in_verification_mode, sa.out_verification_mode,
@@ -1086,32 +1086,19 @@ router.post('/staff/daily', async (req, res) => {
             const empId = parseUserId(r.employee_id);
             if (!empId) continue;
 
-            let status = r.status || 'Present';
+            let status = r.status || 'Absent';
             let checkIn = r.check_in_time || null;
             let checkOut = r.check_out_time || null;
             const remarks = r.remarks || null;
             const inVerified = r.in_verified === true;
             const outVerified = r.out_verified === true;
 
-            // If session is IN and status is Present/Late, ensure checkIn time is set to actual time if missing
-            if (session_type === 'in' && ['Present', 'Late'].includes(status) && !checkIn) {
-                checkIn = currentTimeStr;
-            }
-
-            // If session is OUT and status is Present, ensure checkOut time is set to actual time if missing
-            if (session_type === 'out' && ['Present'].includes(status) && !checkOut) {
-                checkOut = currentTimeStr;
-            }
-
-            // Calculate is_in_late and is_out_early based on actual recorded times
+            // Only compute isInLate / isOutEarly if explicit check-in/out times were provided
             let isInLate = null;
             if (checkIn) {
                 const checkInMins = timeStringToMinutes(checkIn);
                 const inLimitMins = timeStringToMinutes(settings.staff_in_time) + (settings.staff_grace_minutes || 0);
                 isInLate = checkInMins > inLimitMins;
-                if (isInLate && status === 'Present') {
-                    status = 'Late';
-                }
             }
 
             let isOutEarly = null;
