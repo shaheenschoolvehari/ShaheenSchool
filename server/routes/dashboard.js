@@ -224,16 +224,37 @@ router.get('/accountant', async (req, res) => {
                 WHERE payment_date::date >= CURRENT_DATE - INTERVAL '13 days'
                 GROUP BY payment_date::date ORDER BY payment_date::date ASC`),
 
-            // Recent 10 payments
+            // Recent payments (today and recent payments)
             pool.query(`
-                SELECT fp.payment_id, fp.amount_paid, fp.payment_date, fp.payment_method,
-                       s.first_name||' '||s.last_name AS student_name,
-                       s.admission_no, c.class_name, mfs.month, mfs.year, mfs.status AS slip_status
+                SELECT fp.payment_id, fp.amount_paid, fp.payment_date, fp.payment_method, fp.received_by, fp.reference_no, fp.created_at,
+                       COALESCE(
+                           NULLIF(TRIM(CONCAT_WS(' ', s.first_name, s.last_name)), ''),
+                           NULLIF(TRIM(CONCAT_WS(' ', fam_s.first_name, fam_s.last_name)), ''),
+                           NULLIF(TRIM(f.family_name), ''),
+                           NULLIF(TRIM(f.father_name), ''),
+                           CASE WHEN mfs.is_family_slip THEN 'Family #' || COALESCE(mfs.family_id::text, '') ELSE 'Student #' || COALESCE(mfs.student_id::text, fp.slip_id::text) END
+                       ) AS student_name,
+                       COALESCE(s.first_name, fam_s.first_name, '') AS first_name,
+                       COALESCE(s.last_name, fam_s.last_name, '') AS last_name,
+                       COALESCE(s.father_name, fam_s.father_name, f.father_name, '') AS father_name,
+                       COALESCE(s.admission_no, fam_s.admission_no, CASE WHEN mfs.family_id IS NOT NULL THEN 'Fam-' || mfs.family_id ELSE '—' END) AS admission_no,
+                       COALESCE(c.class_name, c_slip.class_name, c_fam.class_name, CASE WHEN mfs.is_family_slip THEN 'Family Slip' ELSE '—' END) AS class_name,
+                       mfs.slip_id, mfs.month, mfs.year, mfs.months_list, mfs.has_multi_months, mfs.is_family_slip, mfs.family_id, mfs.status AS slip_status
                 FROM fee_payments fp
                 JOIN monthly_fee_slips mfs ON fp.slip_id=mfs.slip_id
-                JOIN students s ON mfs.student_id=s.student_id
+                LEFT JOIN students s ON mfs.student_id=s.student_id
+                LEFT JOIN families f ON f.family_id = COALESCE(mfs.family_id, s.family_id)
+                LEFT JOIN LATERAL (
+                    SELECT s2.student_id, s2.first_name, s2.last_name, s2.admission_no, s2.father_name, s2.class_id
+                    FROM students s2
+                    WHERE s2.family_id = mfs.family_id AND s2.status = 'Active'
+                    ORDER BY s2.student_id ASC
+                    LIMIT 1
+                ) fam_s ON mfs.student_id IS NULL AND mfs.family_id IS NOT NULL
                 LEFT JOIN classes c ON s.class_id=c.class_id
-                ORDER BY fp.payment_date DESC, fp.payment_id DESC LIMIT 10`),
+                LEFT JOIN classes c_slip ON mfs.class_id=c_slip.class_id
+                LEFT JOIN classes c_fam ON fam_s.class_id=c_fam.class_id
+                ORDER BY fp.payment_date DESC, fp.payment_id DESC LIMIT 50`),
 
             // Monthly totals last 6 months
             pool.query(`
@@ -419,18 +440,44 @@ router.get('/', async (req, res) => {
                     fp.payment_date,
                     fp.payment_method,
                     fp.received_by,
-                    s.first_name || ' ' || s.last_name AS student_name,
-                    s.admission_no,
-                    c.class_name,
+                    fp.reference_no,
+                    fp.created_at,
+                    COALESCE(
+                        NULLIF(TRIM(CONCAT_WS(' ', s.first_name, s.last_name)), ''),
+                        NULLIF(TRIM(CONCAT_WS(' ', fam_s.first_name, fam_s.last_name)), ''),
+                        NULLIF(TRIM(f.family_name), ''),
+                        NULLIF(TRIM(f.father_name), ''),
+                        CASE WHEN mfs.is_family_slip THEN 'Family #' || COALESCE(mfs.family_id::text, '') ELSE 'Student #' || COALESCE(mfs.student_id::text, fp.slip_id::text) END
+                    ) AS student_name,
+                    COALESCE(s.first_name, fam_s.first_name, '') AS first_name,
+                    COALESCE(s.last_name, fam_s.last_name, '') AS last_name,
+                    COALESCE(s.father_name, fam_s.father_name, f.father_name, '') AS father_name,
+                    COALESCE(s.admission_no, fam_s.admission_no, CASE WHEN mfs.family_id IS NOT NULL THEN 'Fam-' || mfs.family_id ELSE '—' END) AS admission_no,
+                    COALESCE(c.class_name, c_slip.class_name, c_fam.class_name, CASE WHEN mfs.is_family_slip THEN 'Family Slip' ELSE '—' END) AS class_name,
+                    mfs.slip_id,
                     mfs.month,
                     mfs.year,
+                    mfs.months_list,
+                    mfs.has_multi_months,
+                    mfs.is_family_slip,
+                    mfs.family_id,
                     mfs.status AS slip_status
                 FROM fee_payments fp
                 JOIN monthly_fee_slips mfs ON fp.slip_id = mfs.slip_id
-                JOIN students s ON mfs.student_id = s.student_id
+                LEFT JOIN students s ON mfs.student_id = s.student_id
+                LEFT JOIN families f ON f.family_id = COALESCE(mfs.family_id, s.family_id)
+                LEFT JOIN LATERAL (
+                    SELECT s2.student_id, s2.first_name, s2.last_name, s2.admission_no, s2.father_name, s2.class_id
+                    FROM students s2
+                    WHERE s2.family_id = mfs.family_id AND s2.status = 'Active'
+                    ORDER BY s2.student_id ASC
+                    LIMIT 1
+                ) fam_s ON mfs.student_id IS NULL AND mfs.family_id IS NOT NULL
                 LEFT JOIN classes c ON s.class_id = c.class_id
+                LEFT JOIN classes c_slip ON mfs.class_id = c_slip.class_id
+                LEFT JOIN classes c_fam ON fam_s.class_id = c_fam.class_id
                 ORDER BY fp.payment_date DESC, fp.payment_id DESC
-                LIMIT 8
+                LIMIT 50
             `),
 
             // 13. Current month tuition billed
@@ -616,13 +663,32 @@ router.get('/daily-fee-receipts', async (req, res) => {
 
         const listQuery = pool.query(
             `SELECT fp.payment_id, fp.amount_paid, TO_CHAR(fp.payment_date, 'YYYY-MM-DD') AS payment_date, fp.payment_method, COALESCE(fp.is_printed, false) AS is_printed,
-                    s.student_id, s.admission_no, s.first_name||' '||COALESCE(s.last_name, '') AS student_name,
-                    COALESCE(c.class_name, c_slip.class_name, '—') AS class_name, mfs.month, mfs.year, mfs.is_family_slip, mfs.family_id
+                    COALESCE(
+                        NULLIF(TRIM(CONCAT_WS(' ', s.first_name, s.last_name)), ''),
+                        NULLIF(TRIM(CONCAT_WS(' ', fam_s.first_name, fam_s.last_name)), ''),
+                        NULLIF(TRIM(f.family_name), ''),
+                        NULLIF(TRIM(f.father_name), ''),
+                        CASE WHEN mfs.is_family_slip THEN 'Family #' || COALESCE(mfs.family_id::text, '') ELSE 'Student #' || COALESCE(mfs.student_id::text, fp.slip_id::text) END
+                    ) AS student_name,
+                    COALESCE(s.student_id, fam_s.student_id) AS student_id,
+                    COALESCE(s.admission_no, fam_s.admission_no, CASE WHEN mfs.family_id IS NOT NULL THEN 'Fam-' || mfs.family_id ELSE '—' END) AS admission_no,
+                    COALESCE(s.father_name, fam_s.father_name, f.father_name, '') AS father_name,
+                    COALESCE(c.class_name, c_slip.class_name, c_fam.class_name, CASE WHEN mfs.is_family_slip THEN 'Family Slip' ELSE '—' END) AS class_name,
+                    mfs.month, mfs.year, mfs.months_list, mfs.has_multi_months, mfs.is_family_slip, mfs.family_id
              FROM fee_payments fp
-             JOIN monthly_fee_slips mfs ON fp.slip_id=mfs.slip_id
-             LEFT JOIN students s ON mfs.student_id=s.student_id
-             LEFT JOIN classes c ON s.class_id=c.class_id
-             LEFT JOIN classes c_slip ON mfs.class_id=c_slip.class_id
+             JOIN monthly_fee_slips mfs ON fp.slip_id = mfs.slip_id
+             LEFT JOIN students s ON mfs.student_id = s.student_id
+             LEFT JOIN families f ON f.family_id = COALESCE(mfs.family_id, s.family_id)
+             LEFT JOIN LATERAL (
+                 SELECT s2.student_id, s2.first_name, s2.last_name, s2.admission_no, s2.father_name, s2.class_id
+                 FROM students s2
+                 WHERE s2.family_id = mfs.family_id AND s2.status = 'Active'
+                 ORDER BY s2.student_id ASC
+                 LIMIT 1
+             ) fam_s ON mfs.student_id IS NULL AND mfs.family_id IS NOT NULL
+             LEFT JOIN classes c ON s.class_id = c.class_id
+             LEFT JOIN classes c_slip ON mfs.class_id = c_slip.class_id
+             LEFT JOIN classes c_fam ON fam_s.class_id = c_fam.class_id
              WHERE (fp.payment_date::date = $1::date OR fp.created_at::date = $1::date)
              ORDER BY fp.payment_date DESC, fp.payment_id DESC`,
             [targetDate]

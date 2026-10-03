@@ -133,7 +133,7 @@ export default function AdminDashboard({ userName }: { userName: string }) {
                 View All <i className="bi bi-arrow-right-short" style={{ fontSize: 15 }} />
               </Link>
             }>
-            <RecentPaymentsTable rows={data!.recent_payments.slice(0, 6)} />
+            <RecentPaymentsTable rows={data!.recent_payments || []} maxHeight={340} />
           </Panel>
         )}
       </div>

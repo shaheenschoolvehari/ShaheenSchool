@@ -809,72 +809,256 @@ export function EmptyChart({ text = 'No data available' }: { text?: string }) {
   );
 }
 
-export function RecentPaymentsTable({ rows }: { rows: any[] }) {
-  if (rows.length === 0) {
+export function RecentPaymentsTable({ rows = [], maxHeight = 360 }: { rows: any[]; maxHeight?: number | string }) {
+  const [filter, setFilter] = useState('');
+
+  if (!rows || rows.length === 0) {
     return (
-      <div style={{ textAlign: 'center' as const, padding: '32px 0', color: '#94a3b8', fontSize: 13 }}>
-        <i className="bi bi-inbox" style={{ fontSize: 30, display: 'block', marginBottom: 8 }} />
+      <div style={{ textAlign: 'center' as const, padding: '36px 0', color: '#94a3b8', fontSize: 13 }}>
+        <i className="bi bi-inbox" style={{ fontSize: 32, display: 'block', marginBottom: 8, opacity: 0.6 }} />
         No recent payments
       </div>
     );
   }
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todayRows = rows.filter((r: any) => {
+    if (!r.payment_date) return false;
+    const dStr = typeof r.payment_date === 'string'
+      ? r.payment_date.split('T')[0]
+      : new Date(r.payment_date).toISOString().split('T')[0];
+    return dStr === todayStr;
+  });
+
+  const filteredRows = filter.trim() ? rows.filter((p: any) => {
+    const sName = (p.student_name || `${p.first_name || ''} ${p.last_name || ''}`).toLowerCase();
+    const fName = (p.father_name || '').toLowerCase();
+    const adm = (p.admission_no || '').toLowerCase();
+    const cls = (p.class_name || '').toLowerCase();
+    const meth = (p.payment_method || '').toLowerCase();
+    const q = filter.toLowerCase();
+    return sName.includes(q) || fName.includes(q) || adm.includes(q) || cls.includes(q) || meth.includes(q);
+  }) : rows;
+
   return (
-    <div style={{ overflowX: 'auto' as const }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 }}>
-        <thead>
-          <tr>
-            {['Student', 'Class', 'Month', 'Amount', 'Method', 'Date'].map(h => (
-              <th key={h} style={{
-                padding: '9px 14px', textAlign: 'left' as const,
-                color: '#64748b', fontWeight: 700, fontSize: 11,
-                textTransform: 'uppercase' as const, letterSpacing: '0.05em',
-                borderBottom: '2px solid #f1f5f9', whiteSpace: 'nowrap' as const,
-              }}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((p: any, i: number) => (
-            <tr key={p.payment_id ?? i}
-              style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.15s' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#f8fdf7'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-            >
-              <td style={{ padding: '11px 14px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                  <div style={{
-                    width: 32, height: 32, borderRadius: 10, flexShrink: 0,
-                    background: 'linear-gradient(135deg,#215E61,#233D4D)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 12, fontWeight: 800, color: '#fff',
-                  }}>
-                    {(p.student_name || '?').charAt(0).toUpperCase()}
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: 700, color: '#1a2e3b', fontSize: 13 }}>{p.student_name}</div>
-                    <div style={{ fontSize: 11, color: '#94a3b8' }}>{p.admission_no}</div>
-                  </div>
-                </div>
-              </td>
-              <td style={{ padding: '11px 14px', color: '#475569' }}>{p.class_name || ''}</td>
-              <td style={{ padding: '11px 14px', color: '#475569' }}>{MONTHS[(p.month || 1) - 1]} {p.year}</td>
-              <td style={{ padding: '11px 14px' }}>
-                <span style={{ fontWeight: 800, color: '#16a34a' }}><MaskedAmount amount={p.amount_paid} /></span>
-              </td>
-              <td style={{ padding: '11px 14px' }}>
-                <span style={{
-                  padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, textTransform: 'capitalize' as const,
-                  background: p.payment_method === 'cash' ? '#16a34a1a' : '#4f46e51a',
-                  color: p.payment_method === 'cash' ? '#16a34a' : '#4f46e5',
-                }}>{p.payment_method || 'cash'}</span>
-              </td>
-              <td style={{ padding: '11px 14px', color: '#94a3b8', fontSize: 12 }}>
-                {new Date(p.payment_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-              </td>
+    <div style={{ display: 'flex', flexDirection: 'column' as const, width: '100%' }}>
+      {/* Sub-header info bar */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '7px 14px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9',
+        fontSize: 11, color: '#64748b', fontWeight: 600, flexWrap: 'wrap' as const, gap: 6
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span>Total: <strong>{rows.length}</strong></span>
+          {todayRows.length > 0 && (
+            <span style={{
+              background: '#16a34a18', color: '#16a34a', padding: '2px 8px',
+              borderRadius: 12, fontWeight: 700, fontSize: 10, display: 'inline-flex', alignItems: 'center', gap: 4
+            }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a', display: 'inline-block' }} />
+              {todayRows.length} Today
+            </span>
+          )}
+        </div>
+        {rows.length > 6 && (
+          <div style={{ position: 'relative' as const, width: 150 }}>
+            <input
+              type="text"
+              value={filter}
+              onChange={e => setFilter(e.target.value)}
+              placeholder="Search student..."
+              style={{
+                width: '100%', padding: '3px 8px 3px 22px', fontSize: 11,
+                borderRadius: 6, border: '1px solid #e2e8f0', outline: 'none',
+                background: '#fff', color: '#1e293b'
+              }}
+            />
+            <i className="bi bi-search" style={{ position: 'absolute' as const, left: 6, top: 5, fontSize: 10, color: '#94a3b8' }} />
+            {filter && (
+              <button
+                onClick={() => setFilter('')}
+                style={{
+                  position: 'absolute' as const, right: 4, top: 4, background: 'none',
+                  border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: 11, padding: 0
+                }}
+              >
+                ×
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Scrollable Container with Sticky Header */}
+      <div style={{
+        maxHeight: typeof maxHeight === 'number' ? `${maxHeight}px` : maxHeight,
+        overflowY: 'auto' as const,
+        overflowX: 'auto' as const,
+        position: 'relative' as const,
+      }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 }}>
+          <thead style={{ position: 'sticky' as const, top: 0, zIndex: 2 }}>
+            <tr style={{ background: '#ffffff', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+              {['Student', 'Class', 'Month', 'Amount', 'Method', 'Date'].map(h => (
+                <th key={h} style={{
+                  padding: '9px 14px', textAlign: 'left' as const,
+                  color: '#64748b', fontWeight: 700, fontSize: 11,
+                  textTransform: 'uppercase' as const, letterSpacing: '0.05em',
+                  borderBottom: '2px solid #e2e8f0', background: '#f8fafc', whiteSpace: 'nowrap' as const,
+                }}>{h}</th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {filteredRows.length === 0 ? (
+              <tr>
+                <td colSpan={6} style={{ textAlign: 'center' as const, padding: '24px 0', color: '#94a3b8', fontSize: 12 }}>
+                  No matching payments found
+                </td>
+              </tr>
+            ) : (
+              filteredRows.map((p: any, i: number) => {
+                const rawName = (p.student_name && p.student_name.trim()) || [p.first_name, p.last_name].filter(Boolean).join(' ') || (p.is_family_slip ? `Family #${p.family_id || ''}` : '') || 'Student';
+                const displayName = rawName.trim() || 'Student';
+                const initial = displayName.charAt(0).toUpperCase() || '?';
+                const admNo = p.admission_no || (p.is_family_slip ? `Fam-${p.family_id}` : '');
+                const father = p.father_name || '';
+
+                // Date logic
+                let isToday = false;
+                let dateDisplay = '—';
+                let timeDisplay = '';
+                if (p.payment_date) {
+                  const pDateStr = typeof p.payment_date === 'string'
+                    ? p.payment_date.split('T')[0]
+                    : new Date(p.payment_date).toISOString().split('T')[0];
+                  isToday = pDateStr === todayStr;
+                  try {
+                    dateDisplay = new Date(p.payment_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                  } catch (e) {
+                    dateDisplay = String(p.payment_date).slice(0, 10);
+                  }
+                }
+                if (p.created_at) {
+                  try {
+                    timeDisplay = new Date(p.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+                  } catch (e) {}
+                }
+
+                // Month formatting
+                let monthStr = '';
+                if (Array.isArray(p.months_list) && p.months_list.length > 1) {
+                  monthStr = p.months_list.map((m: number) => MONTHS[(m || 1) - 1]?.slice(0, 3)).join(', ') + ` ${p.year || ''}`;
+                } else if (p.month) {
+                  monthStr = `${MONTHS[(p.month || 1) - 1]} ${p.year || ''}`;
+                } else {
+                  monthStr = p.year ? String(p.year) : '—';
+                }
+
+                return (
+                  <tr key={p.payment_id ?? i}
+                    style={{
+                      borderBottom: '1px solid #f1f5f9',
+                      background: isToday ? '#f0fdf440' : 'transparent',
+                      transition: 'background 0.15s'
+                    }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#f8fdf7'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = isToday ? '#f0fdf440' : 'transparent'; }}
+                  >
+                    {/* Student Info */}
+                    <td style={{ padding: '10px 14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                        <div style={{
+                          width: 32, height: 32, borderRadius: 10, flexShrink: 0,
+                          background: p.is_family_slip ? 'linear-gradient(135deg,#6366f1,#4338ca)' : 'linear-gradient(135deg,#215E61,#233D4D)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 12, fontWeight: 800, color: '#fff',
+                        }}>
+                          {initial}
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{
+                            fontWeight: 700, color: '#1a2e3b', fontSize: 13,
+                            whiteSpace: 'nowrap' as const, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, maxWidth: 180
+                          }}>
+                            {displayName}
+                          </div>
+                          <div style={{ fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' as const }}>
+                            {admNo && <span style={{ fontWeight: 600 }}>{admNo}</span>}
+                            {admNo && father && <span>•</span>}
+                            {father && <span>S/D/O {father}</span>}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Class */}
+                    <td style={{ padding: '10px 14px', color: '#475569', fontSize: 12, whiteSpace: 'nowrap' as const }}>
+                      {p.class_name ? (
+                        <span style={{
+                          padding: '2px 8px', borderRadius: 6, background: '#f1f5f9',
+                          fontWeight: 600, color: '#334155', fontSize: 11
+                        }}>
+                          {p.class_name}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+
+                    {/* Month */}
+                    <td style={{ padding: '10px 14px', color: '#475569', fontSize: 12, whiteSpace: 'nowrap' as const }}>
+                      {monthStr}
+                    </td>
+
+                    {/* Amount */}
+                    <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' as const }}>
+                      <span style={{ fontWeight: 800, color: '#16a34a', fontSize: 13 }}>
+                        <MaskedAmount amount={p.amount_paid} />
+                      </span>
+                    </td>
+
+                    {/* Method */}
+                    <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' as const }}>
+                      <span style={{
+                        padding: '3px 8px', borderRadius: 12, fontSize: 10, fontWeight: 700, textTransform: 'capitalize' as const,
+                        background: p.payment_method === 'cash' ? '#16a34a18' : '#4f46e518',
+                        color: p.payment_method === 'cash' ? '#16a34a' : '#4f46e5',
+                      }}>
+                        {p.payment_method || 'cash'}
+                      </span>
+                    </td>
+
+                    {/* Date */}
+                    <td style={{ padding: '10px 14px', color: '#64748b', fontSize: 12, whiteSpace: 'nowrap' as const }}>
+                      <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          {isToday ? (
+                            <span style={{
+                              padding: '1px 5px', borderRadius: 4, background: '#16a34a',
+                              color: '#fff', fontSize: 9, fontWeight: 800
+                            }}>
+                              TODAY
+                            </span>
+                          ) : null}
+                          <span style={{ fontWeight: isToday ? 700 : 500, color: isToday ? '#16a34a' : '#64748b' }}>
+                            {dateDisplay}
+                          </span>
+                        </div>
+                        {timeDisplay && (
+                          <span style={{ fontSize: 10, color: '#94a3b8' }}>
+                            {timeDisplay}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

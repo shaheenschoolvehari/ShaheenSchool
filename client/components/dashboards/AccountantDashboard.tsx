@@ -114,7 +114,7 @@ export default function AccountantDashboard({ userName }: { userName: string }) 
                 All <i className="bi bi-arrow-right-short" style={{ fontSize: 15 }} />
               </Link>
             }>
-            <RecentPaymentsTable rows={(data!.recent_payments || []).slice(0, 7)} />
+            <RecentPaymentsTable rows={data!.recent_payments || []} maxHeight={340} />
           </Panel>
         </div>
       )}
