@@ -231,12 +231,12 @@ router.get('/accountant', async (req, res) => {
                            NULLIF(TRIM(CONCAT_WS(' ', s.first_name, s.last_name)), ''),
                            NULLIF(TRIM(CONCAT_WS(' ', fam_s.first_name, fam_s.last_name)), ''),
                            NULLIF(TRIM(f.family_name), ''),
-                           NULLIF(TRIM(f.father_name), ''),
+                           NULLIF(TRIM(f.primary_contact_name), ''),
                            CASE WHEN mfs.is_family_slip THEN 'Family #' || COALESCE(mfs.family_id::text, '') ELSE 'Student #' || COALESCE(mfs.student_id::text, fp.slip_id::text) END
                        ) AS student_name,
                        COALESCE(s.first_name, fam_s.first_name, '') AS first_name,
                        COALESCE(s.last_name, fam_s.last_name, '') AS last_name,
-                       COALESCE(s.father_name, fam_s.father_name, f.father_name, '') AS father_name,
+                       COALESCE(s.father_name, fam_s.father_name, f.primary_contact_name, '') AS father_name,
                        COALESCE(s.admission_no, fam_s.admission_no, CASE WHEN mfs.family_id IS NOT NULL THEN 'Fam-' || mfs.family_id ELSE '—' END) AS admission_no,
                        COALESCE(c.class_name, c_slip.class_name, c_fam.class_name, CASE WHEN mfs.is_family_slip THEN 'Family Slip' ELSE '—' END) AS class_name,
                        mfs.slip_id, mfs.month, mfs.year, mfs.months_list, mfs.has_multi_months, mfs.is_family_slip, mfs.family_id, mfs.status AS slip_status
@@ -446,12 +446,12 @@ router.get('/', async (req, res) => {
                         NULLIF(TRIM(CONCAT_WS(' ', s.first_name, s.last_name)), ''),
                         NULLIF(TRIM(CONCAT_WS(' ', fam_s.first_name, fam_s.last_name)), ''),
                         NULLIF(TRIM(f.family_name), ''),
-                        NULLIF(TRIM(f.father_name), ''),
+                        NULLIF(TRIM(f.primary_contact_name), ''),
                         CASE WHEN mfs.is_family_slip THEN 'Family #' || COALESCE(mfs.family_id::text, '') ELSE 'Student #' || COALESCE(mfs.student_id::text, fp.slip_id::text) END
                     ) AS student_name,
                     COALESCE(s.first_name, fam_s.first_name, '') AS first_name,
                     COALESCE(s.last_name, fam_s.last_name, '') AS last_name,
-                    COALESCE(s.father_name, fam_s.father_name, f.father_name, '') AS father_name,
+                    COALESCE(s.father_name, fam_s.father_name, f.primary_contact_name, '') AS father_name,
                     COALESCE(s.admission_no, fam_s.admission_no, CASE WHEN mfs.family_id IS NOT NULL THEN 'Fam-' || mfs.family_id ELSE '—' END) AS admission_no,
                     COALESCE(c.class_name, c_slip.class_name, c_fam.class_name, CASE WHEN mfs.is_family_slip THEN 'Family Slip' ELSE '—' END) AS class_name,
                     mfs.slip_id,
@@ -667,12 +667,12 @@ router.get('/daily-fee-receipts', async (req, res) => {
                         NULLIF(TRIM(CONCAT_WS(' ', s.first_name, s.last_name)), ''),
                         NULLIF(TRIM(CONCAT_WS(' ', fam_s.first_name, fam_s.last_name)), ''),
                         NULLIF(TRIM(f.family_name), ''),
-                        NULLIF(TRIM(f.father_name), ''),
+                        NULLIF(TRIM(f.primary_contact_name), ''),
                         CASE WHEN mfs.is_family_slip THEN 'Family #' || COALESCE(mfs.family_id::text, '') ELSE 'Student #' || COALESCE(mfs.student_id::text, fp.slip_id::text) END
                     ) AS student_name,
                     COALESCE(s.student_id, fam_s.student_id) AS student_id,
                     COALESCE(s.admission_no, fam_s.admission_no, CASE WHEN mfs.family_id IS NOT NULL THEN 'Fam-' || mfs.family_id ELSE '—' END) AS admission_no,
-                    COALESCE(s.father_name, fam_s.father_name, f.father_name, '') AS father_name,
+                    COALESCE(s.father_name, fam_s.father_name, f.primary_contact_name, '') AS father_name,
                     COALESCE(c.class_name, c_slip.class_name, c_fam.class_name, CASE WHEN mfs.is_family_slip THEN 'Family Slip' ELSE '—' END) AS class_name,
                     mfs.month, mfs.year, mfs.months_list, mfs.has_multi_months, mfs.is_family_slip, mfs.family_id
              FROM fee_payments fp
