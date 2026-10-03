@@ -175,71 +175,101 @@ export default function CollectFeePage() {
     const [paying, setPaying] = useState(false);
     const [school, setSchool] = useState<SchoolInfo>({ school_name: '', school_address: '', phone_number: '', school_phone2: '', school_phone3: '', school_logo_url: '' });
 
-    useEffect(() => {
-        fetch(`${API}/academic`).then(r => r.json()).then(setClasses).catch(() => { });
-        fetch(`${API}/academic/years`).then(r => r.json()).then(data => {
-            if (Array.isArray(data)) {
-                setAcademicYears(data);
-                const active = data.find(y => y.is_active);
-                if (active) {
-                    setActiveYear(active);
-                    setSelectedAcademicYear(active.id.toString());
-                }
-            }
-        }).catch(() => {});
-        fetch(`${API}/academic/active-year`).then(r => r.json()).then(data => {
-            if (data && data.id) {
-                setActiveYear(data);
-                setSelectedAcademicYear(data.id.toString());
-                const startY = data.start_date ? new Date(data.start_date).getFullYear().toString() : (data.year_name ? data.year_name.split('-')[0].trim() : new Date().getFullYear().toString());
-                if (startY && !isNaN(parseInt(startY))) {
-                    setYear(startY);
-                }
-            }
-        }).catch(() => {});
-        // School info lives in school_settings table (via /settings), NOT system_settings
-        fetch(`${API}/settings`).then(r => r.json()).then((data: any) => {
-            if (data && typeof data === 'object' && !Array.isArray(data)) {
-                const getLogo = (raw?: string) => {
-                    const API_URL = (process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com").replace(/\/+$/, '');
-                    if (!raw || !raw.trim()) return `${API_URL}/icon.png`;
-                    const s = raw.trim();
-                    if (s.startsWith('data:') || s.startsWith('http://') || s.startsWith('https://')) return s;
-                    return `${API_URL}/${s.replace(/^\/+/, '')}`;
-                };
-                setSchool({
-                    school_name: data.school_name || '',
-                    school_address: data.address || '',
-                    phone_number: data.contact_number || '',
-                    school_phone2: '',
-                    school_phone3: '',
-                    school_logo_url: getLogo(data.logo_url)
-                });
-            }
-        }).catch(() => { });
+    const hasAutoLoaded = useRef(false);
 
-        // Auto load slips if URL search parameter is provided
-        if (typeof window !== 'undefined') {
-            const urlParams = new URLSearchParams(window.location.search);
-            const querySearch = urlParams.get('search') || urlParams.get('student') || urlParams.get('family_id') || urlParams.get('student_id');
-            if (querySearch) {
-                setSearch(querySearch);
-                // Trigger slips load automatically
-                const currentYear = new Date().getFullYear().toString();
-                setLoading(true);
-                fetch(`${API}/fee-slips?year=${currentYear}`)
-                    .then(r => r.json())
-                    .then(data => {
-                        if (data && data.slips) {
-                            setSlips(normalizeSlips(data.slips));
-                            setStats(data.stats || null);
-                            setLoaded(true);
-                        }
-                    })
-                    .catch(() => { })
-                    .finally(() => setLoading(false));
+    useEffect(() => {
+        const init = async () => {
+            try {
+                const [acadRes, yearsRes, activeYearRes, settingsRes] = await Promise.allSettled([
+                    fetch(`${API}/academic`).then(r => r.json()),
+                    fetch(`${API}/academic/years`).then(r => r.json()),
+                    fetch(`${API}/academic/active-year`).then(r => r.json()),
+                    fetch(`${API}/settings`).then(r => r.json())
+                ]);
+
+                if (acadRes.status === 'fulfilled' && Array.isArray(acadRes.value)) {
+                    setClasses(acadRes.value);
+                }
+
+                let currentActiveYear: any = null;
+                let resolvedYear = new Date().getFullYear().toString();
+
+                if (yearsRes.status === 'fulfilled' && Array.isArray(yearsRes.value)) {
+                    setAcademicYears(yearsRes.value);
+                    const active = yearsRes.value.find((y: any) => y.is_active);
+                    if (active) {
+                        currentActiveYear = active;
+                        setActiveYear(active);
+                        setSelectedAcademicYear(active.id.toString());
+                    }
+                }
+
+                if (activeYearRes.status === 'fulfilled' && activeYearRes.value && activeYearRes.value.id) {
+                    const data = activeYearRes.value;
+                    currentActiveYear = data;
+                    setActiveYear(data);
+                    setSelectedAcademicYear(data.id.toString());
+                    const startY = data.start_date ? new Date(data.start_date).getFullYear().toString() : (data.year_name ? data.year_name.split('-')[0].trim() : resolvedYear);
+                    if (startY && !isNaN(parseInt(startY))) {
+                        resolvedYear = startY;
+                        setYear(startY);
+                    }
+                }
+
+                if (settingsRes.status === 'fulfilled' && settingsRes.value && typeof settingsRes.value === 'object' && !Array.isArray(settingsRes.value)) {
+                    const data = settingsRes.value;
+                    const getLogo = (raw?: string) => {
+                        const API_URL = (process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com").replace(/\/+$/, '');
+                        if (!raw || !raw.trim()) return `${API_URL}/icon.png`;
+                        const s = raw.trim();
+                        if (s.startsWith('data:') || s.startsWith('http://') || s.startsWith('https://')) return s;
+                        return `${API_URL}/${s.replace(/^\/+/, '')}`;
+                    };
+                    setSchool({
+                        school_name: data.school_name || '',
+                        school_address: data.address || '',
+                        phone_number: data.contact_number || '',
+                        school_phone2: '',
+                        school_phone3: '',
+                        school_logo_url: getLogo(data.logo_url)
+                    });
+                }
+
+                // Check URL params for search queries
+                let querySearch = '';
+                if (typeof window !== 'undefined') {
+                    const urlParams = new URLSearchParams(window.location.search);
+                    querySearch = urlParams.get('search') || urlParams.get('student') || urlParams.get('family_id') || urlParams.get('student_id') || '';
+                    if (querySearch) {
+                        setSearch(querySearch);
+                    }
+                }
+
+                // Auto-load fee slips immediately so search works instantly on mount
+                if (!hasAutoLoaded.current) {
+                    hasAutoLoaded.current = true;
+                    setLoading(true);
+                    const params = new URLSearchParams({ year: resolvedYear });
+                    const targetYearId = currentActiveYear?.id ? currentActiveYear.id.toString() : '';
+                    if (targetYearId) {
+                        params.append('academic_year_id', targetYearId);
+                    }
+                    const r = await fetch(`${API}/fee-slips?${params.toString()}`);
+                    const data = await r.json();
+                    if (r.ok && data && data.slips) {
+                        setSlips(normalizeSlips(data.slips));
+                        setStats(data.stats || null);
+                        setLoaded(true);
+                    }
+                }
+            } catch (err) {
+                console.error('Error initializing collect page:', err);
+            } finally {
+                setLoading(false);
             }
-        }
+        };
+
+        init();
     }, []);
 
     const loadSlips = async () => {
@@ -353,6 +383,41 @@ export default function CollectFeePage() {
             }
         } catch { setSlipPayments([]); }
         finally { setLoadingHistory(false); }
+    };
+
+    // Helper to print latest receiving invoice / receipt
+    const printLatestReceipt = (customSlip?: SlipRow, customPayment?: Payment) => {
+        const targetSlip = customSlip || activeSlip;
+        if (!targetSlip) return;
+
+        if (customPayment) {
+            const p = customPayment;
+            const prevPaid = Math.max(0, parseFloat(targetSlip.paid_amount as any || 0) - parseFloat(p.amount_paid as any || 0));
+            openReceiptWindow(targetSlip, parseFloat(p.amount_paid as any || 0), p.payment_date, prevPaid);
+            if (!p.is_printed) {
+                fetch(`${API}/fee-slips/payments/${p.payment_id}/print`, { method: 'PUT' })
+                    .then(() => {
+                        setSlipPayments(prev => prev.map(x => x.payment_id === p.payment_id ? { ...x, is_printed: true } : x));
+                    }).catch(() => {});
+            }
+            return;
+        }
+
+        if (slipPayments && slipPayments.length > 0) {
+            const lastP = slipPayments[0];
+            const prevPaid = Math.max(0, parseFloat(targetSlip.paid_amount as any || 0) - parseFloat(lastP.amount_paid as any || 0));
+            openReceiptWindow(targetSlip, parseFloat(lastP.amount_paid as any || 0), lastP.payment_date, prevPaid);
+            if (!lastP.is_printed) {
+                fetch(`${API}/fee-slips/payments/${lastP.payment_id}/print`, { method: 'PUT' })
+                    .then(() => {
+                        setSlipPayments(prev => prev.map(x => x.payment_id === lastP.payment_id ? { ...x, is_printed: true } : x));
+                    }).catch(() => {});
+            }
+        } else {
+            const totalPaid = parseFloat(targetSlip.paid_amount as any || 0);
+            const pDate = payDate || getTodayDateStr();
+            openReceiptWindow(targetSlip, totalPaid, pDate, 0);
+        }
     };
 
     /* ============================================================================
@@ -855,15 +920,28 @@ export default function CollectFeePage() {
                 return false;
             }
         }
-        if (search.trim()) {
-            const q = search.toLowerCase().trim();
-            const name = `${s.first_name} ${s.last_name}`.toLowerCase();
-            const admno = (s.admission_no || '').toLowerCase();
-            const famId = (s.family_id || '').toLowerCase();
-            const fName = (s.father_name || '').toLowerCase();
-            const fPhone = (s.father_phone || '').toLowerCase();
-            const members = (s.family_members || []).map(m => `${m.first_name} ${m.last_name}`.toLowerCase()).join(' ');
-            return name.includes(q) || admno.includes(q) || famId.includes(q) || fName.includes(q) || fPhone.includes(q) || members.includes(q);
+        if (search && search.trim()) {
+            const qTokens = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
+            if (qTokens.length === 0) return true;
+
+            const studentName = `${s.first_name || ''} ${s.last_name || ''}`;
+            const fatherName = s.father_name || '';
+            const admno = s.admission_no || '';
+            const famId = s.family_id || '';
+            const fPhone = s.father_phone || '';
+            const className = s.class_name || '';
+            const sectionName = s.section_name || '';
+            const slipNo = s.slip_id ? String(s.slip_id) : '';
+            const slipMonth = s.month ? (MONTHS[s.month - 1] || '') : '';
+            const slipYear = s.year ? String(s.year) : '';
+
+            const membersText = (s.family_members || []).map((m: any) => 
+                `${m.first_name || ''} ${m.last_name || ''} ${m.father_name || ''} ${m.admission_no || ''} ${m.class_name || ''} ${m.section_name || ''}`
+            ).join(' ');
+
+            const fullCorpus = `${studentName} ${fatherName} ${admno} ${famId} ${fPhone} ${className} ${sectionName} ${slipNo} ${slipMonth} ${slipYear} ${membersText}`.toLowerCase();
+
+            return qTokens.every(token => fullCorpus.includes(token));
         }
         return true;
     });
@@ -1510,25 +1588,25 @@ export default function CollectFeePage() {
                                                                     </span>
                                                                 </div>
                                                             </div>
-                                                            {/* <div>
+                                                            <div>
                                                                 {slip.is_active_year === false ? (
                                                                     <button className="btn btn-sm btn-outline-secondary"
                                                                         onClick={() => { setSlipPickerGroup(null); openPayModal(slip); }}>
-                                                                        <i className="bi bi-eye me-1"></i>View Payment Details
+                                                                        <i className="bi bi-eye me-1"></i>View Details
                                                                     </button>
                                                                 ) : isPaidOrSatteled ? (
-                                                                    <button className="btn btn-sm btn-outline-success"
+                                                                    <button className="btn btn-sm btn-outline-success fw-semibold"
                                                                         onClick={() => { setSlipPickerGroup(null); openPayModal(slip); }}>
-                                                                        <i className="bi bi-clock-history me-1"></i>Payment History
+                                                                        <i className="bi bi-printer me-1"></i>Invoice / History
                                                                     </button>
                                                                 ) : (
                                                                     <button className="btn btn-sm fw-bold"
                                                                         style={{ backgroundColor: 'var(--accent-orange)', color: '#fff', border: 'none', borderRadius: 6 }}
                                                                         onClick={() => { setSlipPickerGroup(null); openPayModal(slip); }}>
-                                                                        <i className="bi bi-cash me-1"></i>Collect {MONTHS[(slip.month ?? 1) - 1]?.slice(0, 3)} Fee
+                                                                        <i className="bi bi-cash me-1"></i>Collect / Invoice
                                                                     </button>
                                                                 )}
-                                                            </div> */}
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1556,8 +1634,8 @@ export default function CollectFeePage() {
                         <div className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
                             <div className="modal-content border-0 shadow-lg" style={{ borderRadius: 16 }}>
                                 {/* Modal Header */}
-                                <div className="modal-header border-0 pb-0 px-4 pt-4" style={{ background: 'linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-teal) 100%)', borderRadius: '16px 16px 0 0' }}>
-                                    <div className="text-white">
+                                <div className="modal-header border-0 pb-3 px-4 pt-4" style={{ background: 'linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-teal) 100%)', borderRadius: '16px 16px 0 0' }}>
+                                    <div className="text-white flex-grow-1 pe-2">
                                         <h5 className="modal-title fw-bold mb-1">
                                             <i className="bi bi-cash-coin me-2"></i>
                                             {activeSlip.is_active_year === false ? 'Voucher Details (Closed Session)' : ['paid', 'satteled'].includes(activeSlip.status) ? 'Payment History' : 'Collect Fee Payment'}
@@ -1576,7 +1654,21 @@ export default function CollectFeePage() {
                                             )}
                                         </div>
                                     </div>
-                                    <button className="btn-close btn-close-white ms-auto" onClick={() => setPayModal(false)} />
+                                    <div className="d-flex align-items-center gap-2">
+                                        {(parseFloat(activeSlip.paid_amount as any || 0) > 0 || slipPayments.length > 0) && (
+                                            <button
+                                                type="button"
+                                                className="btn btn-sm btn-light fw-bold text-success d-flex align-items-center gap-1 shadow-sm"
+                                                style={{ fontSize: '0.78rem', borderRadius: 8, padding: '5px 12px' }}
+                                                title="Print Latest Receiving Invoice"
+                                                onClick={() => printLatestReceipt()}
+                                            >
+                                                <i className="bi bi-printer-fill fs-6"></i>
+                                                <span>Print Invoice</span>
+                                            </button>
+                                        )}
+                                        <button className="btn-close btn-close-white" onClick={() => setPayModal(false)} />
+                                    </div>
                                 </div>
 
                                 <div className="modal-body px-4 py-3">
@@ -1621,33 +1713,38 @@ export default function CollectFeePage() {
                                         </div>
                                     )}
 
-                                    {/* Fee breakdown (Hidden as per request)
-                                    {activeSlip.line_items && activeSlip.line_items.length > 0 && (
-                                        <div className="mb-3">
-                                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--primary-dark)', marginBottom: 4 }}>Fee Breakdown</div>
-                                            <div className="rounded overflow-hidden" style={{ border: '1px solid #e9ecef' }}>
-                                                {activeSlip.line_items.map((li, i) => (
-                                                    <div key={i} className="d-flex justify-content-between align-items-center px-3 py-1"
-                                                        style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#f8f9fa', fontSize: '0.78rem' }}>
-                                                        <span style={{ color: '#555' }}>{li.head_name}{li.note ? <span className="text-muted ms-1">({li.note})</span> : ''}</span>
-                                                        <span className="fw-bold" style={{ color: 'var(--primary-dark)' }}>{fmt(parseFloat(li.amount as any))}</span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )} 
-                                    */}
-
-                                    {/* Payment history always visible so Delete button is always accessible */}
+                                    {/* Payment history always visible so Delete and Print buttons are always accessible */}
                                     <div className="mb-3">
-                                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--primary-dark)', marginBottom: 4 }}>
-                                            <i className="bi bi-clock-history me-1"></i>Payment History
+                                        <div className="d-flex justify-content-between align-items-center mb-2">
+                                            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--primary-dark)' }}>
+                                                <i className="bi bi-clock-history me-1 text-teal"></i>Payment History &amp; Receipts
+                                            </div>
+                                            {(slipPayments.length > 0 || parseFloat(activeSlip.paid_amount as any || 0) > 0) && (
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-sm btn-outline-success fw-bold py-1 px-2.5 d-flex align-items-center gap-1"
+                                                    style={{ fontSize: '0.72rem', borderRadius: 6 }}
+                                                    onClick={() => printLatestReceipt()}
+                                                >
+                                                    <i className="bi bi-printer-fill"></i>Print Latest Invoice
+                                                </button>
+                                            )}
                                         </div>
                                         {loadingHistory ? (
                                             <div className="text-center py-2"><div className="spinner-border spinner-border-sm text-secondary" /></div>
                                         ) : slipPayments.length === 0 ? (
-                                            <div className="text-muted small py-2 px-3 rounded" style={{ backgroundColor: '#f8f9fa', border: '1px solid #e9ecef' }}>
-                                                <i className="bi bi-info-circle me-1"></i>No payments recorded yet for this slip.
+                                            <div className="text-muted small py-2 px-3 rounded d-flex justify-content-between align-items-center" style={{ backgroundColor: '#f8f9fa', border: '1px solid #e9ecef' }}>
+                                                <span><i className="bi bi-info-circle me-1"></i>No individual payment records yet.</span>
+                                                {parseFloat(activeSlip.paid_amount as any || 0) > 0 && (
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-sm btn-success fw-bold py-1 px-2.5 d-flex align-items-center gap-1"
+                                                        style={{ fontSize: '0.72rem', borderRadius: 6 }}
+                                                        onClick={() => printLatestReceipt()}
+                                                    >
+                                                        <i className="bi bi-printer-fill"></i>Print Invoice ({fmt(parseFloat(activeSlip.paid_amount as any))})
+                                                    </button>
+                                                )}
                                             </div>
                                         ) : (
                                             <div className="rounded overflow-hidden" style={{ border: '1px solid #e9ecef' }}>
@@ -1665,65 +1762,12 @@ export default function CollectFeePage() {
                                                         <div className="d-flex align-items-center gap-2">
                                                             <span style={{ fontSize: '0.72rem', color: '#888' }}>{fmtDate(p.payment_date)}</span>
                                                             <button
-                                                                className="btn btn-sm"
-                                                                title="Print Receipt"
-                                                                onClick={() => {
-                                                                    const prevPaid = parseFloat(activeSlip!.paid_amount as any) - parseFloat(p.amount_paid as any);
-                                                                    openReceiptWindow(activeSlip!, parseFloat(p.amount_paid as any), p.payment_date, prevPaid);
-                                                                    if (!p.is_printed) {
-                                                                        fetch(`${API}/fee-slips/payments/${p.payment_id}/print`, { method: 'PUT' })
-                                                                            .then((res) => {
-                                                                                setSlipPayments(prev => prev.map(x => x.payment_id === p.payment_id ? { ...x, is_printed: true } : x));
-                                                                            });
-                                                                    }
-                                                                }}
-                                                                style={{ fontSize: '0.7rem', backgroundColor: '#e8f5e9', color: '#198754', border: '1px solid #c3e6cb', borderRadius: 6, padding: '2px 7px' }}>
-                                                                <i className="bi bi-printer"></i>
+                                                                className="btn btn-sm fw-semibold d-flex align-items-center gap-1"
+                                                                title="Print Receiving Invoice"
+                                                                onClick={() => printLatestReceipt(activeSlip, p)}
+                                                                style={{ fontSize: '0.72rem', backgroundColor: '#e8f5e9', color: '#198754', border: '1px solid #c3e6cb', borderRadius: 6, padding: '3px 8px' }}>
+                                                                <i className="bi bi-printer-fill"></i> Print Invoice
                                                             </button>
-                                                            {/* <button
-                                                                className="btn btn-sm"
-                                                                title="Print Receipt"
-                                                                onClick={() => {
-                                                                    openReceiptWindow(activeSlip!, parseFloat(p.amount_paid as any), p.payment_date, parseFloat(activeSlip!.paid_amount as any) - parseFloat(p.amount_paid as any));
-                                                                    if (!p.is_printed) {
-                                                                        fetch(`${API}/fee-slips/payments/${p.payment_id}/print`, { method: 'PUT' })
-                                                                           .then((res) => {
-                                                                               setSlipPayments(prev => prev.map(x => x.payment_id === p.payment_id ? { ...x, is_printed: true } : x));
-                                                                           });
-                                                                    }
-                                                                }}
-                                                                style={{ fontSize: '0.7rem', backgroundColor: '#e8f5e9', color: '#198754', border: '1px solid #c3e6cb', borderRadius: 6, padding: '2px 7px' }}>
-                                                                <i className="bi bi-printer"></i>
-                                                            </button>
-                                                            <button
-                                                                className="btn btn-sm"
-                                                                title="Print Receipt"
-                                                                onClick={() => {
-                                                                    openReceiptWindow(activeSlip!, parseFloat(p.amount_paid as any), p.payment_date, parseFloat(activeSlip!.paid_amount as any) - parseFloat(p.amount_paid as any));
-                                                                    if (!p.is_printed) {
-                                                                        fetch(`${API}/fee-slips/payments/${p.payment_id}/print`, { method: 'PUT' })
-                                                                           .then((res) => {
-                                                                               setSlipPayments(prev => prev.map(x => x.payment_id === p.payment_id ? { ...x, is_printed: true } : x));
-                                                                           });
-                                                                    }
-                                                                }}
-                                                                style={{ fontSize: '0.7rem', backgroundColor: '#e8f5e9', color: '#198754', border: '1px solid #c3e6cb', borderRadius: 6, padding: '2px 7px' }}>
-                                                                <i className="bi bi-printer"></i>
-                                                            </button>
-
-                                                              <button
-                                                                  className="btn btn-sm"
-                                                                  title="Print Receipt"
-                                                                  onClick={() => {
-                                                                      openReceiptWindow(activeSlip!, parseFloat(p.amount_paid as any), p.payment_date, parseFloat(activeSlip!.paid_amount as any) - parseFloat(p.amount_paid as any));
-                                                                      if (!p.is_printed) {
-                                                                          fetch(`${API}/fee-slips/payments/${p.payment_id}/print`, { method: 'PUT' });
-                                                                          setSlipPayments(prev => prev.map(x => x.payment_id === p.payment_id ? { ...x, is_printed: true } : x));
-                                                                      }
-                                                                  }}
-                                                                  style={{ fontSize: '0.7rem', backgroundColor: '#e8f5e9', color: '#198754', border: '1px solid #c3e6cb', borderRadius: 6, padding: '2px 7px' }}>
-                                                                  <i className="bi bi-printer"></i>
-                                                              </button> */}
                                                             {hasPermission('fees', 'delete') && activeSlip.is_active_year !== false && (
                                                                 <button
                                                                     className="btn btn-sm"
@@ -2125,26 +2169,33 @@ export default function CollectFeePage() {
                                                 <div className="fw-bold text-success mb-1">Fee Fully Paid</div>
                                                 <div className="text-muted small mb-2">This voucher has been cleared.</div>
                                                 <button className="btn btn-sm fw-bold" style={{ backgroundColor: 'var(--primary-teal)', color: '#fff', borderRadius: 6, border: 'none' }}
-                                                    onClick={() => {
-                                                        const lastP = slipPayments[0];
-                                                        openReceiptWindow(
-                                                            activeSlip,
-                                                            lastP ? parseFloat(lastP.amount_paid as any) : parseFloat(activeSlip.paid_amount as any),
-                                                            lastP ? lastP.payment_date : new Date().toISOString().split('T')[0],
-                                                            lastP ? parseFloat(activeSlip.paid_amount as any) - parseFloat(lastP.amount_paid as any) : 0
-                                                        );
-                                                    }}>
-                                                    <i className="bi bi-printer me-1"></i>Print Last Receipt
+                                                    onClick={() => printLatestReceipt()}>
+                                                    <i className="bi bi-printer-fill me-1"></i>Print Receiving Invoice
                                                 </button>
                                             </div>
                                         </div>
                                     ) : null}
                                 </div>
 
-                                <div className="modal-footer border-0 px-4 py-3">
-                                    {/* <button className="btn btn-sm btn-outline-secondary" onClick={() => setPayModal(false)}>
-                                        <i className="bi bi-x me-1"></i>Close
-                                    </button> */}
+                                <div className="modal-footer border-0 px-4 py-3 bg-light d-flex justify-content-between align-items-center flex-wrap gap-2" style={{ borderRadius: '0 0 16px 16px' }}>
+                                    {(parseFloat(activeSlip.paid_amount as any || 0) > 0 || slipPayments.length > 0) ? (
+                                        <button
+                                            type="button"
+                                            className="btn btn-success fw-bold d-flex align-items-center gap-2"
+                                            style={{ borderRadius: 8, padding: '7px 16px', fontSize: '0.85rem' }}
+                                            onClick={() => printLatestReceipt()}
+                                        >
+                                            <i className="bi bi-printer-fill fs-6"></i>
+                                            <span>Print Receiving Invoice (رسید پرنٹ کریں)</span>
+                                        </button>
+                                    ) : (
+                                        <span className="text-muted small">
+                                            <i className="bi bi-info-circle me-1"></i>Enter payment amount and click Confirm &amp; Print to generate receipt.
+                                        </span>
+                                    )}
+                                    <button className="btn btn-outline-secondary px-4 fw-semibold" style={{ borderRadius: 8, fontSize: '0.85rem' }} onClick={() => setPayModal(false)}>
+                                        Close
+                                    </button>
                                 </div>
                             </div>
                         </div>
