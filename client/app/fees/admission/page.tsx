@@ -11,18 +11,23 @@ interface Ledger {
   last_name: string;
   admission_no: string;
   father_name: string;
+  father_phone?: string;
   student_mobile: string;
   monthly_fee: number;
+  class_id?: number;
   class_name: string;
+  section_id?: number;
   section_name: string;
   total_amount: number;
   paid_amount: number;
+  discount_amount?: number;
   remaining_amount: number;
   status: "unpaid" | "partial" | "paid";
   admission_date: string;
   academic_year_id?: number;
   academic_year_name?: string;
   is_active_year?: boolean;
+  student_status?: string;
 }
 
 interface Stats {
@@ -62,10 +67,13 @@ export default function AdmissionFeePage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState(""); // '' = unpaid+partial (default)
+  const [classes, setClasses] = useState<{ class_id: number; class_name: string }[]>([]);
+  const [selectedClass, setSelectedClass] = useState<string>("all");
   const [academicYears, setAcademicYears] = useState<{ id: number; year_name: string; is_active: boolean }[]>([]);
-  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('all');
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>("all");
   const [activeYear, setActiveYear] = useState<{ id: number; year_name: string; is_active: boolean } | null>(null);
   const [search, setSearch] = useState("");
+
 
   // Payment Modal
   const [showPayModal, setShowPayModal] = useState(false);
@@ -133,19 +141,29 @@ export default function AdmissionFeePage() {
 
   useEffect(() => {
     fetchData();
-  }, [filterStatus, selectedAcademicYear]);
+  }, [filterStatus, selectedClass, selectedAcademicYear]);
 
   const fetchData = async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (filterStatus) params.append("status", filterStatus);
+      if (selectedClass && selectedClass !== "all") params.append("class_id", selectedClass);
       if (selectedAcademicYear && selectedAcademicYear !== "all") params.append("academic_year_id", selectedAcademicYear);
       const q = params.toString() ? `?${params.toString()}` : "";
       const r = await fetch(`${API}/fee-slips/admission-fees${q}`);
       const data = await r.json();
       setLedgers(data.ledgers || []);
       setStats(data.stats || null);
+      if (Array.isArray(data.classes) && data.classes.length > 0) {
+        setClasses(data.classes);
+      }
+      if (Array.isArray(data.years) && data.years.length > 0) {
+        setAcademicYears(data.years);
+      }
+      if (data.active_year) {
+        setActiveYear(data.active_year);
+      }
     } catch {
     } finally {
       setLoading(false);
@@ -391,14 +409,31 @@ export default function AdmissionFeePage() {
   };
 
   const filtered = ledgers.filter((l) => {
-    if (!search) return true;
-    const q = search.toLowerCase();
+    if (!search || !search.trim()) return true;
+    const q = search.trim().toLowerCase();
+
+    const fullName = `${l.first_name || ""} ${l.last_name || ""}`.trim().toLowerCase();
+    const nameWithFather = `${l.first_name || ""} ${l.father_name || ""}`.trim().toLowerCase();
+    const admNo = (l.admission_no || "").toLowerCase();
+    const fName = (l.first_name || "").toLowerCase();
+    const lName = (l.last_name || "").toLowerCase();
+    const father = (l.father_name || "").toLowerCase();
+    const cls = (l.class_name || "").toLowerCase();
+    const sec = (l.section_name || "").toLowerCase();
+    const phone = (l.student_mobile || "").toLowerCase();
+    const fPhone = (l.father_phone || "").toLowerCase();
+
     return (
-      l.first_name?.toLowerCase().includes(q) ||
-      l.last_name?.toLowerCase().includes(q) ||
-      l.admission_no?.toLowerCase().includes(q) ||
-      l.father_name?.toLowerCase().includes(q) ||
-      l.class_name?.toLowerCase().includes(q)
+      fName.includes(q) ||
+      lName.includes(q) ||
+      fullName.includes(q) ||
+      nameWithFather.includes(q) ||
+      admNo.includes(q) ||
+      father.includes(q) ||
+      cls.includes(q) ||
+      sec.includes(q) ||
+      phone.includes(q) ||
+      fPhone.includes(q)
     );
   });
 
@@ -414,10 +449,10 @@ export default function AdmissionFeePage() {
             </span>
           </h2>
           <p className="text-muted small mb-0">
-            Track one-time admission fee outstanding per student auto-linked
-            on admission.
+            Track one-time admission fee outstanding per student auto-linked on admission.
           </p>
         </div>
+
       </div>
 
       {/* Stats Cards */}
@@ -494,39 +529,133 @@ export default function AdmissionFeePage() {
       {/* Filters */}
       <div className="card border-0 shadow-sm mb-4">
         <div className="card-body py-3 px-4">
-          <div className="row g-2 align-items-center">
-            <div className="col-md-6">
+          <div className="row g-3 align-items-center">
+            {/* Search */}
+            <div className="col-lg-4 col-md-6 col-12">
+              <label className="form-label small fw-bold text-muted mb-1">
+                <i className="bi bi-search me-1"></i>Search Student
+              </label>
               <div className="input-group">
                 <span className="input-group-text bg-light border-end-0">
                   <i className="bi bi-search text-muted"></i>
                 </span>
                 <input
                   type="text"
-                  className="form-control border-start-0 bg-light"
-                  placeholder="Search by name, admission no, father name..."
+                  className="form-control border-start-0 border-end-0 bg-light"
+                  placeholder="Name, father name, adm no, phone..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
+                {search && (
+                  <button
+                    className="btn btn-light border border-start-0"
+                    type="button"
+                    onClick={() => setSearch("")}
+                    title="Clear search"
+                  >
+                    <i className="bi bi-x-lg text-muted"></i>
+                  </button>
+                )}
               </div>
             </div>
-            <div className="col-md-4">
+
+            {/* Status Filter */}
+            <div className="col-lg-3 col-md-3 col-6">
+              <label className="form-label small fw-bold text-muted mb-1">
+                <i className="bi bi-funnel me-1"></i>Payment Status
+              </label>
               <select
-                className="form-select"
+                className="form-select bg-light"
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value)}
               >
                 <option value="">Pending (Unpaid + Partial)</option>
+                <option value="all">All Statuses (Show Paid too)</option>
                 <option value="unpaid">Unpaid Only</option>
                 <option value="partial">Partial Only</option>
                 <option value="paid">Paid Only</option>
-                <option value="all">All Statuses</option>
               </select>
             </div>
-            <div className="col-md-2">
-              <span className="text-muted small">
-                {filtered.length} students shown
-              </span>
+
+            {/* Class Filter */}
+            <div className="col-lg-2 col-md-3 col-6">
+              <label className="form-label small fw-bold text-muted mb-1">
+                <i className="bi bi-mortarboard me-1"></i>Class
+              </label>
+              <select
+                className="form-select bg-light"
+                value={selectedClass}
+                onChange={(e) => setSelectedClass(e.target.value)}
+              >
+                <option value="all">All Classes</option>
+                {classes.map((c) => (
+                  <option key={c.class_id} value={c.class_id.toString()}>
+                    {c.class_name}
+                  </option>
+                ))}
+              </select>
             </div>
+
+            {/* Academic Year Filter */}
+            <div className="col-lg-3 col-md-6 col-12">
+              <label className="form-label small fw-bold text-muted mb-1">
+                <i className="bi bi-calendar-event me-1"></i>Academic Session
+              </label>
+              <select
+                className="form-select bg-light"
+                value={selectedAcademicYear}
+                onChange={(e) => setSelectedAcademicYear(e.target.value)}
+              >
+                <option value="all">All Academic Sessions</option>
+                {academicYears.map((y) => (
+                  <option key={y.id} value={y.id.toString()}>
+                    {y.year_name} {y.is_active ? "(Active Session)" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Active filter badges / Reset */}
+          <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 pt-2 border-top mt-3">
+            <div className="d-flex align-items-center gap-2 flex-wrap">
+              <span className="badge rounded-pill bg-light text-dark border px-3 py-2">
+                <strong>{filtered.length}</strong> of <strong>{ledgers.length}</strong> records matched
+              </span>
+              {selectedAcademicYear !== "all" && (
+                <span className="badge rounded-pill bg-info bg-opacity-10 text-primary border border-info border-opacity-25 px-2 py-1 small">
+                  Session: {academicYears.find(y => y.id.toString() === selectedAcademicYear)?.year_name || selectedAcademicYear}
+                </span>
+              )}
+              {selectedClass !== "all" && (
+                <span className="badge rounded-pill bg-secondary bg-opacity-10 text-dark border px-2 py-1 small">
+                  Class: {classes.find(c => c.class_id.toString() === selectedClass)?.class_name || selectedClass}
+                </span>
+              )}
+              {filterStatus && (
+                <span className="badge rounded-pill bg-warning bg-opacity-10 text-dark border px-2 py-1 small">
+                  Status: {filterStatus}
+                </span>
+              )}
+              {search && (
+                <span className="badge rounded-pill bg-primary bg-opacity-10 text-primary border px-2 py-1 small">
+                  Search: &quot;{search}&quot;
+                </span>
+              )}
+            </div>
+            {(search || filterStatus !== "" || selectedClass !== "all" || selectedAcademicYear !== (activeYear ? activeYear.id.toString() : "all")) && (
+              <button
+                className="btn btn-sm btn-link text-danger text-decoration-none p-0 d-flex align-items-center gap-1"
+                onClick={() => {
+                  setSearch("");
+                  setFilterStatus("");
+                  setSelectedClass("all");
+                  setSelectedAcademicYear(activeYear ? activeYear.id.toString() : "all");
+                }}
+              >
+                <i className="bi bi-arrow-counterclockwise"></i> Reset Filters
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -541,11 +670,28 @@ export default function AdmissionFeePage() {
           ) : filtered.length === 0 ? (
             <div className="text-center py-5">
               <i className="bi bi-inbox fs-1 text-muted d-block mb-2"></i>
-              <p className="text-muted mb-0">No admission fee records found.</p>
-              <small className="text-muted">
-                Records are auto-created when students are admitted with an
-                admission fee.
-              </small>
+              <h5 className="fw-bold text-dark mb-1">No Admission Fee Records Found</h5>
+              <p className="text-muted small mb-3">
+                {search || filterStatus || selectedClass !== "all" || selectedAcademicYear !== "all"
+                  ? "No students match your selected search or filter criteria."
+                  : "No admission fee records have been created yet."}
+              </p>
+              <div className="d-flex justify-content-center gap-2">
+                {(search || filterStatus || selectedClass !== "all" || selectedAcademicYear !== "all") && (
+                  <button
+                    className="btn btn-outline-secondary btn-sm"
+                    onClick={() => {
+                      setSearch("");
+                      setFilterStatus("all");
+                      setSelectedClass("all");
+                      setSelectedAcademicYear("all");
+                    }}
+                  >
+                    <i className="bi bi-arrow-counterclockwise me-1"></i> Show All Records
+                  </button>
+                )}
+
+              </div>
             </div>
           ) : (
             <div className="table-responsive">
@@ -581,9 +727,9 @@ export default function AdmissionFeePage() {
                           <div
                             className="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white"
                             style={{
-                              width: 36,
-                              height: 36,
-                              minWidth: 36,
+                              width: 38,
+                              height: 38,
+                              minWidth: 38,
                               fontSize: "0.85rem",
                               backgroundColor: "var(--primary-teal)",
                             }}
@@ -592,15 +738,22 @@ export default function AdmissionFeePage() {
                             {ledger.last_name?.[0] || ""}
                           </div>
                           <div>
-                            <div className="fw-bold text-dark">
+                            <div className="fw-bold text-dark d-flex align-items-center gap-2">
                               {ledger.first_name} {ledger.last_name}
+                              {ledger.student_status && ledger.student_status !== "Active" && (
+                                <span className="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25" style={{ fontSize: "0.65rem" }}>
+                                  {ledger.student_status}
+                                </span>
+                              )}
                             </div>
                             <div className="text-muted small">
-                              {ledger.admission_no}
+                              <span className="badge bg-light text-dark border me-1 font-monospace">{ledger.admission_no}</span>
                             </div>
-                            <div className="text-muted small">
-                              <i className="bi bi-person me-1"></i>
-                              {ledger.father_name}
+                            <div className="text-muted small d-flex align-items-center gap-2 flex-wrap">
+                              <span><i className="bi bi-person me-1"></i>{ledger.father_name || "—"}</span>
+                              {(ledger.father_phone || ledger.student_mobile) && (
+                                <span><i className="bi bi-telephone me-1 text-success"></i>{ledger.father_phone || ledger.student_mobile}</span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -710,6 +863,8 @@ export default function AdmissionFeePage() {
         </div>
       </div>
 
+
+
       {/* Payment Modal */}
       {showPayModal && selectedLedger && (
         <>
@@ -735,7 +890,7 @@ export default function AdmissionFeePage() {
                     <div className="alert alert-warning border-0 shadow-sm d-flex align-items-center gap-2 mb-3 py-2">
                       <i className="bi bi-lock-fill fs-5"></i>
                       <div className="small">
-                        <strong>Fiscal Year Closed (Read-Only):</strong> This admission fee record belongs to a closed academic session ({selectedLedger.academic_year_name || 'Closed'}). Payment collection is locked.
+                        <strong>Fiscal Year Closed (Read-Only):</strong> This admission fee record belongs to a closed academic session ({selectedLedger.academic_year_name || "Closed"}). Payment collection is locked.
                       </div>
                     </div>
                   )}
@@ -804,7 +959,7 @@ export default function AdmissionFeePage() {
                         <input
                           type="number"
                           className="form-control fw-bold fs-5"
-                          onKeyDown={e => ['e', 'E', '+', '-'].includes(e.key) && e.preventDefault()}
+                          onKeyDown={(e) => ["e", "E", "+", "-"].includes(e.key) && e.preventDefault()}
                           required
                           min="0"
                           max={
@@ -825,7 +980,7 @@ export default function AdmissionFeePage() {
                         Max:{" "}
                         {fmt(
                           selectedLedger.remaining_amount -
-                          (parseFloat(payForm.discount_amount) || 0),
+                            (parseFloat(payForm.discount_amount) || 0),
                         )}
                       </small>
                     </div>
@@ -840,7 +995,7 @@ export default function AdmissionFeePage() {
                         <input
                           type="number"
                           className="form-control fw-bold fs-5"
-                          onKeyDown={e => ['e', 'E', '+', '-'].includes(e.key) && e.preventDefault()}
+                          onKeyDown={(e) => ["e", "E", "+", "-"].includes(e.key) && e.preventDefault()}
                           min="0"
                           max={selectedLedger.remaining_amount}
                           value={payForm.discount_amount}
@@ -862,7 +1017,8 @@ export default function AdmissionFeePage() {
                       <small className="text-muted">
                         Will reduce the remaining balance directly.
                       </small>
-                    </div>                      <div className="col-12 mt-3 p-3 bg-light rounded border border-info">
+                    </div>
+                    <div className="col-12 mt-3 p-3 bg-light rounded border border-info">
                       <div className="form-check form-switch mb-3">
                         <input
                           className="form-check-input"
@@ -882,7 +1038,7 @@ export default function AdmissionFeePage() {
                             <input
                               type="number"
                               className="form-control"
-                              onKeyDown={e => ['e', 'E', '+', '-'].includes(e.key) && e.preventDefault()}
+                              onKeyDown={(e) => ["e", "E", "+", "-"].includes(e.key) && e.preventDefault()}
                               value={tuitionAmount}
                               onChange={(e) => setTuitionAmount(e.target.value)}
                             />
@@ -892,17 +1048,20 @@ export default function AdmissionFeePage() {
                             <input
                               type="number"
                               className="form-control text-success fw-bold"
-                              onKeyDown={e => ['e', 'E', '+', '-'].includes(e.key) && e.preventDefault()}
+                              onKeyDown={(e) => ["e", "E", "+", "-"].includes(e.key) && e.preventDefault()}
                               value={tuitionReceived}
                               onChange={(e) => setTuitionReceived(e.target.value)}
                             />
                           </div>
                           <div className="col-12">
-                            <small className="text-secondary"><i className="bi bi-info-circle me-1"></i>This will be saved directly into the Monthly Fee Records seamlessly.</small>
+                            <small className="text-secondary">
+                              <i className="bi bi-info-circle me-1"></i>This will be saved directly into the Monthly Fee Records seamlessly.
+                            </small>
                           </div>
                         </div>
                       )}
-                    </div>                    <div className="col-6">
+                    </div>
+                    <div className="col-6">
                       <label className="form-label fw-bold small text-muted">
                         Payment Method
                       </label>

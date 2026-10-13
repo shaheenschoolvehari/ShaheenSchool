@@ -1128,15 +1128,25 @@ router.get('/admission-fees', async (req, res) => {
         const { status, class_id, academic_year_id } = req.query;
         const activeYear = await getActiveAcademicYear(pool);
         const yearsRes = await pool.query("SELECT id, year_name, is_active, status, start_date, end_date FROM academic_years ORDER BY id DESC");
+        const classesRes = await pool.query("SELECT class_id, class_name FROM classes ORDER BY class_id ASC");
 
         let whereClause = '1=1';
         const params = [];
-        if (status && status !== 'all') { params.push(status); whereClause += ` AND afl.status = $${params.length}`; }
-        else if (!status) { whereClause += ` AND afl.status IN ('unpaid','partial')`; }
-        if (class_id) { params.push(class_id); whereClause += ` AND s.class_id = $${params.length}`; }
+        if (status && status !== 'all') { 
+            params.push(status); 
+            whereClause += ` AND afl.status = $${params.length}`; 
+        } else if (!status) { 
+            whereClause += ` AND afl.status IN ('unpaid','partial')`; 
+        }
+
+        if (class_id && class_id !== 'all') { 
+            params.push(class_id); 
+            whereClause += ` AND s.class_id = $${params.length}`; 
+        }
+
         if (academic_year_id && academic_year_id !== 'all') {
             params.push(academic_year_id);
-            whereClause += ` AND afl.academic_year_id = $${params.length}`;
+            whereClause += ` AND (afl.academic_year_id = $${params.length} OR (afl.academic_year_id IS NULL AND $${params.length} = ${(activeYear?.id || 0)}))`;
         } else if (!academic_year_id && activeYear) {
             params.push(activeYear.id);
             whereClause += ` AND (afl.academic_year_id = $${params.length} OR afl.academic_year_id IS NULL)`;
@@ -1146,8 +1156,8 @@ router.get('/admission-fees', async (req, res) => {
             SELECT afl.ledger_id, afl.student_id, afl.total_amount, afl.paid_amount, COALESCE(afl.discount_amount, 0) AS discount_amount,
                 (afl.total_amount - afl.paid_amount - COALESCE(afl.discount_amount, 0)) AS remaining_amount, afl.status, afl.admission_date,
                 afl.academic_year_id, ay.year_name AS academic_year_name, COALESCE(ay.is_active, TRUE) AS is_active_year,
-                s.first_name, s.last_name, s.admission_no, s.father_name, s.student_mobile, s.monthly_fee,
-                c.class_name, sec.section_name
+                s.first_name, s.last_name, s.admission_no, s.father_name, s.father_phone, s.student_mobile, s.monthly_fee, s.status AS student_status,
+                c.class_id, c.class_name, sec.section_id, sec.section_name
             FROM admission_fee_ledger afl
             JOIN students s ON afl.student_id = s.student_id
             LEFT JOIN classes c ON s.class_id = c.class_id
@@ -1157,19 +1167,42 @@ router.get('/admission-fees', async (req, res) => {
             ORDER BY CASE afl.status WHEN 'unpaid' THEN 1 WHEN 'partial' THEN 2 ELSE 3 END, afl.admission_date DESC
         `, params);
 
-        const statsResult = await pool.query(`
-            SELECT COUNT(*) FILTER (WHERE status='unpaid') AS unpaid_count,  
-                   COUNT(*) FILTER (WHERE status='partial') AS partial_count,
-                   COUNT(*) FILTER (WHERE status='paid') AS paid_count,      
-                   COALESCE(SUM(total_amount),0) AS total_billed,
-                   COALESCE(SUM(paid_amount),0) AS total_collected,
-                   COALESCE(SUM(total_amount - paid_amount - COALESCE(discount_amount, 0)),0) AS total_outstanding
-            FROM admission_fee_ledger afl
-            WHERE ${whereClause}`, params);
+        // Stats where clause: includes class & academic_year filters, but keeps status independent so KPIs show the full picture
+        let statsWhere = '1=1';
+        const statsParams = [];
+        if (class_id && class_id !== 'all') { 
+            statsParams.push(class_id); 
+            statsWhere += ` AND s.class_id = $${statsParams.length}`; 
+        }
+        if (academic_year_id && academic_year_id !== 'all') {
+            statsParams.push(academic_year_id);
+            statsWhere += ` AND (afl.academic_year_id = $${statsParams.length} OR (afl.academic_year_id IS NULL AND $${statsParams.length} = ${(activeYear?.id || 0)}))`;
+        } else if (!academic_year_id && activeYear) {
+            statsParams.push(activeYear.id);
+            statsWhere += ` AND (afl.academic_year_id = $${statsParams.length} OR afl.academic_year_id IS NULL)`;
+        }
 
-        res.json({ ledgers: result.rows, stats: statsResult.rows[0], active_year: activeYear, years: yearsRes.rows });
+        const statsResult = await pool.query(`
+            SELECT COUNT(*) FILTER (WHERE afl.status='unpaid') AS unpaid_count,  
+                   COUNT(*) FILTER (WHERE afl.status='partial') AS partial_count,
+                   COUNT(*) FILTER (WHERE afl.status='paid') AS paid_count,      
+                   COALESCE(SUM(afl.total_amount),0) AS total_billed,
+                   COALESCE(SUM(afl.paid_amount),0) AS total_collected,
+                   COALESCE(SUM(afl.total_amount - afl.paid_amount - COALESCE(afl.discount_amount, 0)),0) AS total_outstanding
+            FROM admission_fee_ledger afl
+            JOIN students s ON afl.student_id = s.student_id
+            WHERE ${statsWhere}`, statsParams);
+
+        res.json({ 
+            ledgers: result.rows, 
+            stats: statsResult.rows[0], 
+            active_year: activeYear, 
+            years: yearsRes.rows,
+            classes: classesRes.rows 
+        });
     } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
 });
+
 
 // GET /fee-slips/admission-fees/student/:student_id
 router.get('/admission-fees/student/:student_id', async (req, res) => {

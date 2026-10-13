@@ -1310,14 +1310,18 @@ router.post('/', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'documen
         // -------------------------------------------------------
         const admFeeVal = parseFloat(admission_fee) || 0;
         if (admFeeVal > 0) {
+            const activeYearRes = await client.query("SELECT id FROM academic_years WHERE is_active = TRUE ORDER BY id DESC LIMIT 1");
+            const activeYearId = activeYearRes.rows[0]?.id || null;
+
             await client.query(`
                 INSERT INTO admission_fee_ledger
-                    (student_id, total_amount, paid_amount, status, admission_date, notes)
-                VALUES ($1, $2, 0, 'unpaid', $3, 'Auto-created on admission')
+                    (student_id, total_amount, paid_amount, status, admission_date, notes, academic_year_id)
+                VALUES ($1, $2, 0, 'unpaid', $3, 'Auto-created on admission', $4)
                 ON CONFLICT (student_id) DO UPDATE
                     SET total_amount = EXCLUDED.total_amount,
-                        status = CASE WHEN EXCLUDED.total_amount = 0 THEN 'paid' ELSE 'unpaid' END
-            `, [new_student_id, admFeeVal, admission_date || new Date()]);
+                        status = CASE WHEN EXCLUDED.total_amount = 0 THEN 'paid' ELSE 'unpaid' END,
+                        academic_year_id = COALESCE(admission_fee_ledger.academic_year_id, EXCLUDED.academic_year_id)
+            `, [new_student_id, admFeeVal, admission_date || new Date(), activeYearId]);
         }
 
         await client.query('COMMIT');
@@ -1934,18 +1938,22 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
         const admFeeVal = parseFloat(admission_fee) || 0;
         const validAdmDate = (admission_date && String(admission_date).trim() !== '') ? String(admission_date).trim() : new Date();
         if (admFeeVal > 0) {
+            const activeYearRes = await client.query("SELECT id FROM academic_years WHERE is_active = TRUE ORDER BY id DESC LIMIT 1");
+            const activeYearId = activeYearRes.rows[0]?.id || null;
+
             await client.query(`
                 INSERT INTO admission_fee_ledger 
-                    (student_id, total_amount, paid_amount, status, admission_date, notes)
-                VALUES ($1, $2, 0, 'unpaid', $3, 'Auto-created/Updated via student edit')
+                    (student_id, total_amount, paid_amount, status, admission_date, notes, academic_year_id)
+                VALUES ($1, $2, 0, 'unpaid', $3, 'Auto-created/Updated via student edit', $4)
                 ON CONFLICT (student_id) DO UPDATE 
                     SET total_amount = EXCLUDED.total_amount,
                         status = CASE 
                             WHEN admission_fee_ledger.paid_amount >= EXCLUDED.total_amount THEN 'paid'
                             WHEN admission_fee_ledger.paid_amount > 0 THEN 'partial'
                             ELSE 'unpaid'
-                        END
-            `, [id, admFeeVal, validAdmDate]);
+                        END,
+                        academic_year_id = COALESCE(admission_fee_ledger.academic_year_id, EXCLUDED.academic_year_id)
+            `, [id, admFeeVal, validAdmDate, activeYearId]);
         } else {
             await client.query(`
                 UPDATE admission_fee_ledger
