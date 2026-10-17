@@ -708,6 +708,7 @@ router.get('/families-directory', async (req, res) => {
                 f.family_fee,
                 f.opening_balance,
                 f.opening_balance_paid,
+                f.advance_balance,
                 GREATEST(0, COALESCE(f.opening_balance, 0) - COALESCE(f.opening_balance_paid, 0)) AS opb_remaining
             FROM students s
             LEFT JOIN classes c ON s.class_id = c.class_id
@@ -729,6 +730,7 @@ router.get('/families-directory', async (req, res) => {
                     family_fee: parseFloat(s.family_fee || 0),
                     opening_balance: parseFloat(s.opening_balance || 0),
                     opening_balance_paid: parseFloat(s.opening_balance_paid || 0),
+                    advance_balance: parseFloat(s.advance_balance || 0),
                     opb_remaining: parseFloat(s.opb_remaining || 0),
                     members: []
                 };
@@ -930,6 +932,7 @@ router.get('/families-directory', async (req, res) => {
                 effective_monthly_fee: effectiveMonthlyFee,
                 opening_balance: fam.opening_balance,
                 opening_balance_paid: fam.opening_balance_paid,
+                advance_balance: fam.advance_balance || 0,
                 opb_remaining: fam.opb_remaining,
                 total_billed: finalBilled,
                 total_paid: finalPaid,
@@ -1761,6 +1764,7 @@ router.get('/:id', async (req, res) => {
                    COALESCE(f.opening_balance, 0) AS opening_balance,
                    COALESCE(f.opening_balance_paid, 0) AS opening_balance_paid,
                    GREATEST(0, COALESCE(f.opening_balance, 0) - COALESCE(f.opening_balance_paid, 0)) AS opb_remaining,
+                   COALESCE(f.advance_balance, s.advance_balance, 0) AS advance_balance,
                    f.opb_notes,
                    (SELECT COUNT(*)::int FROM students s2 WHERE s2.family_id = s.family_id AND s2.status = 'Active') AS family_size
             FROM students s
@@ -2251,6 +2255,7 @@ router.get('/opb/families', async (req, res) => {
                 f.opening_balance,
                 f.opening_balance_paid,
                 GREATEST(f.opening_balance - f.opening_balance_paid, 0) AS opb_remaining,
+                COALESCE(f.advance_balance, 0) AS advance_balance,
                 f.opb_notes,
                 f.family_fee,
                 -- Members summary
@@ -2264,7 +2269,7 @@ router.get('/opb/families', async (req, res) => {
             LEFT JOIN classes c ON c.class_id = s.class_id
             ${where}
             GROUP BY f.family_id, f.family_name, f.primary_contact_name, f.primary_contact_phone,
-                     f.opening_balance, f.opening_balance_paid, f.opb_notes, f.family_fee
+                     f.opening_balance, f.opening_balance_paid, f.advance_balance, f.opb_notes, f.family_fee
             ORDER BY opb_remaining DESC, f.family_id
         `, params);
 

@@ -885,7 +885,11 @@ export default function CollectFeePage() {
             });
             const d = await r.json();
             if (!r.ok) throw new Error(d.error);
-            notify.success(waivedItemIds.length > 0 ? 'Payment & fine waiver recorded successfully!' : 'Payment recorded successfully!');
+            if (d.advance_surplus && d.advance_surplus > 0) {
+                notify.success(`Payment recorded! Rs. ${Number(d.advance_surplus).toLocaleString()} surplus credited to Advance Wallet.`);
+            } else {
+                notify.success(waivedItemIds.length > 0 ? 'Payment & fine waiver recorded successfully!' : 'Payment recorded successfully!');
+            }
             // Refresh history
             const rh = await fetch(`${API}/fee-slips/${activeSlip!.slip_id}`);
             const dh = await rh.json(); setSlipPayments(dh.payments || []);
@@ -899,7 +903,7 @@ export default function CollectFeePage() {
                 partial_count: d.slip.status === 'partial' ? (activeSlip?.status === 'unpaid' ? prev.partial_count + 1 : prev.partial_count) :
                     ['paid', 'satteled'].includes(d.slip.status) && (activeSlip?.status === 'partial') ? prev.partial_count - 1 : prev.partial_count
             } : null);
-            setActiveSlip(prev => prev ? { ...prev, total_amount: d.slip.total_amount, paid_amount: d.slip.paid_amount, status: d.slip.status, line_items: dh.line_items || prev.line_items } : null);
+            setActiveSlip(prev => prev ? { ...prev, total_amount: d.slip.total_amount, paid_amount: d.slip.paid_amount, status: d.slip.status, line_items: dh.line_items || prev.line_items, advance_balance: dh.advance_balance ?? (prev as any).advance_balance } : null);
             setHeadPayVals({});
             setWaivedItemIds([]);
             // Open receipt in new window after successful payment
@@ -1696,6 +1700,22 @@ export default function CollectFeePage() {
                                             </div>
                                         ))}
                                     </div>
+
+                                    {/* Advance Wallet Balance Banner */}
+                                    {Boolean((activeSlip as any).advance_balance && (activeSlip as any).advance_balance > 0) && (
+                                        <div className="alert alert-info border-0 shadow-sm py-2 px-3 mb-3 d-flex align-items-center justify-content-between" style={{ backgroundColor: '#e0f2fe', color: '#0369a1', borderRadius: '8px' }}>
+                                            <div className="d-flex align-items-center gap-2">
+                                                <i className="bi bi-wallet2 fs-5 text-primary"></i>
+                                                <div>
+                                                    <strong className="d-block" style={{ fontSize: '13px' }}>Advance Wallet Credit</strong>
+                                                    <span style={{ fontSize: '11px', opacity: 0.85 }}>Credit balance ready for automated deduction on next fee billing</span>
+                                                </div>
+                                            </div>
+                                            <div className="fs-6 fw-bold text-primary">
+                                                {fmt((activeSlip as any).advance_balance)}
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {/* Family members list */}
                                     {activeSlip.is_family_slip && (activeSlip.family_members || []).length > 0 && (

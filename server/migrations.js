@@ -460,6 +460,15 @@ async function runEssentialMigrations() {
               AND f.family_fee > 0;
         `);
 
+        // 12. Advance Fee Management Migration
+        console.log("   → Checking advance fee management columns...");
+        await client.query(`
+            ALTER TABLE families ADD COLUMN IF NOT EXISTS advance_balance NUMERIC(10,2) DEFAULT 0;
+            ALTER TABLE students ADD COLUMN IF NOT EXISTS advance_balance NUMERIC(10,2) DEFAULT 0;
+            ALTER TABLE monthly_fee_slips ADD COLUMN IF NOT EXISTS advance_adjusted NUMERIC(10,2) DEFAULT 0;
+            ALTER TABLE fee_payments ADD COLUMN IF NOT EXISTS advance_surplus NUMERIC(10,2) DEFAULT 0;
+        `);
+
         const { syncAllSequences } = require('./utils/sequenceSync');
         await syncAllSequences(client);
 

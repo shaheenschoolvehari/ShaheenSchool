@@ -445,6 +445,31 @@ router.post('/generate', async (req, res) => {
                     familyCumulativeMap[fid] = [];
                 }
             }
+
+            // 4. Advance Balance from families table
+            const advRes = await client.query(
+                `SELECT family_id, COALESCE(advance_balance, 0) AS advance_balance
+                 FROM families WHERE family_id = ANY($1::varchar[]) AND COALESCE(advance_balance, 0) > 0`,
+                [uniqueFamilyIds]
+            );
+            const familyAdvanceMap = {};
+            for (const r of advRes.rows) {
+                familyAdvanceMap[r.family_id] = parseFloat(r.advance_balance) || 0;
+            }
+        }
+
+        // Advance Balance for solo students
+        const soloStudentIds = soloStudents.map(s => s.student_id).filter(Boolean);
+        let soloStudentAdvanceMap = {};
+        if (soloStudentIds.length > 0) {
+            const stuAdvRes = await client.query(
+                `SELECT student_id, COALESCE(advance_balance, 0) AS advance_balance
+                 FROM students WHERE student_id = ANY($1::int[]) AND COALESCE(advance_balance, 0) > 0`,
+                [soloStudentIds]
+            );
+            for (const r of stuAdvRes.rows) {
+                soloStudentAdvanceMap[r.student_id] = parseFloat(r.advance_balance) || 0;
+            }
         }
 
         // ─── Helper: build line items from plan heads (skips prev_balance handled separately) ─
@@ -494,16 +519,16 @@ router.post('/generate', async (req, res) => {
                 });
         };
 
-        const insertSlip = async (student, totalAmount, lineItems, isFamilySlip, isTrusted = false) => {
+        const insertSlip = async (student, totalAmount, lineItems, isFamilySlip, isTrusted = false, advanceAdjusted = 0) => {
             const hasMulti = monthsArray.length > 1;
             const actualClassId = student.sort_class_id || student.class_id || class_id;
             const initialStatus = totalAmount <= 0 ? (isTrusted ? 'satteled' : 'paid') : 'unpaid';
             const slip = await client.query(
                 `INSERT INTO monthly_fee_slips
-                    (student_id, family_id, class_id, month, year, due_date, issue_date, total_amount, paid_amount, status, is_family_slip, has_multi_months, months_list, academic_year_id)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9, $10, $11, $12, $13) RETURNING slip_id`,
+                    (student_id, family_id, class_id, month, year, due_date, issue_date, total_amount, paid_amount, status, is_family_slip, has_multi_months, months_list, academic_year_id, advance_adjusted)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9, $10, $11, $12, $13, $14) RETURNING slip_id`,
                 [student.student_id, student.family_id, actualClassId,
-                    month, actualYear, due_date || null, issue_date || null, totalAmount, initialStatus, isFamilySlip, hasMulti, monthsArray, targetYearId]
+                    month, actualYear, due_date || null, issue_date || null, totalAmount, initialStatus, isFamilySlip, hasMulti, monthsArray, targetYearId, advanceAdjusted]
             );
             const slipId = slip.rows[0].slip_id;
             for (const item of lineItems)
@@ -625,7 +650,28 @@ router.post('/generate', async (req, res) => {
                 totalAmount += extra_heads.filter(h => h.amount && parseFloat(h.amount) > 0)
                     .reduce((s, h) => s + parseFloat(h.amount), 0);
 
-            await insertSlip(primary, totalAmount, lineItems, true, isFamTrusted);
+            // ── 3. Apply Advance Fee Credit (if family has advance_balance) ───
+            let advanceAdjusted = 0;
+            const famAdvance = familyAdvanceMap[fid] || 0;
+            if (famAdvance > 0 && totalAmount > 0) {
+                advanceAdjusted = parseFloat(Math.min(famAdvance, totalAmount).toFixed(2));
+                lineItems.push({
+                    head_id: null,
+                    head_name: 'Advance Fee Adjusted',
+                    amount: -advanceAdjusted,
+                    is_carried_forward: false,
+                    note: 'Adjusted from previous advance deposit (پیشگی فیس کٹوتی)'
+                });
+                totalAmount = parseFloat((totalAmount - advanceAdjusted).toFixed(2));
+
+                await client.query(
+                    `UPDATE families SET advance_balance = GREATEST(0, advance_balance - $1) WHERE family_id = $2`,
+                    [advanceAdjusted, fid]
+                );
+                familyAdvanceMap[fid] -= advanceAdjusted;
+            }
+
+            await insertSlip(primary, totalAmount, lineItems, true, isFamTrusted, advanceAdjusted);
             generatedCount++;
         }
 
@@ -682,7 +728,39 @@ router.post('/generate', async (req, res) => {
                 totalAmount += extra_heads.filter(h => h.amount && parseFloat(h.amount) > 0)
                     .reduce((s, h) => s + parseFloat(h.amount), 0);
 
-            await insertSlip(student, totalAmount, lineItems, false, isSoloTrusted);
+            // ── 3. Apply Advance Fee Credit ──────────────────────────────────
+            let advanceAdjusted = 0;
+            const stuAdvance = (student.family_id && familyAdvanceMap[student.family_id])
+                ? familyAdvanceMap[student.family_id]
+                : (soloStudentAdvanceMap[student.student_id] || 0);
+
+            if (stuAdvance > 0 && totalAmount > 0) {
+                advanceAdjusted = parseFloat(Math.min(stuAdvance, totalAmount).toFixed(2));
+                lineItems.push({
+                    head_id: null,
+                    head_name: 'Advance Fee Adjusted',
+                    amount: -advanceAdjusted,
+                    is_carried_forward: false,
+                    note: 'Adjusted from previous advance deposit (پیشگی فیس کٹوتی)'
+                });
+                totalAmount = parseFloat((totalAmount - advanceAdjusted).toFixed(2));
+
+                if (student.family_id && familyAdvanceMap[student.family_id] !== undefined) {
+                    await client.query(
+                        `UPDATE families SET advance_balance = GREATEST(0, advance_balance - $1) WHERE family_id = $2`,
+                        [advanceAdjusted, student.family_id]
+                    );
+                    familyAdvanceMap[student.family_id] -= advanceAdjusted;
+                } else {
+                    await client.query(
+                        `UPDATE students SET advance_balance = GREATEST(0, advance_balance - $1) WHERE student_id = $2`,
+                        [advanceAdjusted, student.student_id]
+                    );
+                    soloStudentAdvanceMap[student.student_id] -= advanceAdjusted;
+                }
+            }
+
+            await insertSlip(student, totalAmount, lineItems, false, isSoloTrusted, advanceAdjusted);
             generatedCount++;
         }
 
@@ -952,10 +1030,12 @@ router.get('/', async (req, res) => {
             SELECT mfs.*, s.first_name, s.last_name, s.admission_no, s.family_id,
                      s.father_name, s.father_phone, c.class_name, sec.section_name, s.category,
                      s.status AS student_status,
+                     COALESCE(f.advance_balance, s.advance_balance, 0) AS advance_balance,
                      ay.year_name AS academic_year_name, COALESCE(ay.is_active, TRUE) AS is_active_year,
                 COALESCE(JSON_AGG(JSON_BUILD_OBJECT('item_id',sli.item_id,'head_name',sli.head_name,'amount',sli.amount,'paid_amount',COALESCE(sli.paid_amount,0),'note',sli.note) ORDER BY sli.item_id) FILTER (WHERE sli.item_id IS NOT NULL),'[]') as line_items
             FROM monthly_fee_slips mfs
             JOIN students s ON mfs.student_id = s.student_id
+            LEFT JOIN families f ON mfs.family_id = f.family_id
             LEFT JOIN classes c ON mfs.class_id = c.class_id
             LEFT JOIN sections sec ON s.section_id = sec.section_id
             LEFT JOIN academic_years ay ON mfs.academic_year_id = ay.id
@@ -963,7 +1043,7 @@ router.get('/', async (req, res) => {
             ${whereSql}
             GROUP BY mfs.slip_id, s.first_name, s.last_name, s.admission_no, s.family_id,
                        s.father_name, s.father_phone, c.class_name, sec.section_name, s.category,
-                       s.status, ay.year_name, ay.is_active
+                       s.status, f.advance_balance, s.advance_balance, ay.year_name, ay.is_active
             ORDER BY mfs.month ASC, s.first_name ASC`, params);
 
         // For family slips, attach all active students in this class that share the family_id
@@ -1055,6 +1135,9 @@ router.get('/', async (req, res) => {
         });
 
         let stats;
+        const advanceCount = result.rows.filter(r => parseFloat(r.advance_balance || 0) > 0 || parseFloat(r.advance_adjusted || 0) > 0).length;
+        const advanceTotal = parseFloat(result.rows.reduce((sum, r) => sum + parseFloat(r.advance_balance || 0), 0).toFixed(2));
+
         if (month) {
             // Single month query
             const payableRows = result.rows.filter(r => !['satteled', 'settled'].includes((r.status || '').toLowerCase()));
@@ -1065,6 +1148,8 @@ router.get('/', async (req, res) => {
                 paid_count: result.rows.filter(r => ['paid', 'satteled', 'settled'].includes((r.status || '').toLowerCase())).length,
                 unpaid_count: result.rows.filter(r => (r.status || '').toLowerCase() === 'unpaid').length,
                 partial_count: result.rows.filter(r => (r.status || '').toLowerCase() === 'partial').length,
+                advance_count: advanceCount,
+                advance_total: advanceTotal,
             };
         } else {
             // Multi-month / Whole year query: Group by account to prevent double-counting of Previous Balance
@@ -1111,6 +1196,8 @@ router.get('/', async (req, res) => {
                 paid_count: paidCount,
                 unpaid_count: unpaidCount,
                 partial_count: partialCount,
+                advance_count: advanceCount,
+                advance_total: advanceTotal,
             };
         }
 
@@ -1737,6 +1824,16 @@ router.get('/:id', async (req, res) => {
             }
         }
 
+        let advance_balance = 0;
+        if (r.family_id) {
+            const famAdv = await pool.query('SELECT advance_balance FROM families WHERE family_id = $1', [r.family_id]);
+            advance_balance = parseFloat(famAdv.rows[0]?.advance_balance || 0);
+        } else if (r.student_id) {
+            const stdAdv = await pool.query('SELECT advance_balance FROM students WHERE student_id = $1', [r.student_id]);
+            advance_balance = parseFloat(stdAdv.rows[0]?.advance_balance || 0);
+        }
+        r.advance_balance = advance_balance;
+
         res.json({ ...r, slip: { ...r, line_items: items.rows, payments: payments.rows }, line_items: items.rows, payments: payments.rows });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -1867,16 +1964,68 @@ router.post('/:id/pay', async (req, res) => {
 
         const prevPaid = parseFloat(cur.paid_amount);
         const paidNow = parseFloat(amount_paid || 0);
-        const newPaid = prevPaid + paidNow;
-        const total = Math.max(0, effectiveTotal - totalWaivedAmount);
+        let total = Math.max(0, effectiveTotal - totalWaivedAmount);
+
+        // Optional: Apply available advance wallet credit to reduce slip total
+        let advanceUsed = 0;
+        if (req.body.apply_advance) {
+            let availableAdv = 0;
+            if (cur.family_id) {
+                const aRes = await client.query('SELECT COALESCE(advance_balance, 0) AS adv FROM families WHERE family_id = $1', [cur.family_id]);
+                availableAdv = parseFloat(aRes.rows[0]?.adv || 0);
+            } else if (cur.student_id) {
+                const aRes = await client.query('SELECT COALESCE(advance_balance, 0) AS adv FROM students WHERE student_id = $1', [cur.student_id]);
+                availableAdv = parseFloat(aRes.rows[0]?.adv || 0);
+            }
+            if (availableAdv > 0) {
+                const dueOnSlip = Math.max(0, total - prevPaid - paidNow);
+                advanceUsed = parseFloat(Math.min(availableAdv, dueOnSlip).toFixed(2));
+                if (advanceUsed > 0) {
+                    if (cur.family_id) {
+                        await client.query('UPDATE families SET advance_balance = GREATEST(0, advance_balance - $1) WHERE family_id = $2', [advanceUsed, cur.family_id]);
+                    } else if (cur.student_id) {
+                        await client.query('UPDATE students SET advance_balance = GREATEST(0, advance_balance - $1) WHERE student_id = $2', [advanceUsed, cur.student_id]);
+                    }
+                    await client.query('UPDATE monthly_fee_slips SET advance_adjusted = COALESCE(advance_adjusted, 0) + $1 WHERE slip_id = $2', [advanceUsed, id]);
+                    await client.query(`
+                        INSERT INTO slip_line_items (slip_id, head_id, head_name, amount, is_carried_forward, note)
+                        VALUES ($1, NULL, 'Advance Fee Adjusted', $2, FALSE, 'Adjusted from advance wallet during collection')
+                    `, [id, -advanceUsed]);
+                    total = Math.max(0, total - advanceUsed);
+                }
+            }
+        }
+
+        const slipRemaining = Math.max(0, total - prevPaid);
+        let advanceSurplus = 0;
+        let newPaid = prevPaid + paidNow;
+        if (paidNow > slipRemaining && slipRemaining >= 0) {
+            advanceSurplus = parseFloat((paidNow - slipRemaining).toFixed(2));
+            newPaid = total;
+        }
         const newStatus = total <= 0 ? 'satteled' : (newPaid >= total ? 'paid' : newPaid > 0 ? 'partial' : 'unpaid');
+
+        // If there is advance surplus, credit it to family or student advance_balance
+        if (advanceSurplus > 0) {
+            if (cur.family_id) {
+                await client.query(
+                    `UPDATE families SET advance_balance = COALESCE(advance_balance, 0) + $1 WHERE family_id = $2`,
+                    [advanceSurplus, cur.family_id]
+                );
+            } else if (cur.student_id) {
+                await client.query(
+                    `UPDATE students SET advance_balance = COALESCE(advance_balance, 0) + $1 WHERE student_id = $2`,
+                    [advanceSurplus, cur.student_id]
+                );
+            }
+        }
 
         // Record the payment itself with academic_year_id if money was paid
         if (paidNow > 0) {
             await client.query(
-                `INSERT INTO fee_payments (slip_id,amount_paid,payment_date,payment_method,received_by,reference_no,notes,is_printed,academic_year_id)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-                [id, paidNow, payment_date || new Date(), payment_method || 'cash', received_by, reference_no, notes, is_printed ? true : false, cur.academic_year_id || null]
+                `INSERT INTO fee_payments (slip_id,amount_paid,advance_surplus,payment_date,payment_method,received_by,reference_no,notes,is_printed,academic_year_id)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+                [id, paidNow, advanceSurplus, payment_date || new Date(), payment_method || 'cash', received_by, reference_no, notes, is_printed ? true : false, cur.academic_year_id || null]
             );
         }
         const updated = await client.query(
@@ -2136,17 +2285,36 @@ router.delete('/payments/:payment_id', async (req, res) => {
             });
         }
 
+        // ── Reverse Advance Surplus (if this payment added advance credit) ────
+        const advSurplus = parseFloat(p.advance_surplus) || 0;
+        if (advSurplus > 0) {
+            if (slipData.family_id) {
+                await client.query(
+                    `UPDATE families SET advance_balance = GREATEST(0, COALESCE(advance_balance, 0) - $1) WHERE family_id = $2`,
+                    [advSurplus, slipData.family_id]
+                );
+            } else if (slipData.student_id) {
+                await client.query(
+                    `UPDATE students SET advance_balance = GREATEST(0, COALESCE(advance_balance, 0) - $1) WHERE student_id = $2`,
+                    [advSurplus, slipData.student_id]
+                );
+            }
+        }
+
         // Delete the payment record
         await client.query('DELETE FROM fee_payments WHERE payment_id=$1', [payment_id]);
 
         // Recalculate paid_amount from remaining payments for this slip
         const remaining = await client.query(
-            'SELECT COALESCE(SUM(amount_paid),0) AS total FROM fee_payments WHERE slip_id=$1',
+            'SELECT COALESCE(SUM(amount_paid),0) AS total, COALESCE(SUM(advance_surplus),0) AS total_surplus FROM fee_payments WHERE slip_id=$1',
             [p.slip_id]
         );
-        const newPaid = parseFloat(remaining.rows[0].total);
-        const slipTotal = parseFloat(slipData.total_amount);
-        const newStatus = newPaid >= slipTotal ? 'paid' : newPaid > 0 ? 'partial' : 'unpaid';
+        const totalCashRemaining = parseFloat(remaining.rows[0].total) || 0;
+        const totalSurplusRemaining = parseFloat(remaining.rows[0].total_surplus) || 0;
+        const slipTotal = parseFloat(slipData.total_amount) || 0;
+        const effectiveCashForSlip = Math.max(0, totalCashRemaining - totalSurplusRemaining);
+        const newPaid = Math.min(slipTotal, effectiveCashForSlip);
+        const newStatus = slipTotal <= 0 ? 'satteled' : (newPaid >= slipTotal ? 'paid' : newPaid > 0 ? 'partial' : 'unpaid');
 
         const updated = await client.query(
             'UPDATE monthly_fee_slips SET paid_amount=$1, status=$2 WHERE slip_id=$3 RETURNING *',
@@ -2318,6 +2486,55 @@ router.delete('/class/:class_id/month/:month/year/:year', async (req, res) => {
 
         const deleteIds = deleteable.map(r => r.slip_id);
 
+        // Refund any advance_adjusted on deleted slips back to family/student wallet
+        const advAdjustedSlips = await client.query(
+            `SELECT family_id, student_id, advance_adjusted 
+             FROM monthly_fee_slips 
+             WHERE slip_id = ANY($1) AND advance_adjusted > 0`,
+            [deleteIds]
+        );
+        for (const s of advAdjustedSlips.rows) {
+            const refundAmt = parseFloat(s.advance_adjusted) || 0;
+            if (refundAmt > 0) {
+                if (s.family_id) {
+                    await client.query(
+                        `UPDATE families SET advance_balance = COALESCE(advance_balance, 0) + $1 WHERE family_id = $2`,
+                        [refundAmt, s.family_id]
+                    );
+                } else if (s.student_id) {
+                    await client.query(
+                        `UPDATE students SET advance_balance = COALESCE(advance_balance, 0) + $1 WHERE student_id = $2`,
+                        [refundAmt, s.student_id]
+                    );
+                }
+            }
+        }
+
+        // Reverse any advance_surplus from deleted payments
+        const surplusPayments = await client.query(
+            `SELECT fp.advance_surplus, mfs.family_id, mfs.student_id 
+             FROM fee_payments fp 
+             JOIN monthly_fee_slips mfs ON fp.slip_id = mfs.slip_id 
+             WHERE fp.slip_id = ANY($1) AND fp.advance_surplus > 0`,
+            [deleteIds]
+        );
+        for (const p of surplusPayments.rows) {
+            const surplusAmt = parseFloat(p.advance_surplus) || 0;
+            if (surplusAmt > 0) {
+                if (p.family_id) {
+                    await client.query(
+                        `UPDATE families SET advance_balance = GREATEST(0, COALESCE(advance_balance, 0) - $1) WHERE family_id = $2`,
+                        [surplusAmt, p.family_id]
+                    );
+                } else if (p.student_id) {
+                    await client.query(
+                        `UPDATE students SET advance_balance = GREATEST(0, COALESCE(advance_balance, 0) - $1) WHERE student_id = $2`,
+                        [surplusAmt, p.student_id]
+                    );
+                }
+            }
+        }
+
         // Delete payments for partial slips first
         await client.query(
             `DELETE FROM fee_payments WHERE slip_id = ANY($1)`, [deleteIds]
@@ -2474,7 +2691,10 @@ router.get('/family-summary/:student_id', async (req, res) => {
             return b.month - a.month;
         });
 
-        res.json({ slips });
+        const famAdvRes = await pool.query('SELECT advance_balance FROM families WHERE family_id = $1', [family_id]);
+        const family_advance_balance = parseFloat(famAdvRes.rows[0]?.advance_balance || 0);
+
+        res.json({ slips, family_advance_balance });
     } catch (e) {
         console.error(e);
         res.status(500).json({ error: 'Internal Server Error' });
