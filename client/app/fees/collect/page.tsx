@@ -627,7 +627,8 @@ export default function CollectFeePage() {
             <td>${fmtMoney(totalPayable)}</td>
         </tr>`;
 
-        // Divider row and bold row (Receiving Amount and Remaining Balance)
+        // Receiving Amount & Remaining Balance
+        const surplusAdvance = Math.max(0, totalReceivedNow - totalPayable);
         feeRows += `
             <tr class="divider-row">
                 <td colspan="2">Receiving Amount</td>
@@ -637,6 +638,13 @@ export default function CollectFeePage() {
                 <td colspan="2">Remaining Balance</td>
                 <td>${fmtMoney(remainingBalance)}</td>
             </tr>`;
+        if (surplusAdvance > 0) {
+            feeRows += `
+            <tr class="bold-row" style="color: #0369a1;">
+                <td colspan="2">Advance Surplus (Wallet Credit)</td>
+                <td>+ ${fmtMoney(surplusAdvance)}</td>
+            </tr>`;
+        }
 
         // School details & contacts
         const phoneParts: string[] = [];
@@ -1830,9 +1838,7 @@ export default function CollectFeePage() {
                                                                         onChange={(e) => {
                                                                             const vStr = e.target.value;
                                                                             if (vStr === '') { setHeadPayVals({ ...headPayVals, fallback: '' }); return; }
-                                                                            let val = Math.max(0, parseFloat(vStr) || 0);
-                                                                            const totBal = Math.max(0, parseFloat(activeSlip.total_amount as any) - parseFloat(activeSlip.paid_amount as any));
-                                                                            if (totBal > 0 && val > totBal) val = totBal;
+                                                                            const val = Math.max(0, parseFloat(vStr) || 0);
                                                                             setHeadPayVals({ ...headPayVals, fallback: val > 0 ? val.toString() : '' });
                                                                         }}
                                                                         style={{ fontSize: '0.9rem', fontWeight: 600, padding: '4px 8px' }}
@@ -1878,9 +1884,8 @@ export default function CollectFeePage() {
 
                                                                     const currentTVal = parseFloat(headPayVals[tId as string] || '0');
                                                                     const currentPbVal = parseFloat(headPayVals[pbId as string] || '0');
-                                                                    const combInputVal = currentTVal + currentPbVal;
-
-                                                                    const dsDis = parseFloat(combRem) <= 0 && combPaid > 0;
+                                                                    const currentAdvVal = parseFloat(headPayVals['advance_deposit'] || '0');
+                                                                    const combInputVal = currentTVal + currentPbVal + currentAdvVal;
 
                                                                     if (isTrustedSlip) {
                                                                         elements.push(
@@ -1916,9 +1921,15 @@ export default function CollectFeePage() {
                                                                                 </div>
                                                                                 <div className="d-flex align-items-center gap-2 flex-wrap ms-auto">
                                                                                     {combAmtB > 0 && (
-                                                                                        <span className="badge bg-danger-subtle text-danger border border-danger-subtle fw-bold py-1.5 px-2" style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
-                                                                                            Bal: {combRem}
-                                                                                        </span>
+                                                                                        parseFloat(combRem) > 0 ? (
+                                                                                            <span className="badge bg-danger-subtle text-danger border border-danger-subtle fw-bold py-1.5 px-2" style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+                                                                                                Bal: {combRem}
+                                                                                            </span>
+                                                                                        ) : (
+                                                                                            <span className="badge bg-success-subtle text-success border border-success-subtle fw-bold py-1.5 px-2" style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+                                                                                                ✓ Settled
+                                                                                            </span>
+                                                                                        )
                                                                                     )}
                                                                                     <div className="input-group input-group-sm w-auto" style={{ width: '130px', maxWidth: '140px' }}>
                                                                                         <span className="input-group-text bg-light text-muted small px-2 fw-bold" style={{ fontSize: '0.78rem' }}>PKR</span>
@@ -1929,31 +1940,55 @@ export default function CollectFeePage() {
                                                                                             onChange={(e) => {
                                                                                                 const vStr = e.target.value;
                                                                                                 if (vStr === '') {
-                                                                                                    setHeadPayVals({ ...headPayVals, ...(pbId ? { [pbId]: '' } : {}), ...(tId ? { [tId]: '' } : {}) });
+                                                                                                    setHeadPayVals({
+                                                                                                        ...headPayVals,
+                                                                                                        ...(pbId ? { [pbId]: '' } : {}),
+                                                                                                        ...(tId ? { [tId]: '' } : {}),
+                                                                                                        advance_deposit: ''
+                                                                                                    });
                                                                                                     return;
                                                                                                 }
-                                                                                                let val = Math.max(0, parseFloat(vStr) || 0);
-                                                                                                const maxComb = parseFloat(combRem) || 0;
-                                                                                                if (maxComb > 0 && val > maxComb) {
-                                                                                                    val = maxComb; // Cap at remaining balance
-                                                                                                }
-                                                                                                let newPb = 0, newT = 0;
-                                                                                                if (val <= pbRem) {
-                                                                                                    newPb = Math.max(0, val);
+                                                                                                const val = Math.max(0, parseFloat(vStr) || 0);
+                                                                                                let newPb = 0, newT = 0, newAdv = 0;
+                                                                                                if (pbRem > 0) {
+                                                                                                    if (val <= pbRem) {
+                                                                                                        newPb = val;
+                                                                                                    } else {
+                                                                                                        newPb = pbRem;
+                                                                                                        const remAfterPb = val - pbRem;
+                                                                                                        if (tRem > 0) {
+                                                                                                            if (remAfterPb <= tRem) {
+                                                                                                                newT = remAfterPb;
+                                                                                                            } else {
+                                                                                                                newT = tRem;
+                                                                                                                newAdv = remAfterPb - tRem;
+                                                                                                            }
+                                                                                                        } else {
+                                                                                                            newAdv = remAfterPb;
+                                                                                                        }
+                                                                                                    }
                                                                                                 } else {
-                                                                                                    newPb = Math.max(0, pbRem);
-                                                                                                    newT = Math.max(0, val - pbRem);
+                                                                                                    if (tRem > 0) {
+                                                                                                        if (val <= tRem) {
+                                                                                                            newT = val;
+                                                                                                        } else {
+                                                                                                            newT = tRem;
+                                                                                                            newAdv = val - tRem;
+                                                                                                        }
+                                                                                                    } else {
+                                                                                                        newAdv = val;
+                                                                                                    }
                                                                                                 }
-                                                                                                if (pbRem <= 0) { newPb = 0; newT = Math.max(0, val); }
 
                                                                                                 setHeadPayVals({
                                                                                                     ...headPayVals,
                                                                                                     ...(pbId ? { [pbId]: newPb > 0 ? newPb.toString() : '' } : {}),
-                                                                                                    ...(tId ? { [tId]: newT > 0 ? newT.toString() : '' } : {})
+                                                                                                    ...(tId ? { [tId]: newT > 0 ? newT.toString() : '' } : {}),
+                                                                                                    advance_deposit: newAdv > 0 ? newAdv.toString() : ''
                                                                                                 });
                                                                                             }}
                                                                                             style={{ fontSize: '0.9rem', fontWeight: 600, padding: '4px 8px' }}
-                                                                                            disabled={dsDis} min="0" />
+                                                                                            min="0" />
                                                                                     </div>
                                                                                 </div>
                                                                             </div>
@@ -2084,18 +2119,84 @@ export default function CollectFeePage() {
                                                                             </div>
                                                                         </div>
                                                                     );
-                                                                });
+                                                                 });
 
-                                                                return elements;
-                                                            })()
-                                                        )}
-                                                    </div>
-                                                    <div className="d-flex justify-content-between fw-bold text-dark mt-2 mb-1 px-1 small">
-                                                        <span>Grand Total:</span>
-                                                        <span>PKR {Object.entries(headPayVals).filter(([k]) => !waivedItemIds.map(String).includes(k)).reduce((sum, [, v]) => sum + (parseFloat(v as string) || 0), 0).toLocaleString('en-PK')}</span>
+                                                                    // Explicit Advance Fee Deposit (اضافی ایڈوانس فیس) row
+                                                                    const currentAdvVal = parseFloat(headPayVals['advance_deposit'] || '0');
+                                                                    elements.push(
+                                                                        <div key={'adv-' + (keyIdx++)} className="d-flex flex-wrap justify-content-between align-items-center p-2.5 rounded-3 border shadow-sm gap-2"
+                                                                            style={{ borderColor: currentAdvVal > 0 ? '#86efac' : '#e2e8f0', backgroundColor: currentAdvVal > 0 ? '#f0fdf4' : '#ffffff' }}>
+                                                                            <div className="d-flex flex-column flex-grow-1 min-w-0 me-2" style={{ maxWidth: '100%' }}>
+                                                                                <span className="text-dark fw-bold text-truncate" style={{ fontSize: '0.88rem' }}>
+                                                                                    <i className="bi bi-wallet2 text-success me-1.5"></i> Advance Fee Deposit (اضافی ایڈوانس)
+                                                                                </span>
+                                                                                <span className="text-muted" style={{ fontSize: '0.72rem' }}>
+                                                                                    Extra payment saved in Advance Wallet & auto-deducted next month
+                                                                                </span>
+                                                                            </div>
+                                                                            <div className="d-flex align-items-center gap-2 flex-wrap ms-auto">
+                                                                                {currentAdvVal > 0 && (
+                                                                                    <span className="badge bg-success-subtle text-success border border-success-subtle fw-bold py-1 px-2" style={{ fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
+                                                                                        +PKR {currentAdvVal.toLocaleString('en-PK')}
+                                                                                    </span>
+                                                                                )}
+                                                                                <div className="input-group input-group-sm w-auto" style={{ width: '130px', maxWidth: '140px' }}>
+                                                                                    <span className="input-group-text bg-light text-muted small px-2 fw-bold" style={{ fontSize: '0.78rem' }}>PKR</span>
+                                                                                    <input type="number" className="form-control form-control-sm text-end fw-bold no-spinner" placeholder="0"
+                                                                                        onKeyDown={e => ['e', 'E', '+', '-', '.', 'ArrowUp', 'ArrowDown'].includes(e.key) && e.preventDefault()}
+                                                                                        onWheel={e => (e.target as HTMLElement).blur()}
+                                                                                        value={currentAdvVal > 0 ? currentAdvVal : ''}
+                                                                                        onChange={(e) => {
+                                                                                            const vStr = e.target.value;
+                                                                                            const advVal = Math.max(0, parseFloat(vStr) || 0);
+                                                                                            setHeadPayVals({
+                                                                                                ...headPayVals,
+                                                                                                advance_deposit: advVal > 0 ? advVal.toString() : ''
+                                                                                            });
+                                                                                        }}
+                                                                                        style={{ fontSize: '0.9rem', fontWeight: 600, padding: '4px 8px' }}
+                                                                                        min="0" />
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    );
+
+                                                                    return elements;
+                                                                })()
+                                                            )}
+                                                        </div>
+                                                        <div className="d-flex justify-content-between fw-bold text-dark mt-2 mb-1 px-1 small">
+                                                            <span>Grand Total:</span>
+                                                            <span>PKR {Object.entries(headPayVals).filter(([k]) => !waivedItemIds.map(String).includes(k)).reduce((sum, [, v]) => sum + (parseFloat(v as string) || 0), 0).toLocaleString('en-PK')}</span>
+                                                        </div>
+                                                        {(() => {
+                                                            const totalPayVal = Object.entries(headPayVals)
+                                                                .filter(([k]) => !waivedItemIds.map(String).includes(k))
+                                                                .reduce((sum, [, v]) => sum + (parseFloat(v as string) || 0), 0);
+                                                            const slipRem = activeSlip ? Math.max(0, parseFloat(activeSlip.total_amount as any || 0) - parseFloat(activeSlip.paid_amount as any || 0)) : 0;
+                                                            const surplusVal = Math.max(0, totalPayVal - slipRem);
+
+                                                            if (surplusVal > 0) {
+                                                                return (
+                                                                    <div className="p-2.5 rounded-3 border mt-2" style={{ backgroundColor: '#f0fdf4', borderColor: '#bbf7d0', color: '#166534' }}>
+                                                                        <div className="d-flex justify-content-between align-items-center">
+                                                                            <span className="fw-bold" style={{ fontSize: '0.84rem' }}>
+                                                                                <i className="bi bi-wallet2 text-success me-1.5"></i> Advance Wallet Surplus (اضافی ایڈوانس):
+                                                                            </span>
+                                                                            <span className="badge bg-success fw-bold px-2 py-1" style={{ fontSize: '0.82rem' }}>
+                                                                                + PKR {surplusVal.toLocaleString('en-PK')}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="text-muted mt-1" style={{ fontSize: '0.73rem', lineHeight: 1.35 }}>
+                                                                            Current slip balance (PKR {slipRem.toLocaleString('en-PK')}) will be <strong>100% Settled</strong>. The surplus <strong>PKR {surplusVal.toLocaleString('en-PK')}</strong> will be safely deposited into the student's Advance Fee Wallet and automatically deducted on the next monthly fee slip.
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            }
+                                                            return null;
+                                                        })()}
                                                     </div>
                                                 </div>
-                                            </div>
                                             <div className="row g-2 mt-0">
                                                 <div className="col-md-4">
                                                     <label className="form-label small fw-bold text-muted mb-1">Payment Method</label>

@@ -2081,10 +2081,14 @@ router.post('/:id/pay', async (req, res) => {
         // ── Auto-allocate Line Items on Current Slip if head_breakdown not supplied ─
         if (head_breakdown && typeof head_breakdown === 'object') {
             for (const [itemId, amount] of Object.entries(head_breakdown)) {
-                if (parseFloat(amount) > 0) {
+                const parseAmt = parseFloat(amount);
+                const parsedId = parseInt(itemId, 10);
+                if (!isNaN(parsedId) && parseAmt > 0) {
                     await client.query(
-                        'UPDATE slip_line_items SET paid_amount = paid_amount + $1 WHERE item_id = $2 AND slip_id = $3',
-                        [parseFloat(amount), itemId, id]
+                        `UPDATE slip_line_items 
+                         SET paid_amount = LEAST(amount, paid_amount + $1) 
+                         WHERE item_id = $2 AND slip_id = $3`,
+                        [parseAmt, parsedId, id]
                     );
                 }
             }
