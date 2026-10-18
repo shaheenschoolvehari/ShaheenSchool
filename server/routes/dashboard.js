@@ -222,10 +222,25 @@ router.get('/accountant', async (req, res) => {
                   AND EXTRACT(YEAR  FROM payment_date)=EXTRACT(YEAR  FROM CURRENT_DATE)`),
 
             pool.query(`
-                SELECT COALESCE(SUM(GREATEST(0, ms.total_amount - ms.paid_amount)), 0) AS pending
+                SELECT (
+                    COALESCE(SUM(GREATEST(0, ms.total_amount - ms.paid_amount)), 0)
+                    +
+                    COALESCE((
+                        SELECT SUM(GREATEST(0, f.opening_balance - COALESCE(f.opening_balance_paid, 0)))
+                        FROM families f
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM students s2 
+                            WHERE s2.family_id = f.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active'
+                        )
+                        AND NOT EXISTS (
+                            SELECT 1 FROM monthly_fee_slips ms2
+                            WHERE ms2.family_id = f.family_id AND LOWER(TRIM(ms2.status)) IN ('unpaid', 'partial')
+                        )
+                    ), 0)
+                ) AS pending
                 FROM monthly_fee_slips ms
                 LEFT JOIN students s ON ms.student_id = s.student_id
-                WHERE ms.status IN ('unpaid', 'partial')
+                WHERE LOWER(TRIM(ms.status)) IN ('unpaid', 'partial')
                   AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')`),
 
             pool.query(`SELECT COUNT(*) AS total FROM students WHERE status='Active'`),
@@ -360,30 +375,92 @@ router.get('/accountant', async (req, res) => {
 
             // Active Student Pending Dues
             pool.query(`
-                SELECT COALESCE(SUM(GREATEST(0, ms.total_amount - ms.paid_amount)), 0) AS total
+                SELECT COALESCE(SUM(
+                    CASE
+                        -- Solo student slip
+                        WHEN ms.family_id IS NULL THEN
+                            CASE WHEN LOWER(COALESCE(s.status, 'Active')) = 'active' THEN GREATEST(0, ms.total_amount - ms.paid_amount) ELSE 0 END
+                        
+                        -- Family slip with NO active students (purely inactive)
+                        WHEN NOT EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active') THEN 0
+
+                        -- Family slip with NO inactive students (purely active)
+                        WHEN NOT EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) != 'active') THEN
+                            GREATEST(0, ms.total_amount - ms.paid_amount)
+
+                        -- Mixed family slip (both active and inactive members exist):
+                        -- Active portion is the total remaining slip balance minus the inactive previous balance portion
+                        ELSE
+                            GREATEST(0,
+                                GREATEST(0, ms.total_amount - ms.paid_amount) -
+                                LEAST(
+                                    GREATEST(0, ms.total_amount - ms.paid_amount),
+                                    COALESCE((
+                                        SELECT SUM(GREATEST(0, sli.amount - COALESCE(sli.paid_amount, 0)))
+                                        FROM slip_line_items sli
+                                        WHERE sli.slip_id = ms.slip_id
+                                          AND (sli.head_name ILIKE '%previous balance%' OR sli.head_name ILIKE '%opening balance%')
+                                    ), 0)
+                                )
+                            )
+                    END
+                ), 0) AS total
                 FROM monthly_fee_slips ms
                 LEFT JOIN students s ON ms.student_id = s.student_id
-                WHERE ms.status IN ('unpaid', 'partial')
+                WHERE LOWER(TRIM(ms.status)) IN ('unpaid', 'partial')
                   AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
-                  AND (
-                      (ms.family_id IS NOT NULL AND EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active'))
-                      OR
-                      (ms.family_id IS NULL AND LOWER(COALESCE(s.status, 'Active')) = 'active')
-                  )
             `),
 
             // Inactive Student Pending Dues
             pool.query(`
-                SELECT COALESCE(SUM(GREATEST(0, ms.total_amount - ms.paid_amount)), 0) AS total
+                SELECT (
+                    -- 1. Inactive portion on monthly fee slips
+                    COALESCE(SUM(
+                        CASE
+                            -- Solo student slip
+                            WHEN ms.family_id IS NULL THEN
+                                CASE WHEN LOWER(COALESCE(s.status, 'Active')) != 'active' THEN GREATEST(0, ms.total_amount - ms.paid_amount) ELSE 0 END
+                            
+                            -- Family slip with NO active students (purely inactive)
+                            WHEN NOT EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active') THEN
+                                GREATEST(0, ms.total_amount - ms.paid_amount)
+
+                            -- Family slip with NO inactive students (purely active)
+                            WHEN NOT EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) != 'active') THEN 0
+
+                            -- Mixed family slip (has both active and inactive members):
+                            -- Inactive portion is the unpaid previous balance / arrears carried over from the inactive members
+                            ELSE
+                                LEAST(
+                                    GREATEST(0, ms.total_amount - ms.paid_amount),
+                                    COALESCE((
+                                        SELECT SUM(GREATEST(0, sli.amount - COALESCE(sli.paid_amount, 0)))
+                                        FROM slip_line_items sli
+                                        WHERE sli.slip_id = ms.slip_id
+                                          AND (sli.head_name ILIKE '%previous balance%' OR sli.head_name ILIKE '%opening balance%')
+                                    ), 0)
+                                )
+                        END
+                    ), 0)
+                    +
+                    -- 2. Purely inactive families unbilled OPB (not on any unpaid slip)
+                    COALESCE((
+                        SELECT SUM(GREATEST(0, f.opening_balance - COALESCE(f.opening_balance_paid, 0)))
+                        FROM families f
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM students s2 
+                            WHERE s2.family_id = f.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active'
+                        )
+                        AND NOT EXISTS (
+                            SELECT 1 FROM monthly_fee_slips ms2
+                            WHERE ms2.family_id = f.family_id AND LOWER(TRIM(ms2.status)) IN ('unpaid', 'partial')
+                        )
+                    ), 0)
+                ) AS total
                 FROM monthly_fee_slips ms
                 LEFT JOIN students s ON ms.student_id = s.student_id
-                WHERE ms.status IN ('unpaid', 'partial')
+                WHERE LOWER(TRIM(ms.status)) IN ('unpaid', 'partial')
                   AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
-                  AND NOT (
-                      (ms.family_id IS NOT NULL AND EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active'))
-                      OR
-                      (ms.family_id IS NULL AND LOWER(COALESCE(s.status, 'Active')) = 'active')
-                  )
             `),
 
             // Current Month Advance Fee Collected
@@ -470,10 +547,25 @@ router.get('/', async (req, res) => {
 
             // 4. Total pending fees (unpaid + partial across all time, excluding trusted)
             pool.query(`
-                SELECT COALESCE(SUM(GREATEST(0, ms.total_amount - ms.paid_amount)), 0) AS pending
+                SELECT (
+                    COALESCE(SUM(GREATEST(0, ms.total_amount - ms.paid_amount)), 0)
+                    +
+                    COALESCE((
+                        SELECT SUM(GREATEST(0, f.opening_balance - COALESCE(f.opening_balance_paid, 0)))
+                        FROM families f
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM students s2 
+                            WHERE s2.family_id = f.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active'
+                        )
+                        AND NOT EXISTS (
+                            SELECT 1 FROM monthly_fee_slips ms2
+                            WHERE ms2.family_id = f.family_id AND LOWER(TRIM(ms2.status)) IN ('unpaid', 'partial')
+                        )
+                    ), 0)
+                ) AS pending
                 FROM monthly_fee_slips ms
                 LEFT JOIN students s ON ms.student_id = s.student_id
-                WHERE ms.status IN ('unpaid', 'partial')
+                WHERE LOWER(TRIM(ms.status)) IN ('unpaid', 'partial')
                   AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
             `),
 
@@ -682,30 +774,92 @@ router.get('/', async (req, res) => {
 
             // 17. Active Student Pending Dues
             pool.query(`
-                SELECT COALESCE(SUM(GREATEST(0, ms.total_amount - ms.paid_amount)), 0) AS total
+                SELECT COALESCE(SUM(
+                    CASE
+                        -- Solo student slip
+                        WHEN ms.family_id IS NULL THEN
+                            CASE WHEN LOWER(COALESCE(s.status, 'Active')) = 'active' THEN GREATEST(0, ms.total_amount - ms.paid_amount) ELSE 0 END
+                        
+                        -- Family slip with NO active students (purely inactive)
+                        WHEN NOT EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active') THEN 0
+
+                        -- Family slip with NO inactive students (purely active)
+                        WHEN NOT EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) != 'active') THEN
+                            GREATEST(0, ms.total_amount - ms.paid_amount)
+
+                        -- Mixed family slip (both active and inactive members exist):
+                        -- Active portion is the total remaining slip balance minus the inactive previous balance portion
+                        ELSE
+                            GREATEST(0,
+                                GREATEST(0, ms.total_amount - ms.paid_amount) -
+                                LEAST(
+                                    GREATEST(0, ms.total_amount - ms.paid_amount),
+                                    COALESCE((
+                                        SELECT SUM(GREATEST(0, sli.amount - COALESCE(sli.paid_amount, 0)))
+                                        FROM slip_line_items sli
+                                        WHERE sli.slip_id = ms.slip_id
+                                          AND (sli.head_name ILIKE '%previous balance%' OR sli.head_name ILIKE '%opening balance%')
+                                    ), 0)
+                                )
+                            )
+                    END
+                ), 0) AS total
                 FROM monthly_fee_slips ms
                 LEFT JOIN students s ON ms.student_id = s.student_id
-                WHERE ms.status IN ('unpaid', 'partial')
+                WHERE LOWER(TRIM(ms.status)) IN ('unpaid', 'partial')
                   AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
-                  AND (
-                      (ms.family_id IS NOT NULL AND EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active'))
-                      OR
-                      (ms.family_id IS NULL AND LOWER(COALESCE(s.status, 'Active')) = 'active')
-                  )
             `),
 
             // 18. Inactive Student Pending Dues
             pool.query(`
-                SELECT COALESCE(SUM(GREATEST(0, ms.total_amount - ms.paid_amount)), 0) AS total
+                SELECT (
+                    -- 1. Inactive portion on monthly fee slips
+                    COALESCE(SUM(
+                        CASE
+                            -- Solo student slip
+                            WHEN ms.family_id IS NULL THEN
+                                CASE WHEN LOWER(COALESCE(s.status, 'Active')) != 'active' THEN GREATEST(0, ms.total_amount - ms.paid_amount) ELSE 0 END
+                            
+                            -- Family slip with NO active students (purely inactive)
+                            WHEN NOT EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active') THEN
+                                GREATEST(0, ms.total_amount - ms.paid_amount)
+
+                            -- Family slip with NO inactive students (purely active)
+                            WHEN NOT EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) != 'active') THEN 0
+
+                            -- Mixed family slip (has both active and inactive members):
+                            -- Inactive portion is the unpaid previous balance / arrears carried over from the inactive members
+                            ELSE
+                                LEAST(
+                                    GREATEST(0, ms.total_amount - ms.paid_amount),
+                                    COALESCE((
+                                        SELECT SUM(GREATEST(0, sli.amount - COALESCE(sli.paid_amount, 0)))
+                                        FROM slip_line_items sli
+                                        WHERE sli.slip_id = ms.slip_id
+                                          AND (sli.head_name ILIKE '%previous balance%' OR sli.head_name ILIKE '%opening balance%')
+                                    ), 0)
+                                )
+                        END
+                    ), 0)
+                    +
+                    -- 2. Purely inactive families unbilled OPB (not on any unpaid slip)
+                    COALESCE((
+                        SELECT SUM(GREATEST(0, f.opening_balance - COALESCE(f.opening_balance_paid, 0)))
+                        FROM families f
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM students s2 
+                            WHERE s2.family_id = f.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active'
+                        )
+                        AND NOT EXISTS (
+                            SELECT 1 FROM monthly_fee_slips ms2
+                            WHERE ms2.family_id = f.family_id AND LOWER(TRIM(ms2.status)) IN ('unpaid', 'partial')
+                        )
+                    ), 0)
+                ) AS total
                 FROM monthly_fee_slips ms
                 LEFT JOIN students s ON ms.student_id = s.student_id
-                WHERE ms.status IN ('unpaid', 'partial')
+                WHERE LOWER(TRIM(ms.status)) IN ('unpaid', 'partial')
                   AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
-                  AND NOT (
-                      (ms.family_id IS NOT NULL AND EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active'))
-                      OR
-                      (ms.family_id IS NULL AND LOWER(COALESCE(s.status, 'Active')) = 'active')
-                  )
             `),
 
             // 19. Current Month Advance Fee Collected
