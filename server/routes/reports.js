@@ -245,6 +245,13 @@ router.get('/family-fee', async (req, res) => {
                 ms.due_date,
                 ms.issue_date,
                 ms.academic_year_id,
+                COALESCE(ms.advance_adjusted, 0) AS advance_adjusted,
+                COALESCE(f.advance_balance, s.advance_balance, 0) AS advance_balance,
+                (
+                    SELECT COALESCE(SUM(fp.advance_surplus), 0)
+                    FROM fee_payments fp
+                    WHERE fp.slip_id = ms.slip_id
+                ) AS advance_surplus,
                 CONCAT(s.first_name, ' ', s.last_name) AS student_name,
                 s.admission_no,
                 s.roll_no,
@@ -367,6 +374,10 @@ router.get('/family-fee', async (req, res) => {
             const items = lineMap[s.slip_id] || [];
             s.line_items = items;
 
+            const advSurplus = parseFloat(s.advance_surplus || 0);
+            const advAdjusted = parseFloat(s.advance_adjusted || 0);
+            const advBal = parseFloat(s.advance_balance || 0);
+
             if (selectedHeadIdNum) {
                 // Individual Head Mode: Only count and display this selected head
                 const matchingItem = items.find(li => li.head_id === selectedHeadIdNum);
@@ -374,7 +385,8 @@ router.get('/family-fee', async (req, res) => {
                 const paid = matchingItem ? matchingItem.paid_amount : 0;
                 const balance = Math.max(0, billed - paid);
                 let st = 'unpaid';
-                if (paid >= billed && billed > 0) st = 'paid';
+                if (advSurplus > 0 || (paid >= billed && billed > 0 && advBal > 0)) st = 'advanced';
+                else if (paid >= billed && billed > 0) st = 'paid';
                 else if (paid > 0) st = 'partial';
 
                 return {
@@ -382,6 +394,9 @@ router.get('/family-fee', async (req, res) => {
                     total_amount: billed,
                     paid_amount: paid,
                     balance: balance,
+                    advance_surplus: advSurplus,
+                    advance_adjusted: advAdjusted,
+                    advance_balance: advBal,
                     status: st,
                     line_items: matchingItem ? [matchingItem] : []
                 };
@@ -392,9 +407,12 @@ router.get('/family-fee', async (req, res) => {
                 const balance = Math.max(0, billed - paid);
                 let st = s.status;
                 if (as_of_date) {
-                    if (paid >= billed && billed > 0) st = 'paid';
+                    if (advSurplus > 0 || (paid >= billed && billed > 0 && advBal > 0)) st = 'advanced';
+                    else if (paid >= billed && billed > 0) st = 'paid';
                     else if (paid > 0) st = 'partial';
                     else st = 'unpaid';
+                } else if (advSurplus > 0 || (paid >= billed && billed > 0 && advBal > 0)) {
+                    st = 'advanced';
                 }
 
                 return {
@@ -402,6 +420,9 @@ router.get('/family-fee', async (req, res) => {
                     total_amount: billed,
                     paid_amount: paid,
                     balance: balance,
+                    advance_surplus: advSurplus,
+                    advance_adjusted: advAdjusted,
+                    advance_balance: advBal,
                     status: st
                 };
             }
@@ -443,18 +464,22 @@ router.get('/family-fee', async (req, res) => {
         }).sort((a, b) => b.total - a.total);
 
         // Collective Stats
-        const paid_count = processedSlips.filter(s => s.status === 'paid').length;
+        const advanced_count = processedSlips.filter(s => s.status === 'advanced' || (s.advance_surplus || 0) > 0).length;
+        const paid_count = processedSlips.filter(s => s.status === 'paid' || s.status === 'advanced').length;
         const partial_count = processedSlips.filter(s => s.status === 'partial').length;
         const unpaid_count = processedSlips.filter(s => s.status === 'unpaid').length;
+        const total_advance = processedSlips.reduce((sum, s) => sum + (s.advance_surplus || 0), 0);
 
         const collective = {
             total_billed,
             total_collected,
             total_pending,
             total_students: processedSlips.length,
+            advanced_count,
             paid_count,
             partial_count,
             unpaid_count,
+            total_advance,
             collection_rate: total_billed > 0 ? Math.round((total_collected / total_billed) * 100) : 0
         };
 
@@ -657,6 +682,13 @@ router.get('/monthly-tuition', async (req, res) => {
                 f.family_name,
                 c.class_name,
                 sec.section_name,
+                COALESCE(ms.advance_adjusted, 0) AS advance_adjusted,
+                COALESCE(f.advance_balance, s.advance_balance, 0) AS advance_balance,
+                (
+                    SELECT COALESCE(SUM(fp.advance_surplus), 0)
+                    FROM fee_payments fp
+                    WHERE fp.slip_id = ms.slip_id
+                ) AS advance_surplus,
                 -- Tuition Fee Billed (From line items or slip total)
                 COALESCE((
                     SELECT SUM(sli.amount)
@@ -702,22 +734,39 @@ router.get('/monthly-tuition', async (req, res) => {
         let families = slipsRes.rows.map(r => {
             const billed = parseFloat(r.tuition_billed || 0);
             const paid = parseFloat(r.tuition_paid || 0);
+            const advSurplus = parseFloat(r.advance_surplus || 0);
+            const advAdjusted = parseFloat(r.advance_adjusted || 0);
+            const advBalance = parseFloat(r.advance_balance || 0);
             const remaining = Math.max(0, billed - paid);
+
             let pStatus = 'unpaid';
-            if (paid >= billed && billed > 0) pStatus = 'paid';
-            else if (paid > 0) pStatus = 'partial';
+            if (advSurplus > 0 || (paid >= billed && billed > 0 && advBalance > 0)) {
+                pStatus = 'advanced';
+            } else if (paid >= billed && billed > 0) {
+                pStatus = 'paid';
+            } else if (paid > 0) {
+                pStatus = 'partial';
+            }
+
             return {
                 ...r,
                 tuition_billed: billed,
                 tuition_paid: paid,
                 tuition_remaining: remaining,
+                advance_surplus: advSurplus,
+                advance_adjusted: advAdjusted,
+                advance_balance: advBalance,
                 payment_status: pStatus
             };
         });
 
         // Filter by payment status if requested
         if (status && status !== 'all') {
-            families = families.filter(f => f.payment_status === status);
+            if (status === 'paid') {
+                families = families.filter(f => f.payment_status === 'paid' || f.payment_status === 'advanced');
+            } else {
+                families = families.filter(f => f.payment_status === status);
+            }
         }
 
         // 2. Calculate Expenses for selected Month & Year
@@ -739,10 +788,12 @@ router.get('/monthly-tuition', async (req, res) => {
         // 3. Compute Financial Summary Statistics
         const totalBilled = families.reduce((sum, f) => sum + f.tuition_billed, 0);
         const totalCollected = families.reduce((sum, f) => sum + f.tuition_paid, 0);
+        const totalAdvanceSurplus = families.reduce((sum, f) => sum + f.advance_surplus, 0);
+        const totalAdvanceAdjusted = families.reduce((sum, f) => sum + f.advance_adjusted, 0);
         const totalRemaining = totalBilled - totalCollected;
 
         const expectedSurplus = totalBilled - totalExpenses; // Tuition Billed - Expenses
-        const netCashBalance = totalCollected - totalExpenses; // Tuition Collected - Expenses
+        const netCashBalance = (totalCollected + totalAdvanceSurplus) - totalExpenses; // Realized cash in including extra advance
         const collectionRate = totalBilled > 0 ? ((totalCollected / totalBilled) * 100).toFixed(1) : 0;
 
         res.json({
@@ -751,13 +802,16 @@ router.get('/monthly-tuition', async (req, res) => {
             summary: {
                 total_billed: totalBilled,
                 total_collected: totalCollected,
+                total_advance_collected: totalAdvanceSurplus,
+                total_advance_adjusted: totalAdvanceAdjusted,
                 total_remaining: totalRemaining,
                 total_expenses: totalExpenses,
                 expected_surplus: expectedSurplus,
                 net_cash_balance: netCashBalance,
                 collection_rate: parseFloat(collectionRate),
                 total_families_count: families.length,
-                paid_count: families.filter(f => f.payment_status === 'paid').length,
+                advance_count: families.filter(f => f.payment_status === 'advanced' || f.advance_surplus > 0).length,
+                paid_count: families.filter(f => f.payment_status === 'paid' || f.payment_status === 'advanced').length,
                 partial_count: families.filter(f => f.payment_status === 'partial').length,
                 unpaid_count: families.filter(f => f.payment_status === 'unpaid').length
             },

@@ -42,7 +42,7 @@ export default function MonthlyReportPage() {
     const [year, setYear] = useState<string>(now.getFullYear().toString());
     const [classId, setClassId] = useState<string>('');
     const [sectionId, setSectionId] = useState<string>('');
-    const [statusTab, setStatusTab] = useState<'all' | 'paid' | 'partial' | 'unpaid'>('all');
+    const [statusTab, setStatusTab] = useState<'all' | 'paid' | 'advanced' | 'partial' | 'unpaid'>('all');
     const [searchKeyword, setSearchKeyword] = useState<string>('');
 
     // Data
@@ -166,7 +166,15 @@ export default function MonthlyReportPage() {
 
     // Filter families based on tab and keyword
     const filteredFamilies = (reportData?.families || []).filter(f => {
-        if (statusTab !== 'all' && f.payment_status !== statusTab) return false;
+        if (statusTab !== 'all') {
+            if (statusTab === 'paid') {
+                if (f.payment_status !== 'paid' && f.payment_status !== 'advanced') return false;
+            } else if (statusTab === 'advanced') {
+                if (f.payment_status !== 'advanced' && !(f.advance_surplus > 0) && !(f.advance_balance > 0)) return false;
+            } else if (f.payment_status !== statusTab) {
+                return false;
+            }
+        }
         if (searchKeyword.trim()) {
             const q = searchKeyword.toLowerCase().trim();
             const name = (f.student_name || '').toLowerCase();
@@ -204,14 +212,21 @@ export default function MonthlyReportPage() {
                 </td>
                 <td style="padding:7px;border-bottom:1px solid #e2e8f0;font-weight:600;">${f.class_name || '—'} - ${f.section_name || '—'}</td>
                 <td style="text-align:right;padding:7px;font-weight:700;color:#1e293b;border-bottom:1px solid #e2e8f0;">${fmtPKR(f.tuition_billed)}</td>
-                <td style="text-align:right;padding:7px;color:#16a34a;font-weight:700;border-bottom:1px solid #e2e8f0;">${fmtPKR(f.tuition_paid)}</td>
+                <td style="text-align:right;padding:7px;color:#16a34a;font-weight:700;border-bottom:1px solid #e2e8f0;">
+                    <div>${fmtPKR(f.tuition_paid)}</div>
+                    ${f.advance_surplus > 0 ? `<div style="font-size:8.5px;color:#4338ca;font-weight:700;">+Adv: ${fmtPKR(f.advance_surplus)}</div>` : ''}
+                    ${f.advance_adjusted > 0 ? `<div style="font-size:8.5px;color:#7e22ce;font-weight:700;">Adj: ${fmtPKR(f.advance_adjusted)}</div>` : ''}
+                </td>
                 <td style="text-align:right;padding:7px;color:${f.tuition_remaining > 0 ? '#dc2626' : '#16a34a'};font-weight:800;border-bottom:1px solid #e2e8f0;">${fmtPKR(f.tuition_remaining)}</td>
                 <td style="text-align:center;padding:7px;border-bottom:1px solid #e2e8f0;">
-                    <span style="padding:3px 10px;border-radius:20px;font-size:9px;font-weight:800;letter-spacing:0.04em;background:${f.payment_status === 'paid' ? '#dcfce7;color:#15803d;border:1px solid #bbf7d0' :
-                f.payment_status === 'partial' ? '#ffedd5;color:#c2410c;border:1px solid #fed7aa' : '#fee2e2;color:#b91c1c;border:1px solid #fca5a5'
-            };">
+                    <span style="padding:3px 10px;border-radius:20px;font-size:9px;font-weight:800;letter-spacing:0.04em;background:${
+                        f.payment_status === 'advanced' ? '#e0e7ff;color:#4338ca;border:1px solid #c7d2fe' :
+                        f.payment_status === 'paid' ? '#dcfce7;color:#15803d;border:1px solid #bbf7d0' :
+                        f.payment_status === 'partial' ? '#ffedd5;color:#c2410c;border:1px solid #fed7aa' : '#fee2e2;color:#b91c1c;border:1px solid #fca5a5'
+                    };">
                         ${f.payment_status.toUpperCase()}
                     </span>
+                    ${f.advance_balance > 0 && f.payment_status !== 'advanced' ? `<div style="font-size:8px;color:#4338ca;margin-top:2px;">Adv: ${fmtPKR(f.advance_balance)}</div>` : ''}
                 </td>
             </tr>
         `).join('');
@@ -509,6 +524,11 @@ export default function MonthlyReportPage() {
                             </div>
                         </div>
                         <h3 className="fw-black mb-1 text-success" style={{ letterSpacing: '-0.5px', fontSize: 'clamp(1rem, 2.2vw, 1.5rem)' }}>{fmtPKR(summary.total_collected)}</h3>
+                        {(summary.total_advance_collected || 0) > 0 && (
+                            <div className="fw-bold mb-1" style={{ fontSize: 10, color: '#4338ca' }}>
+                                <i className="bi bi-wallet2 me-1"></i>+Adv Surplus: {fmtPKR(summary.total_advance_collected)}
+                            </div>
+                        )}
                         <div className="d-flex align-items-center gap-1.5 mt-1">
                             <div className="progress flex-grow-1" style={{ height: 5, borderRadius: 10, background: '#e2e8f0' }}>
                                 <div className="progress-bar bg-success rounded-pill" role="progressbar" style={{ width: `${Math.min(100, summary.collection_rate)}%` }}></div>
@@ -614,6 +634,11 @@ export default function MonthlyReportPage() {
                             onClick={() => setStatusTab('paid')}>
                             Fully Paid ({summary.paid_count})
                         </button>
+                        <button type="button" className={`btn btn-sm rounded-2 fw-semibold px-2.5 py-1 ${statusTab === 'advanced' ? 'text-white shadow-sm' : 'btn-light text-muted'}`}
+                            style={{ fontSize: 11, backgroundColor: statusTab === 'advanced' ? '#6366f1' : undefined, borderColor: statusTab === 'advanced' ? '#6366f1' : undefined }}
+                            onClick={() => setStatusTab('advanced')}>
+                            Advanced ({summary.advance_count || 0})
+                        </button>
                         <button type="button" className={`btn btn-sm rounded-2 fw-semibold px-2.5 py-1 ${statusTab === 'partial' ? 'btn-warning text-dark shadow-sm' : 'btn-light text-muted'}`}
                             style={{ fontSize: 11 }}
                             onClick={() => setStatusTab('partial')}>
@@ -690,18 +715,43 @@ export default function MonthlyReportPage() {
                                                 {fmtPKR(f.tuition_billed)}
                                             </td>
                                             <td className="text-end fw-bold text-success">
-                                                {fmtPKR(f.tuition_paid)}
+                                                <div>{fmtPKR(f.tuition_paid)}</div>
+                                                {f.advance_surplus > 0 && (
+                                                    <span className="badge rounded-pill" style={{ backgroundColor: '#e0e7ff', color: '#4338ca', border: '1px solid #c7d2fe', fontSize: '0.68rem', fontWeight: 600 }}>
+                                                        <i className="bi bi-wallet2 me-1"></i>+Adv: {fmtPKR(f.advance_surplus)}
+                                                    </span>
+                                                )}
+                                                {f.advance_adjusted > 0 && (
+                                                    <span className="badge rounded-pill ms-1" style={{ backgroundColor: '#f3e8ff', color: '#7e22ce', border: '1px solid #e9d5ff', fontSize: '0.68rem', fontWeight: 600 }}>
+                                                        Adj: {fmtPKR(f.advance_adjusted)}
+                                                    </span>
+                                                )}
                                             </td>
                                             <td className={`text-end fw-black ${f.tuition_remaining > 0 ? 'text-danger' : 'text-success'}`}>
                                                 {fmtPKR(f.tuition_remaining)}
                                             </td>
                                             <td className="text-center pe-3">
-                                                <span className={`badge rounded-pill px-2.5 py-1 ${f.payment_status === 'paid' ? 'bg-success bg-opacity-15 text-success border border-success' :
-                                                    f.payment_status === 'partial' ? 'bg-warning bg-opacity-15 text-warning-emphasis border border-warning' : 'bg-danger bg-opacity-15 text-danger border border-danger'
-                                                    }`} style={{ fontSize: 9.5, fontWeight: 700 }}>
-                                                    {f.payment_status === 'paid' ? 'FULLY PAID' :
-                                                        f.payment_status === 'partial' ? 'PARTIAL' : 'UNPAID DUES'}
-                                                </span>
+                                                <div className="d-flex flex-column align-items-center gap-1">
+                                                    <span className={`badge rounded-pill px-2.5 py-1 ${
+                                                        f.payment_status === 'advanced' ? 'text-white' :
+                                                        f.payment_status === 'paid' ? 'bg-success bg-opacity-15 text-success border border-success' :
+                                                        f.payment_status === 'partial' ? 'bg-warning bg-opacity-15 text-warning-emphasis border border-warning' : 'bg-danger bg-opacity-15 text-danger border border-danger'
+                                                    }`} style={{
+                                                        fontSize: 9.5,
+                                                        fontWeight: 700,
+                                                        backgroundColor: f.payment_status === 'advanced' ? '#6366f1' : undefined,
+                                                        borderColor: f.payment_status === 'advanced' ? '#4f46e5' : undefined
+                                                    }}>
+                                                        {f.payment_status === 'advanced' ? 'ADVANCED' :
+                                                         f.payment_status === 'paid' ? 'FULLY PAID' :
+                                                         f.payment_status === 'partial' ? 'PARTIAL' : 'UNPAID DUES'}
+                                                    </span>
+                                                    {f.advance_balance > 0 && f.payment_status !== 'advanced' && (
+                                                        <span className="badge rounded-pill" style={{ backgroundColor: '#e0e7ff', color: '#4338ca', fontSize: '0.65rem' }}>
+                                                            Adv: {fmtPKR(f.advance_balance)}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </td>
                                         </tr>
                                     ))}

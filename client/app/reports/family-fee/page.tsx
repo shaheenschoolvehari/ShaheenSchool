@@ -32,6 +32,9 @@ type FeeSlip = {
     paid_amount: number;
     balance?: number;
     status: string;
+    advance_surplus?: number;
+    advance_adjusted?: number;
+    advance_balance?: number;
     due_date: string;
     issue_date?: string;
     student_name: string;
@@ -62,8 +65,10 @@ type Collective = {
     total_pending: number;
     total_students: number;
     paid_count: number;
+    advanced_count?: number;
     partial_count: number;
     unpaid_count: number;
+    total_advance?: number;
     collection_rate?: number;
 };
 
@@ -116,7 +121,7 @@ const CHART_PALETTE = [
     BRAND.pink
 ];
 
-function fmtPKR(n: number) {
+function fmtPKR(n?: number | null) {
     return 'Rs. ' + Number(n || 0).toLocaleString('en-PK', { maximumFractionDigits: 0 });
 }
 
@@ -296,6 +301,7 @@ export default function FamilyFeeReportPage() {
     const activeYearName = years.find(y => String(y.id) === academicYearId)?.year_name || years.find(y => y.is_active)?.year_name || '';
 
     const statusBadge = (s: string) => {
+        if (s === 'advanced' || s === 'advance') return { bg: '#e0e7ff', text: '#4338ca', border: '#c7d2fe', label: 'Advanced' };
         if (s === 'paid') return { bg: '#dcfce7', text: '#15803d', border: '#bbf7d0', label: 'Paid' };
         if (s === 'partial') return { bg: '#ffedd5', text: '#c2410c', border: '#fed7aa', label: 'Partial' };
         return { bg: '#fee2e2', text: '#b91c1c', border: '#fca5a5', label: 'Unpaid' };
@@ -882,6 +888,9 @@ export default function FamilyFeeReportPage() {
                                 }}>
                                     <div><span style={{ color: '#64748b' }}>Month Target:</span> <strong style={{ color: '#1e293b' }}>{fmtPKR(collective.total_billed)}</strong></div>
                                     <div><span style={{ color: '#64748b' }}>Collected To-Date:</span> <strong style={{ color: BRAND.green }}>{fmtPKR(collective.total_collected)}</strong></div>
+                                    {Number(collective.total_advance || 0) > 0 && (
+                                        <div><span style={{ color: '#64748b' }}>Advance Surplus:</span> <strong style={{ color: '#4338ca' }}>+{fmtPKR(collective.total_advance)}</strong></div>
+                                    )}
                                     <div><span style={{ color: '#64748b' }}>Remaining Unpaid:</span> <strong style={{ color: BRAND.red }}>{fmtPKR(collective.total_pending)}</strong></div>
                                     <div><span style={{ color: '#64748b' }}>Recovery Pace:</span> <strong style={{ color: BRAND.orange }}>{collective.collection_rate}%</strong></div>
                                 </div>
@@ -1042,17 +1051,36 @@ export default function FamilyFeeReportPage() {
                                                             );
                                                         })}
                                                         <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700 }}>{fmtPKR(s.total_amount)}</td>
-                                                        <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700, color: BRAND.green }}>{fmtPKR(s.paid_amount)}</td>
+                                                        <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700, color: BRAND.green }}>
+                                                            <div>{fmtPKR(s.paid_amount)}</div>
+                                                            {Number(s.advance_surplus || 0) > 0 && (
+                                                                <span className="badge rounded-pill" style={{ backgroundColor: '#e0e7ff', color: '#4338ca', border: '1px solid #c7d2fe', fontSize: '0.65rem', fontWeight: 700 }}>
+                                                                    +Adv: {fmtPKR(s.advance_surplus)}
+                                                                </span>
+                                                            )}
+                                                            {Number(s.advance_adjusted || 0) > 0 && (
+                                                                <span className="badge rounded-pill ms-1" style={{ backgroundColor: '#f3e8ff', color: '#7e22ce', border: '1px solid #e9d5ff', fontSize: '0.65rem', fontWeight: 700 }}>
+                                                                    Adj: {fmtPKR(s.advance_adjusted)}
+                                                                </span>
+                                                            )}
+                                                        </td>
                                                         <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700, color: balance > 0 ? BRAND.red : BRAND.green }}>
                                                             {fmtPKR(balance)}
                                                         </td>
                                                         <td style={{ padding: '9px 12px', textAlign: 'center' }}>
-                                                            <span style={{
-                                                                background: badge.bg, color: badge.text, border: `1px solid ${badge.border}`,
-                                                                padding: '3px 9px', borderRadius: 12, fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase'
-                                                            }}>
-                                                                {badge.label}
-                                                            </span>
+                                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                                                                <span style={{
+                                                                    background: badge.bg, color: badge.text, border: `1px solid ${badge.border}`,
+                                                                    padding: '3px 9px', borderRadius: 12, fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase'
+                                                                }}>
+                                                                    {badge.label}
+                                                                </span>
+                                                                {Number(s.advance_balance || 0) > 0 && s.status !== 'advanced' && (
+                                                                    <span style={{ fontSize: 9.5, color: '#4338ca', fontWeight: 600 }}>
+                                                                        Adv: {fmtPKR(s.advance_balance)}
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                         </td>
                                                     </tr>
                                                 );

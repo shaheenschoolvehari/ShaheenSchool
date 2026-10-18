@@ -64,6 +64,7 @@ interface FamilyData {
     total_billed?: number;
     total_paid?: number;
     total_balance?: number;
+    advance_balance?: number;
     fee_status?: 'unpaid' | 'partial' | 'paid' | 'settled' | 'satteled' | string;
     members: StudentMember[];
     eldest_child?: StudentMember | null;
@@ -389,10 +390,11 @@ export default function FamilyListPage() {
                 };
 
                 if (showFeeColumns) {
-                    rowObj["Fee Status"] = isSettled ? "FREE TUITION" : (f.fee_status ? f.fee_status.toUpperCase() : "PAID");
+                    rowObj["Fee Status"] = isSettled ? "FREE TUITION" : (Number(f.advance_balance || 0) > 0 ? "ADVANCED" : (f.fee_status ? f.fee_status.toUpperCase() : "PAID"));
                     rowObj["Total Bill (PKR)"] = isSettled ? 0 : (f.total_billed || 0);
                     rowObj["Paid (PKR)"] = isSettled ? 0 : (f.total_paid || 0);
                     rowObj["Balance (PKR)"] = isSettled ? 0 : (f.total_balance || 0);
+                    rowObj["Advance (PKR)"] = f.advance_balance || 0;
                 }
 
                 rowObj["Student Name"] = m.full_name;
@@ -427,7 +429,8 @@ export default function FamilyListPage() {
                 { wch: 12 }, // Fee Status
                 { wch: 16 }, // Total Bill
                 { wch: 14 }, // Paid
-                { wch: 14 }  // Balance
+                { wch: 14 }, // Balance
+                { wch: 14 }  // Advance
             );
         }
 
@@ -459,7 +462,7 @@ export default function FamilyListPage() {
 
         const headers = ["Sr.#", "Family Name", "Family ID", "Family Type", "Lead Child", "Monthly Fee", "OPB Arrears"];
         if (showFeeColumns) {
-            headers.push("Fee Status", "Total Bill", "Paid", "Balance");
+            headers.push("Fee Status", "Total Bill", "Paid", "Balance", "Advance");
         }
         headers.push("Student Name", "Category", "Admission No", "Class", "Section", "Father Name", "Mother Name", "Father Phone", "Mother Phone", "Address");
 
@@ -488,10 +491,11 @@ export default function FamilyListPage() {
 
                 if (showFeeColumns) {
                     row.push(
-                        `"${isSettled ? 'FREE TUITION' : (f.fee_status || 'paid').toUpperCase()}"`,
+                        `"${isSettled ? 'FREE TUITION' : (Number(f.advance_balance || 0) > 0 ? 'ADVANCED' : (f.fee_status || 'paid').toUpperCase())}"`,
                         `"${isSettled ? 0 : (f.total_billed || 0)}"`,
                         `"${isSettled ? 0 : (f.total_paid || 0)}"`,
-                        `"${isSettled ? 0 : (f.total_balance || 0)}"`
+                        `"${isSettled ? 0 : (f.total_balance || 0)}"`,
+                        `"${f.advance_balance || 0}"`
                     );
                 }
 
@@ -569,7 +573,8 @@ export default function FamilyListPage() {
                             ${showFeeColumns ? `
                                 <td rowspan="${M}" style="text-align: right; border: 1px solid #333; padding: 6px; font-weight: bold; vertical-align: middle;">PKR ${(isSettled ? 0 : (f.total_billed || 0)).toLocaleString('en-PK')}</td>
                                 <td rowspan="${M}" style="text-align: right; border: 1px solid #333; padding: 6px; font-weight: bold; color: #198754; vertical-align: middle;">PKR ${(isSettled ? 0 : (f.total_paid || 0)).toLocaleString('en-PK')}</td>
-                                <td rowspan="${M}" style="text-align: right; border: 1px solid #333; padding: 6px; font-weight: bold; color: ${isSettled ? '#0891b2' : (f.total_balance || 0) > 0 ? '#dc3545' : '#198754'}; vertical-align: middle;">${isSettled ? 'PKR 0 (Settled)' : `PKR ${(f.total_balance || 0).toLocaleString('en-PK')}`}</td>
+                                <td rowspan="${M}" style="text-align: right; border: 1px solid #333; padding: 6px; font-weight: bold; color: ${isSettled ? '#0891b2' : (f.total_balance || 0) > 0 ? '#dc2626' : '#198754'}; vertical-align: middle;">${isSettled ? 'PKR 0 (Settled)' : `PKR ${(f.total_balance || 0).toLocaleString('en-PK')}`}</td>
+                                <td rowspan="${M}" style="text-align: right; border: 1px solid #333; padding: 6px; font-weight: bold; color: ${(f.advance_balance || 0) > 0 ? '#4338ca' : '#888'}; vertical-align: middle;">${(f.advance_balance || 0) > 0 ? `PKR ${Number(f.advance_balance).toLocaleString('en-PK')}` : '—'}</td>
                             ` : ''}
                             <td style="border: 1px solid #333; padding: 6px; font-weight: bold; color: #111;">
                                 ${m.full_name} <span style="font-size: 8pt; color: #555; font-weight: normal;">(${m.admission_no})</span>
@@ -651,9 +656,10 @@ export default function FamilyListPage() {
                             <th style="width: 9%;">Family ID</th>
                             <th style="width: 12%;">Fee & OPB</th>
                             ${showFeeColumns ? `
-                                <th style="width: 7%;">Total Bill</th>
-                                <th style="width: 7%;">Paid</th>
-                                <th style="width: 7%;">Balance</th>
+                                <th style="width: 6%;">Total Bill</th>
+                                <th style="width: 6%;">Paid</th>
+                                <th style="width: 6%;">Balance</th>
+                                <th style="width: 6%;">Advance</th>
                             ` : ''}
                             <th style="width: 18%;">Student / Child Name</th>
                             <th style="width: 6%;">Class</th>
@@ -996,9 +1002,10 @@ export default function FamilyListPage() {
                                         <th style={{ width: '13%', padding: '12px 8px' }}>Monthly Fee &amp; OPB</th>
                                         {showFeeColumns && (
                                             <>
-                                                <th className="text-end" style={{ width: '7%', padding: '12px 8px', backgroundColor: '#1e3a8a' }}>Total Bill</th>
-                                                <th className="text-end" style={{ width: '7%', padding: '12px 8px', backgroundColor: '#065f46' }}>Paid</th>
-                                                <th className="text-end" style={{ width: '7%', padding: '12px 8px', backgroundColor: '#991b1b' }}>Balance</th>
+                                                <th className="text-end" style={{ width: '6%', padding: '12px 8px', backgroundColor: '#1e3a8a' }}>Total Bill</th>
+                                                <th className="text-end" style={{ width: '6%', padding: '12px 8px', backgroundColor: '#065f46' }}>Paid</th>
+                                                <th className="text-end" style={{ width: '6%', padding: '12px 8px', backgroundColor: '#991b1b' }}>Balance</th>
+                                                <th className="text-end" style={{ width: '6%', padding: '12px 8px', backgroundColor: '#4338ca' }}>Advance</th>
                                             </>
                                         )}
                                         <th style={{ width: showFeeColumns ? '16%' : '18%', padding: '12px 8px' }}>Enrolled Student</th>
@@ -1080,6 +1087,11 @@ export default function FamilyListPage() {
                                                                         <i className="bi bi-shield-check me-1"></i>Settled
                                                                     </span>
                                                                 )}
+                                                                {Number(fam.advance_balance || 0) > 0 && (
+                                                                    <span className="badge rounded-pill border px-2 py-0.5" style={{ backgroundColor: '#e0e7ff', borderColor: '#c7d2fe', color: '#4338ca', fontSize: '0.68rem', fontWeight: 600 }}>
+                                                                        <i className="bi bi-wallet2 me-1"></i>Adv: PKR {Number(fam.advance_balance).toLocaleString('en-PK')}
+                                                                    </span>
+                                                                )}
                                                             </div>
 
                                                             {/* Child Count */}
@@ -1122,7 +1134,7 @@ export default function FamilyListPage() {
                                                         </td>
                                                     )}
 
-                                                    {/* Optional Fee Slips Columns: Total Bill, Paid, Balance */}
+                                                    {/* Optional Fee Slips Columns: Total Bill, Paid, Balance, Advance */}
                                                     {showFeeColumns && isFirst && (
                                                         <>
                                                             <td rowSpan={M} className="align-middle text-end border-end fw-bold text-dark" style={{ backgroundColor: '#f8fafc' }}>
@@ -1138,6 +1150,15 @@ export default function FamilyListPage() {
                                                                     </span>
                                                                 ) : (
                                                                     `PKR ${(fam.total_balance || 0).toLocaleString('en-PK')}`
+                                                                )}
+                                                            </td>
+                                                            <td rowSpan={M} className="align-middle text-end border-end fw-bold" style={{ backgroundColor: Number(fam.advance_balance || 0) > 0 ? '#eef2ff' : '#f8fafc', color: Number(fam.advance_balance || 0) > 0 ? '#4338ca' : '#94a3b8' }}>
+                                                                {Number(fam.advance_balance || 0) > 0 ? (
+                                                                    <span className="badge rounded-pill px-2 py-1" style={{ backgroundColor: '#e0e7ff', color: '#4338ca', border: '1px solid #c7d2fe', fontSize: '0.74rem', fontWeight: 700 }}>
+                                                                        <i className="bi bi-wallet2 me-1"></i>PKR {Number(fam.advance_balance).toLocaleString('en-PK')}
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="text-muted small">—</span>
                                                                 )}
                                                             </td>
                                                         </>
@@ -1401,6 +1422,14 @@ export default function FamilyListPage() {
                                                             <span className="text-muted small d-block" style={{ fontSize: '0.7rem' }}>Monthly Fee</span>
                                                             <span className="fw-bold text-dark" style={{ fontSize: '0.82rem' }}>PKR {monthlyFeeVal.toLocaleString('en-PK')}</span>
                                                         </div>
+                                                        {Number(fam.advance_balance || 0) > 0 && (
+                                                            <div className="text-center">
+                                                                <span className="text-muted small d-block" style={{ fontSize: '0.7rem' }}>Advance Wallet</span>
+                                                                <span className="badge rounded-pill px-2 py-0.5" style={{ backgroundColor: '#e0e7ff', color: '#4338ca', border: '1px solid #c7d2fe', fontSize: '0.72rem', fontWeight: 700 }}>
+                                                                    PKR {Number(fam.advance_balance).toLocaleString('en-PK')}
+                                                                </span>
+                                                            </div>
+                                                        )}
                                                         <div className="text-end">
                                                             <span className="text-muted small d-block" style={{ fontSize: '0.7rem' }}>OPB Arrears</span>
                                                             <span className={`badge rounded-pill ${opbVal > 0 ? 'bg-danger-subtle text-danger border border-danger-subtle' : 'bg-success-subtle text-success border border-success-subtle'}`} style={{ fontSize: '0.72rem' }}>
@@ -1408,6 +1437,25 @@ export default function FamilyListPage() {
                                                             </span>
                                                         </div>
                                                     </div>
+
+                                                    {showFeeColumns && (
+                                                        <div className="p-2 rounded-3 border mb-2" style={{ backgroundColor: '#f8fafc' }}>
+                                                            <div className="d-flex justify-content-between small">
+                                                                <span>Bill: <strong className="text-dark">PKR {(isSettled ? 0 : fam.total_billed || 0).toLocaleString('en-PK')}</strong></span>
+                                                                <span>Paid: <strong className="text-success">PKR {(isSettled ? 0 : fam.total_paid || 0).toLocaleString('en-PK')}</strong></span>
+                                                                <span>Bal: <strong className={isSettled ? 'text-info' : (fam.total_balance || 0) > 0 ? 'text-danger' : 'text-success'}>
+                                                                    {isSettled ? 'Settled' : `PKR ${(fam.total_balance || 0).toLocaleString('en-PK')}`}
+                                                                </strong></span>
+                                                            </div>
+                                                            {Number(fam.advance_balance || 0) > 0 && (
+                                                                <div className="mt-1 pt-1 border-top border-dashed text-end">
+                                                                    <span className="badge rounded-pill px-2 py-0.5" style={{ backgroundColor: '#e0e7ff', color: '#4338ca', border: '1px solid #c7d2fe', fontSize: '0.7rem' }}>
+                                                                        <i className="bi bi-wallet2 me-1"></i>Advance Wallet: PKR {Number(fam.advance_balance).toLocaleString('en-PK')}
+                                                                    </span>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
 
                                                     {/* Children List in this family */}
                                                     <div className="border-top pt-2">

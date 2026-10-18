@@ -2618,6 +2618,10 @@ router.get('/family-summary/:student_id', async (req, res) => {
         const query = `
             SELECT 
                 mfs.slip_id, mfs.month, mfs.year, mfs.total_amount, mfs.paid_amount, mfs.status,
+                COALESCE(mfs.advance_adjusted, 0) AS advance_adjusted,
+                (
+                    SELECT COALESCE(SUM(fp.advance_surplus), 0) FROM fee_payments fp WHERE fp.slip_id = mfs.slip_id
+                ) as advance_surplus,
                 s.first_name, s.last_name, s.admission_no, s.category,
                 (
                     SELECT MAX(fp.payment_date) FROM fee_payments fp WHERE fp.slip_id = mfs.slip_id
@@ -2634,6 +2638,9 @@ router.get('/family-summary/:student_id', async (req, res) => {
 
         const result = await pool.query(query, [family_id]);
 
+        const famAdvRes = await pool.query('SELECT advance_balance FROM families WHERE family_id = $1', [family_id]);
+        const family_advance_balance = parseFloat(famAdvRes.rows[0]?.advance_balance || 0);
+
         const summary = {};
         result.rows.forEach(row => {
             const myKey = row.month + '-' + row.year;
@@ -2643,6 +2650,8 @@ router.get('/family-summary/:student_id', async (req, res) => {
                     year: row.year,
                     family_total_billed: 0,
                     family_total_paid: 0,
+                    advance_adjusted: 0,
+                    advance_surplus: 0,
                     status: 'unpaid',
                     last_submission_date: null,
                     students: []
@@ -2652,10 +2661,14 @@ router.get('/family-summary/:student_id', async (req, res) => {
             const isTrusted = row.category && row.category.trim().toLowerCase() === 'trusted';
             const billedAmount = Number(row.total_amount || 0);
             const paidAmount = Number(row.paid_amount || 0);
-            const studentStatus = billedAmount <= 0 ? 'satteled' : paidAmount >= billedAmount ? 'paid' : paidAmount > 0 ? 'partial' : 'unpaid';
+            const advAdjusted = Number(row.advance_adjusted || 0);
+            const advSurplus = Number(row.advance_surplus || 0);
+            const studentStatus = billedAmount <= 0 ? 'satteled' : (advSurplus > 0 ? 'advanced' : (paidAmount >= billedAmount ? 'paid' : (paidAmount > 0 ? 'partial' : 'unpaid')));
 
             summary[myKey].family_total_billed += billedAmount;
             summary[myKey].family_total_paid += paidAmount;
+            summary[myKey].advance_adjusted += advAdjusted;
+            summary[myKey].advance_surplus += advSurplus;
 
             if (row.last_payment_date) {
                 if (!summary[myKey].last_submission_date || new Date(row.last_payment_date) > new Date(summary[myKey].last_submission_date)) {
@@ -2672,15 +2685,24 @@ router.get('/family-summary/:student_id', async (req, res) => {
                 billed: billedAmount,
                 raw_billed: billedAmount,
                 paid: paidAmount,
+                advance_adjusted: advAdjusted,
+                advance_surplus: advSurplus,
                 status: studentStatus,
                 last_payment_date: row.last_payment_date,
                 heads: row.heads || []
             });
         });
 
-        Object.values(summary).forEach(m => {
+        const slips = Object.values(summary).sort((a, b) => {
+            if (b.year !== a.year) return b.year - a.year;
+            return b.month - a.month;
+        });
+
+        slips.forEach((m, idx) => {
             if (m.family_total_billed <= 0) {
                 m.status = 'satteled';
+            } else if (m.advance_surplus > 0 || (m.family_total_paid >= m.family_total_billed && family_advance_balance > 0 && idx === 0)) {
+                m.status = 'advanced';
             } else if (m.family_total_paid >= m.family_total_billed) {
                 m.status = 'paid';
             } else if (m.family_total_paid > 0) {
@@ -2689,14 +2711,6 @@ router.get('/family-summary/:student_id', async (req, res) => {
                 m.status = 'unpaid';
             }
         });
-
-        const slips = Object.values(summary).sort((a, b) => {
-            if (b.year !== a.year) return b.year - a.year;
-            return b.month - a.month;
-        });
-
-        const famAdvRes = await pool.query('SELECT advance_balance FROM families WHERE family_id = $1', [family_id]);
-        const family_advance_balance = parseFloat(famAdvRes.rows[0]?.advance_balance || 0);
 
         res.json({ slips, family_advance_balance });
     } catch (e) {

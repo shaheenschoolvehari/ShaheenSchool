@@ -22,7 +22,9 @@ interface SlipRow {
     is_family_slip: boolean;
     total_amount: number;
     paid_amount: number;
-    status: 'paid' | 'partial' | 'unpaid' | 'satteled';
+    status: 'paid' | 'partial' | 'unpaid' | 'satteled' | 'advanced';
+    advance_balance?: number;
+    advance_adjusted?: number;
     due_date: string | null;
     issue_date: string | null;
     month: number;
@@ -64,6 +66,7 @@ interface SlipRow {
 interface Stats {
     total_students: number; total_amount: number; paid_amount: number;
     paid_count: number; unpaid_count: number; partial_count: number;
+    advance_count?: number; advance_total?: number;
 }
 interface Payment {
     payment_id: number; amount_paid: number; payment_date: string;
@@ -87,6 +90,8 @@ function getTodayDateStr() {
 
 function StatusBadge({ status }: { status: string }) {
     const map: Record<string, { bg: string; label: string }> = {
+        advanced: { bg: '#6366f1', label: 'Advanced' },
+        advance: { bg: '#6366f1', label: 'Advanced' },
         paid: { bg: '#198754', label: 'Paid' },
         satteled: { bg: '#0891b2', label: 'Settled' },
         settled: { bg: '#0891b2', label: 'Settled' },
@@ -926,7 +931,10 @@ export default function CollectFeePage() {
     const filtered = slips.filter(s => {
         if (statusFilter !== 'all') {
             const st = (s.status || '').toLowerCase();
-            if (statusFilter === 'satteled' || statusFilter === 'settled') {
+            const advBal = parseFloat((s as any).advance_balance || 0);
+            if (statusFilter === 'advanced') {
+                if (st !== 'advanced' && !(advBal > 0)) return false;
+            } else if (statusFilter === 'satteled' || statusFilter === 'settled') {
                 if (!['satteled', 'settled'].includes(st)) return false;
             } else if (st !== statusFilter) {
                 return false;
@@ -973,7 +981,8 @@ export default function CollectFeePage() {
             has_payments: boolean;     // any slip in this group has been paid at least partially
             balance: number;           // balance from latest_unpaid only
             is_trusted: boolean;
-            slips: SlipRow[]; status: 'paid' | 'partial' | 'unpaid' | 'satteled';
+            advance_balance: number;
+            slips: SlipRow[]; status: 'paid' | 'partial' | 'unpaid' | 'satteled' | 'advanced';
         }>();
         filtered.forEach(slip => {
             const key = (slip.is_family_slip && slip.family_id) ? `fam_${slip.family_id}` : `stu_${slip.student_id}`;
@@ -988,9 +997,11 @@ export default function CollectFeePage() {
                     latest_slip: slip, latest_unpaid: slip,
                     latest_paid: null, has_payments: false,
                     balance: 0, is_trusted: false, slips: [], status: 'paid',
+                    advance_balance: parseFloat((slip as any).advance_balance || 0),
                 });
             }
             const g = map.get(key)!;
+            g.advance_balance = Math.max(g.advance_balance || 0, parseFloat((slip as any).advance_balance || 0));
             // Track latest slip (highest year, then highest month)
             const isNewer = slip.year > g.latest_slip.year ||
                 (slip.year === g.latest_slip.year && slip.month > g.latest_slip.month);
@@ -1039,12 +1050,14 @@ export default function CollectFeePage() {
                 })
                 .sort((a, b) => (b.year - a.year) || (b.month - a.month));
             
+            const hasAdvance = g.advance_balance > 0;
+
             if (unpaid.length > 0) {
                 g.latest_unpaid = unpaid[0];
                 const tot = parseFloat(g.latest_unpaid.total_amount as any || 0);
                 const paid = parseFloat(g.latest_unpaid.paid_amount as any || 0);
                 g.balance = Math.max(0, tot - paid);
-                g.status = g.balance <= 0 ? (isTrustedGroup ? 'satteled' : 'paid') : (paid > 0 ? 'partial' : 'unpaid');
+                g.status = g.balance <= 0 ? (hasAdvance ? 'advanced' : (isTrustedGroup ? 'satteled' : 'paid')) : (paid > 0 ? 'partial' : 'unpaid');
             } else {
                 g.latest_unpaid = g.latest_slip;
                 const tot = parseFloat(g.latest_slip.total_amount as any || 0);
@@ -1053,11 +1066,29 @@ export default function CollectFeePage() {
                 if (g.balance > 0) {
                     g.status = paid > 0 ? 'partial' : 'unpaid';
                 } else {
-                    g.status = isTrustedGroup ? 'satteled' : (['satteled', 'settled'].includes((g.latest_slip.status || '').toLowerCase()) ? 'satteled' : 'paid');
+                    if (hasAdvance) {
+                        g.status = 'advanced';
+                    } else if (isTrustedGroup) {
+                        g.status = 'satteled';
+                    } else if (['satteled', 'settled'].includes((g.latest_slip.status || '').toLowerCase())) {
+                        g.status = 'satteled';
+                    } else {
+                        g.status = 'paid';
+                    }
                 }
             }
         });
-        return Array.from(map.values());
+        const allGroups = Array.from(map.values());
+        if (statusFilter !== 'all') {
+            if (statusFilter === 'advanced') {
+                return allGroups.filter(g => g.status === 'advanced' || g.advance_balance > 0);
+            } else if (statusFilter === 'satteled' || statusFilter === 'settled') {
+                return allGroups.filter(g => ['satteled', 'settled'].includes((g.status || '').toLowerCase()));
+            } else {
+                return allGroups.filter(g => (g.status || '').toLowerCase() === statusFilter);
+            }
+        }
+        return allGroups;
     })();
 
     const totalDue = stats ? stats.total_amount - stats.paid_amount : 0;
@@ -1152,6 +1183,7 @@ export default function CollectFeePage() {
                                 <option value="unpaid">Unpaid</option>
                                 <option value="partial">Partial</option>
                                 <option value="paid">Paid</option>
+                                <option value="advanced">Advanced</option>
                                 <option value="satteled">Settled</option>
                             </select>
                         </div>
@@ -1213,10 +1245,13 @@ export default function CollectFeePage() {
                                 <div className="progress" style={{ height: 8, borderRadius: 8 }}>
                                     <div className="progress-bar" style={{ width: `${collectionPct}%`, backgroundColor: 'var(--primary-teal)', borderRadius: 8 }} />
                                 </div>
-                                <div className="d-flex gap-3 mt-2" style={{ fontSize: '0.72rem', color: '#888' }}>
+                                <div className="d-flex gap-3 mt-2 flex-wrap" style={{ fontSize: '0.72rem', color: '#888' }}>
                                     <span><span className="badge bg-success me-1">●</span>{stats.paid_count} Paid</span>
                                     <span><span className="badge me-1" style={{ backgroundColor: '#fd7e14' }}>●</span>{stats.partial_count} Partial</span>
                                     <span><span className="badge bg-danger me-1">●</span>{stats.unpaid_count} Unpaid</span>
+                                    {Number(stats.advance_count || 0) > 0 && (
+                                        <span><span className="badge me-1" style={{ backgroundColor: '#6366f1' }}>●</span>{stats.advance_count} Advanced (PKR {Number(stats.advance_total || 0).toLocaleString('en-PK')})</span>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -1376,6 +1411,11 @@ export default function CollectFeePage() {
                                                     <td className="px-2 text-center">
                                                         <div className="d-flex flex-column align-items-center gap-1">
                                                             <StatusBadge status={g.status} />
+                                                            {g.advance_balance > 0 && (
+                                                                <span className="badge rounded-pill" style={{ backgroundColor: '#e0e7ff', color: '#4338ca', border: '1px solid #c7d2fe', fontSize: '0.66rem', fontWeight: 700 }} title="Advance Fee Wallet Surplus">
+                                                                    <i className="bi bi-wallet2 me-1"></i>+PKR {g.advance_balance.toLocaleString('en-PK')}
+                                                                </span>
+                                                            )}
                                                             {g.latest_unpaid.is_active_year === false && (
                                                                 <span className="badge bg-secondary" style={{ fontSize: '0.62rem' }}>
                                                                     <i className="bi bi-lock-fill me-1"></i>Closed Session

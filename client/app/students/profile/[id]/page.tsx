@@ -81,6 +81,7 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
     const [admissionFee, setAdmissionFee] = useState<any>(null);
     const [familySlips, setFamilySlips] = useState<any[]>([]);
     const [loadingFamilySlips, setLoadingFamilySlips] = useState(false);
+    const [familyAdvanceBalance, setFamilyAdvanceBalance] = useState<number>(0);
     const [admissionPayments, setAdmissionPayments] = useState<any[]>([]);
     const [loadingFees, setLoadingFees] = useState(false);
     const [showPayModal, setShowPayModal] = useState(false);
@@ -157,7 +158,10 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/fee-slips/family-summary/${params.id}`);
             const data = await res.json();
-            if (res.ok) setFamilySlips(data.slips || []);
+            if (res.ok) {
+                setFamilySlips(data.slips || []);
+                setFamilyAdvanceBalance(Number(data.family_advance_balance || 0));
+            }
         } catch (e) {
             console.error(e);
         }
@@ -582,6 +586,13 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                                                     {student.family_id && Number(student.family_fee || 0) > 0 ? 'Solo Active Member' : 'Individual'}
                                                 </div>
                                             </>
+                                        )}
+                                        {(familyAdvanceBalance > 0 || Number(student.advance_balance || 0) > 0) && (
+                                            <div className="mt-2">
+                                                <span className="badge rounded-pill px-2.5 py-1" style={{ backgroundColor: '#e0e7ff', color: '#4338ca', border: '1px solid #c7d2fe', fontSize: '0.75rem', fontWeight: 700 }}>
+                                                    <i className="bi bi-wallet2 me-1"></i>Advance: PKR {(familyAdvanceBalance || Number(student.advance_balance || 0)).toLocaleString('en-PK')}
+                                                </span>
+                                            </div>
                                         )}
                                     </div>
                                 </div>
@@ -1380,6 +1391,26 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                                             </h6>
                                         </div>
                                         <div className="card-body p-0">
+                                            {(familyAdvanceBalance > 0 || Number(student?.advance_balance || 0) > 0) && (
+                                                <div className="p-3 mx-3 mt-3 rounded-3 d-flex align-items-center justify-content-between flex-wrap gap-2" style={{ backgroundColor: '#eef2ff', border: '1px solid #c7d2fe' }}>
+                                                    <div className="d-flex align-items-center gap-2">
+                                                        <span className="p-2 rounded-circle" style={{ backgroundColor: '#e0e7ff', color: '#4338ca' }}>
+                                                            <i className="bi bi-wallet2 fs-5"></i>
+                                                        </span>
+                                                        <div>
+                                                            <div className="fw-bold" style={{ color: '#312e81', fontSize: '0.9rem' }}>Advance Fee Wallet Balance</div>
+                                                            <div className="small text-muted" style={{ fontSize: '0.78rem' }}>
+                                                                Available prepaid credit automatically adjusting against upcoming monthly fee slips
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-end">
+                                                        <span className="badge rounded-pill px-3 py-2 fs-6 fw-bold" style={{ backgroundColor: '#4338ca', color: '#ffffff' }}>
+                                                            PKR {(familyAdvanceBalance || Number(student?.advance_balance || 0)).toLocaleString('en-PK')}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            )}
                                             {loadingFamilySlips ? (
                                                 <div className="p-4 text-center">
                                                     <span className="spinner-border spinner-border-sm text-primary"></span> <span className="ms-2">Loading fees...</span>
@@ -1490,7 +1521,23 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                                                                             </div>
                                                                         </td>
                                                                         <td className="text-end fw-semibold" style={{ color: 'var(--primary-dark)' }}>{fmt(monthSlip.family_total_billed)}</td>
-                                                                        <td className="text-end fw-bold" style={{ color: '#0d9e6e' }}>{fmt(monthSlip.family_total_paid)}</td>
+                                                                        <td className="text-end fw-bold" style={{ color: '#0d9e6e' }}>
+                                                                            {fmt(monthSlip.family_total_paid)}
+                                                                            {Number(monthSlip.advance_surplus || 0) > 0 && (
+                                                                                <div className="mt-1">
+                                                                                    <span className="badge rounded-pill px-2 py-0.5" style={{ backgroundColor: '#e0e7ff', color: '#4338ca', border: '1px solid #c7d2fe', fontSize: '0.7rem', fontWeight: 600 }}>
+                                                                                        <i className="bi bi-wallet2 me-1"></i>+Adv: {fmt(monthSlip.advance_surplus)}
+                                                                                    </span>
+                                                                                </div>
+                                                                            )}
+                                                                            {Number(monthSlip.advance_adjusted || 0) > 0 && (
+                                                                                <div className="mt-1">
+                                                                                    <span className="badge rounded-pill px-2 py-0.5" style={{ backgroundColor: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', fontSize: '0.7rem', fontWeight: 600 }}>
+                                                                                        <i className="bi bi-arrow-repeat me-1"></i>Adj: {fmt(monthSlip.advance_adjusted)}
+                                                                                    </span>
+                                                                                </div>
+                                                                            )}
+                                                                        </td>
                                                                         <td className="text-end fw-bold" style={{ color: isMonthSettled ? '#0891b2' : remainingBalance > 0 ? '#dc3545' : '#6c757d' }}>
                                                                             {isMonthSettled ? (
                                                                                 <span className="badge rounded-pill px-2 py-0.5" style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', fontSize: '0.74rem' }}>
@@ -1513,6 +1560,10 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                                                                             {isMonthSettled ? (
                                                                                 <span className="badge px-3 py-2 rounded-pill" style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', fontWeight: 600 }}>
                                                                                     <i className="bi bi-shield-check me-1"></i>SETTLED
+                                                                                </span>
+                                                                            ) : ((monthSlip.status || '').toLowerCase() === 'advanced' || Number(monthSlip.advance_surplus || 0) > 0) ? (
+                                                                                <span className="badge px-3 py-2 rounded-pill" style={{ backgroundColor: '#e0e7ff', color: '#4338ca', border: '1px solid #c7d2fe', fontWeight: 600 }}>
+                                                                                    <i className="bi bi-wallet2 me-1"></i>ADVANCED
                                                                                 </span>
                                                                             ) : (
                                                                                 <span className={`badge px-3 py-2 rounded-pill ${monthSlip.status === 'paid' ? 'bg-success bg-opacity-10 text-success border border-success' : monthSlip.status === 'partial' ? 'bg-warning bg-opacity-10 text-warning border border-warning' : 'bg-danger bg-opacity-10 text-danger border border-danger'}`}>
