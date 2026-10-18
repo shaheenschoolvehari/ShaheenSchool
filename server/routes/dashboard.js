@@ -200,6 +200,10 @@ router.get('/accountant', async (req, res) => {
             feeChartRes,
             recentPayRes,
             monthlyChartRes,
+            thisMonthTuitionBilledRes,
+            thisMonthTuitionAndPrevRes,
+            thisMonthRemainingDuesRes,
+            thisMonthExpensesRes,
         ] = await Promise.all([
             pool.query(`
                 SELECT COALESCE(SUM(amount_paid),0) AS collected
@@ -265,24 +269,79 @@ router.get('/accountant', async (req, res) => {
                 GROUP BY DATE_TRUNC('month', payment_date)
                 ORDER BY DATE_TRUNC('month', payment_date) ASC`),
 
-            // Current Month Tuition Billed
+            // Current Month Pure Tuition Billed (Only tuition fee line items, excluding trusted/settled)
             pool.query(`
-                SELECT COALESCE(SUM(ms.total_amount), 0) AS total
+                SELECT COALESCE(SUM(
+                    COALESCE(
+                        (
+                            SELECT SUM(sli.amount)
+                            FROM slip_line_items sli
+                            WHERE sli.slip_id = ms.slip_id
+                              AND (
+                                  sli.head_name ILIKE '%tuition%'
+                                  OR sli.head_name ILIKE '%tution%'
+                                  OR sli.head_name ILIKE '%family monthly fee%'
+                                  OR (sli.head_name ILIKE '%monthly fee%' AND sli.head_name NOT ILIKE '%previous%')
+                                  OR sli.head_id = 1
+                              )
+                              AND sli.head_name NOT ILIKE '%previous balance%'
+                              AND sli.head_name NOT ILIKE '%advance%'
+                        ),
+                        0
+                    )
+                ), 0) AS total
                 FROM monthly_fee_slips ms
                 LEFT JOIN students s ON ms.student_id = s.student_id
-                WHERE ms.month = EXTRACT(MONTH FROM CURRENT_DATE)
+                LEFT JOIN families f ON ms.family_id = f.family_id
+                WHERE (ms.month = EXTRACT(MONTH FROM CURRENT_DATE) OR (ms.months_list IS NOT NULL AND EXTRACT(MONTH FROM CURRENT_DATE)::int = ANY(ms.months_list)))
                   AND ms.year = EXTRACT(YEAR FROM CURRENT_DATE)
                   AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
+                  AND (f.is_trusted_family IS NULL OR f.is_trusted_family = FALSE)
+                  AND (ms.status IS NULL OR LOWER(ms.status) NOT IN ('settled', 'satteled'))
             `),
 
-            // Current Month Remaining Dues
+            // Current Month Tuition + Previous Balance Billed
+            pool.query(`
+                SELECT COALESCE(SUM(
+                    COALESCE(
+                        (
+                            SELECT SUM(sli.amount)
+                            FROM slip_line_items sli
+                            WHERE sli.slip_id = ms.slip_id
+                              AND (
+                                  sli.head_name ILIKE '%tuition%'
+                                  OR sli.head_name ILIKE '%tution%'
+                                  OR sli.head_name ILIKE '%family monthly fee%'
+                                  OR (sli.head_name ILIKE '%monthly fee%' AND sli.head_name NOT ILIKE '%previous%')
+                                  OR sli.head_name ILIKE '%previous balance%'
+                                  OR sli.head_id = 1
+                              )
+                              AND sli.head_name NOT ILIKE '%advance%'
+                        ),
+                        0
+                    )
+                ), 0) AS total
+                FROM monthly_fee_slips ms
+                LEFT JOIN students s ON ms.student_id = s.student_id
+                LEFT JOIN families f ON ms.family_id = f.family_id
+                WHERE (ms.month = EXTRACT(MONTH FROM CURRENT_DATE) OR (ms.months_list IS NOT NULL AND EXTRACT(MONTH FROM CURRENT_DATE)::int = ANY(ms.months_list)))
+                  AND ms.year = EXTRACT(YEAR FROM CURRENT_DATE)
+                  AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
+                  AND (f.is_trusted_family IS NULL OR f.is_trusted_family = FALSE)
+                  AND (ms.status IS NULL OR LOWER(ms.status) NOT IN ('settled', 'satteled'))
+            `),
+
+            // Current Month Remaining Dues (Unpaid balance of current month slips, excluding trusted/settled)
             pool.query(`
                 SELECT COALESCE(SUM(GREATEST(0, ms.total_amount - ms.paid_amount)), 0) AS total
                 FROM monthly_fee_slips ms
                 LEFT JOIN students s ON ms.student_id = s.student_id
-                WHERE ms.month = EXTRACT(MONTH FROM CURRENT_DATE)
+                LEFT JOIN families f ON ms.family_id = f.family_id
+                WHERE (ms.month = EXTRACT(MONTH FROM CURRENT_DATE) OR (ms.months_list IS NOT NULL AND EXTRACT(MONTH FROM CURRENT_DATE)::int = ANY(ms.months_list)))
                   AND ms.year = EXTRACT(YEAR FROM CURRENT_DATE)
                   AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
+                  AND (f.is_trusted_family IS NULL OR f.is_trusted_family = FALSE)
+                  AND (ms.status IS NULL OR LOWER(ms.status) NOT IN ('paid', 'settled', 'satteled'))
             `),
 
             // Current Month Expenses
@@ -302,9 +361,10 @@ router.get('/accountant', async (req, res) => {
                 month_collected: parseFloat(monthRes.rows[0]?.collected) || 0,
                 pending_fees: parseFloat(pendingRes.rows[0]?.pending) || 0,
                 total_students: parseInt(totalStudRes.rows[0]?.total) || 0,
-                this_month_tuition_billed: parseFloat(monthlyChartRes.length ? 0 : 0) || parseFloat((await pool.query(`SELECT COALESCE(SUM(ms.total_amount), 0) AS total FROM monthly_fee_slips ms LEFT JOIN students s ON ms.student_id = s.student_id WHERE ms.month = EXTRACT(MONTH FROM CURRENT_DATE) AND ms.year = EXTRACT(YEAR FROM CURRENT_DATE) AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')`)).rows[0]?.total || 0),
-                this_month_remaining_dues: parseFloat(pendingRes.rows[0]?.pending) || 0,
-                this_month_expenses: parseFloat((await pool.query(`SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE EXTRACT(MONTH FROM expense_date) = EXTRACT(MONTH FROM CURRENT_DATE) AND EXTRACT(YEAR FROM expense_date) = EXTRACT(YEAR FROM CURRENT_DATE) AND (status IS NULL OR LOWER(status) != 'cancelled')`)).rows[0]?.total || 0),
+                this_month_tuition_billed: parseFloat(thisMonthTuitionBilledRes.rows[0]?.total) || 0,
+                this_month_tuition_and_prev_billed: parseFloat(thisMonthTuitionAndPrevRes.rows[0]?.total) || 0,
+                this_month_remaining_dues: parseFloat(thisMonthRemainingDuesRes.rows[0]?.total) || 0,
+                this_month_expenses: parseFloat(thisMonthExpensesRes.rows[0]?.total) || 0,
             },
             fee_chart: feeChartRes.rows.map(r => ({ date: r.date, label: fmt(r.date), amount: parseFloat(r.amount) || 0 })),
             monthly_chart: monthlyChartRes.rows.map(r => ({ label: r.month_label, amount: parseFloat(r.amount) || 0 })),
@@ -321,10 +381,7 @@ router.get('/accountant', async (req, res) => {
 // ============================================================
 router.get('/', async (req, res) => {
     try {
-        const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-
-        // Run all queries in parallel for maximum performance
-        const [
+             const [
             studentsRes,
             teachersRes,
             classesRes,
@@ -337,6 +394,10 @@ router.get('/', async (req, res) => {
             studentAttChartRes,
             staffAttChartRes,
             recentPaymentsRes,
+            thisMonthTuitionBilledRes,
+            thisMonthTuitionAndPrevRes,
+            thisMonthRemainingDuesRes,
+            thisMonthExpensesRes,
         ] = await Promise.all([
 
             // 1. Total active students
@@ -432,7 +493,7 @@ router.get('/', async (req, res) => {
                 ORDER BY attendance_date ASC
             `),
 
-            // 12. Recent fee payments (last 8)
+            // 12. Recent fee payments (last 50)
             pool.query(`
                 SELECT
                     fp.payment_id,
@@ -480,27 +541,82 @@ router.get('/', async (req, res) => {
                 LIMIT 50
             `),
 
-            // 13. Current month tuition billed
+            // 13. Current Month Pure Tuition Billed (Only tuition fee line items, excluding trusted/settled)
             pool.query(`
-                SELECT COALESCE(SUM(ms.total_amount), 0) AS total
+                SELECT COALESCE(SUM(
+                    COALESCE(
+                        (
+                            SELECT SUM(sli.amount)
+                            FROM slip_line_items sli
+                            WHERE sli.slip_id = ms.slip_id
+                              AND (
+                                  sli.head_name ILIKE '%tuition%'
+                                  OR sli.head_name ILIKE '%tution%'
+                                  OR sli.head_name ILIKE '%family monthly fee%'
+                                  OR (sli.head_name ILIKE '%monthly fee%' AND sli.head_name NOT ILIKE '%previous%')
+                                  OR sli.head_id = 1
+                              )
+                              AND sli.head_name NOT ILIKE '%previous balance%'
+                              AND sli.head_name NOT ILIKE '%advance%'
+                        ),
+                        0
+                    )
+                ), 0) AS total
                 FROM monthly_fee_slips ms
                 LEFT JOIN students s ON ms.student_id = s.student_id
-                WHERE ms.month = EXTRACT(MONTH FROM CURRENT_DATE)
+                LEFT JOIN families f ON ms.family_id = f.family_id
+                WHERE (ms.month = EXTRACT(MONTH FROM CURRENT_DATE) OR (ms.months_list IS NOT NULL AND EXTRACT(MONTH FROM CURRENT_DATE)::int = ANY(ms.months_list)))
                   AND ms.year = EXTRACT(YEAR FROM CURRENT_DATE)
                   AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
+                  AND (f.is_trusted_family IS NULL OR f.is_trusted_family = FALSE)
+                  AND (ms.status IS NULL OR LOWER(ms.status) NOT IN ('settled', 'satteled'))
             `),
 
-            // 14. Current month remaining dues
+            // 14. Current Month Tuition + Previous Balance Billed
+            pool.query(`
+                SELECT COALESCE(SUM(
+                    COALESCE(
+                        (
+                            SELECT SUM(sli.amount)
+                            FROM slip_line_items sli
+                            WHERE sli.slip_id = ms.slip_id
+                              AND (
+                                  sli.head_name ILIKE '%tuition%'
+                                  OR sli.head_name ILIKE '%tution%'
+                                  OR sli.head_name ILIKE '%family monthly fee%'
+                                  OR (sli.head_name ILIKE '%monthly fee%' AND sli.head_name NOT ILIKE '%previous%')
+                                  OR sli.head_name ILIKE '%previous balance%'
+                                  OR sli.head_id = 1
+                              )
+                              AND sli.head_name NOT ILIKE '%advance%'
+                        ),
+                        0
+                    )
+                ), 0) AS total
+                FROM monthly_fee_slips ms
+                LEFT JOIN students s ON ms.student_id = s.student_id
+                LEFT JOIN families f ON ms.family_id = f.family_id
+                WHERE (ms.month = EXTRACT(MONTH FROM CURRENT_DATE) OR (ms.months_list IS NOT NULL AND EXTRACT(MONTH FROM CURRENT_DATE)::int = ANY(ms.months_list)))
+                  AND ms.year = EXTRACT(YEAR FROM CURRENT_DATE)
+                  AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
+                  AND (f.is_trusted_family IS NULL OR f.is_trusted_family = FALSE)
+                  AND (ms.status IS NULL OR LOWER(ms.status) NOT IN ('settled', 'satteled'))
+            `),
+
+            // 15. Current Month Remaining Dues (Unpaid balance of current month slips, excluding trusted/settled)
             pool.query(`
                 SELECT COALESCE(SUM(GREATEST(0, ms.total_amount - ms.paid_amount)), 0) AS total
                 FROM monthly_fee_slips ms
                 LEFT JOIN students s ON ms.student_id = s.student_id
-                WHERE ms.month = EXTRACT(MONTH FROM CURRENT_DATE)
+                LEFT JOIN families f ON ms.family_id = f.family_id
+                WHERE (ms.month = EXTRACT(MONTH FROM CURRENT_DATE) OR (ms.months_list IS NOT NULL AND EXTRACT(MONTH FROM CURRENT_DATE)::int = ANY(ms.months_list)))
                   AND ms.year = EXTRACT(YEAR FROM CURRENT_DATE)
                   AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
+                  AND (f.is_trusted_family IS NULL OR f.is_trusted_family = FALSE)
+                  AND (ms.status IS NULL OR LOWER(ms.status) NOT IN ('paid', 'settled', 'satteled'))
             `),
 
-            // 15. Current month expenses
+            // 16. Current Month Expenses
             pool.query(`
                 SELECT COALESCE(SUM(amount), 0) AS total
                 FROM expenses
@@ -544,11 +660,6 @@ router.get('/', async (req, res) => {
         const todayStudAtt = todayStudentAttRes.rows[0] || {};
         const todayStaffAtt = todayStaffAttRes.rows[0] || {};
 
-        const thisMonthTuitionBilledRes = arguments[0] || {}; // fallback
-        const thisMonthBilledVal = parseFloat(recentPaymentsRes[8]?.rows?.[0]?.total || 0) || parseFloat((await pool.query(`SELECT COALESCE(SUM(ms.total_amount), 0) AS total FROM monthly_fee_slips ms LEFT JOIN students s ON ms.student_id = s.student_id WHERE ms.month = EXTRACT(MONTH FROM CURRENT_DATE) AND ms.year = EXTRACT(YEAR FROM CURRENT_DATE) AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')`)).rows[0]?.total || 0);
-        const thisMonthRemainingVal = parseFloat((await pool.query(`SELECT COALESCE(SUM(GREATEST(0, ms.total_amount - ms.paid_amount)), 0) AS total FROM monthly_fee_slips ms LEFT JOIN students s ON ms.student_id = s.student_id WHERE ms.month = EXTRACT(MONTH FROM CURRENT_DATE) AND ms.year = EXTRACT(YEAR FROM CURRENT_DATE) AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')`)).rows[0]?.total || 0);
-        const thisMonthExpensesVal = parseFloat((await pool.query(`SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE EXTRACT(MONTH FROM expense_date) = EXTRACT(MONTH FROM CURRENT_DATE) AND EXTRACT(YEAR FROM expense_date) = EXTRACT(YEAR FROM CURRENT_DATE) AND (status IS NULL OR LOWER(status) != 'cancelled')`)).rows[0]?.total || 0);
-
         res.json({
             stats: {
                 total_students: parseInt(studentsRes.rows[0]?.total) || 0,
@@ -557,9 +668,10 @@ router.get('/', async (req, res) => {
                 pending_fees: parseFloat(pendingFeesRes.rows[0]?.pending) || 0,
                 this_month_collected: parseFloat(thisMonthFeeRes.rows[0]?.collected) || 0,
                 today_collected: parseFloat(todayFeeRes.rows[0]?.collected) || 0,
-                this_month_tuition_billed: thisMonthBilledVal,
-                this_month_remaining_dues: thisMonthRemainingVal,
-                this_month_expenses: thisMonthExpensesVal,
+                this_month_tuition_billed: parseFloat(thisMonthTuitionBilledRes.rows[0]?.total) || 0,
+                this_month_tuition_and_prev_billed: parseFloat(thisMonthTuitionAndPrevRes.rows[0]?.total) || 0,
+                this_month_remaining_dues: parseFloat(thisMonthRemainingDuesRes.rows[0]?.total) || 0,
+                this_month_expenses: parseFloat(thisMonthExpensesRes.rows[0]?.total) || 0,
             },
             today_student_att: {
                 present: parseInt(todayStudAtt.present) || 0,
