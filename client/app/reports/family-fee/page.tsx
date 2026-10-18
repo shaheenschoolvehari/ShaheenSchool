@@ -722,7 +722,7 @@ export default function FamilyFeeReportPage() {
                                         {headSummary.length > 0 ? (
                                             <>
                                                 <div style={{ position: 'relative', width: 220, height: 220 }}>
-                                                    <ResponsiveContainer width="100%" height="100%">
+                                                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
                                                         <PieChart>
                                                             <Pie
                                                                 data={headSummary}
@@ -897,7 +897,7 @@ export default function FamilyFeeReportPage() {
                                 <div style={{ padding: '18px 20px' }}>
                                     {timelineView === 'cumulative' && (
                                         <div style={{ width: '100%', height: 260 }}>
-                                            <ResponsiveContainer width="100%" height="100%">
+                                            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={260}>
                                                 <AreaChart data={timeline} margin={{ top: 10, right: 16, left: 10, bottom: 0 }}>
                                                     <defs>
                                                         <linearGradient id="gradCum" x1="0" y1="0" x2="0" y2="1">
@@ -926,7 +926,7 @@ export default function FamilyFeeReportPage() {
                                     )}
                                     {timelineView === 'daily' && (
                                         <div style={{ width: '100%', height: 260 }}>
-                                            <ResponsiveContainer width="100%" height="100%">
+                                            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={260}>
                                                 <AreaChart data={timeline} margin={{ top: 10, right: 16, left: 10, bottom: 0 }}>
                                                     <defs>
                                                         <linearGradient id="gradDaily" x1="0" y1="0" x2="0" y2="1">
@@ -954,7 +954,7 @@ export default function FamilyFeeReportPage() {
                                     )}
                                     {timelineView === 'weekly' && (
                                         <div style={{ width: '100%', height: 260 }}>
-                                            <ResponsiveContainer width="100%" height="100%">
+                                            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={260}>
                                                 <BarChart data={weeklySummary} margin={{ top: 10, right: 16, left: 10, bottom: 0 }} barCategoryGap="30%">
                                                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                                                     <XAxis dataKey="week" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />

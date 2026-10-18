@@ -360,6 +360,7 @@ router.post('/generate', async (req, res) => {
 
         let familyPBMap = {}; // family_id → total pure tuition arrears + OPB (from latest prior consolidated state)
         let familyCumulativeMap = {}; // family_id → [ { head_id, head_name, pending_amount } ]
+        let familyAdvanceMap = {}; // family_id → advance balance from families table
 
         if (uniqueFamilyIds.length > 0) {
             // 1. For each family, find their LATEST previous slip in this academic session before this billing month/year
@@ -452,7 +453,6 @@ router.post('/generate', async (req, res) => {
                  FROM families WHERE family_id = ANY($1::varchar[]) AND COALESCE(advance_balance, 0) > 0`,
                 [uniqueFamilyIds]
             );
-            const familyAdvanceMap = {};
             for (const r of advRes.rows) {
                 familyAdvanceMap[r.family_id] = parseFloat(r.advance_balance) || 0;
             }
@@ -745,7 +745,7 @@ router.post('/generate', async (req, res) => {
                 });
                 totalAmount = parseFloat((totalAmount - advanceAdjusted).toFixed(2));
 
-                if (student.family_id && familyAdvanceMap[student.family_id] !== undefined) {
+                if (student.family_id && (familyAdvanceMap[student.family_id] || 0) > 0) {
                     await client.query(
                         `UPDATE families SET advance_balance = GREATEST(0, advance_balance - $1) WHERE family_id = $2`,
                         [advanceAdjusted, student.family_id]
