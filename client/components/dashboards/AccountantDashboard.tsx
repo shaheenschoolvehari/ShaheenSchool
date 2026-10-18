@@ -18,6 +18,10 @@ type AccountantData = {
     this_month_tuition_and_prev_billed?: number;
     this_month_remaining_dues?: number;
     this_month_expenses?: number;
+    active_student_pending_dues?: number;
+    inactive_student_pending_dues?: number;
+    this_month_advance_collected?: number;
+    trusted_students_count?: number;
   };
   fee_chart: { date: string; label: string; amount: number }[];
   monthly_chart: { label: string; amount: number }[];
@@ -69,11 +73,15 @@ export default function AccountantDashboard({ userName }: { userName: string }) 
         <div className="dash-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(210px,1fr))', gap: 14, marginBottom: 20 }}>
           <StatCard icon="bi-cash-stack" label="Today Collected" value={<MaskedAmount amount={s.today_collected} />} sub="Received today" accent={C.green} />
           <StatCard icon="bi-graph-up-arrow" label={curMonth + ' Collected'} value={<MaskedAmount amount={s.month_collected} />} sub="This month total" accent={C.teal} />
+          <StatCard icon="bi-arrow-down-left-circle-fill" label={curMonth + ' Advance Fee'} value={<MaskedAmount amount={s.this_month_advance_collected || 0} />} sub="Advance collected" accent="#8b5cf6" />
           <StatCard icon="bi-piggy-bank-fill" label={curMonth + ' Tuition Billed'} value={<MaskedAmount amount={s.this_month_tuition_billed || 0} />} sub="Only tuition fee" accent={C.teal} />
           <StatCard icon="bi-journal-check" label={curMonth + ' Tuition + Prev'} value={<MaskedAmount amount={s.this_month_tuition_and_prev_billed || 0} />} sub="Tuition + past arrears" accent="#0284c7" />
           <StatCard icon="bi-exclamation-octagon-fill" label={curMonth + ' Dues'} value={<MaskedAmount amount={s.this_month_remaining_dues || 0} />} sub="Current month unpaid" accent={C.red} />
-          <StatCard icon="bi-receipt-cutoff" label={curMonth + ' Expenses'} value={<MaskedAmount amount={s.this_month_expenses || 0} />} sub="Current month expenses" accent="#ea580c" />
+          <StatCard icon="bi-person-check-fill" label="Active Student Dues" value={<MaskedAmount amount={s.active_student_pending_dues || 0} />} sub="Active student pending dues" accent="#e11d48" />
+          <StatCard icon="bi-person-x-fill" label="Inactive Student Dues" value={<MaskedAmount amount={s.inactive_student_pending_dues || 0} />} sub="Inactive student pending dues" accent="#64748b" />
           <StatCard icon="bi-exclamation-circle-fill" label="Total Pending" value={<MaskedAmount amount={s.pending_fees} />} sub="All time unpaid" accent={C.red} />
+          <StatCard icon="bi-shield-shaded" label="Trusted Students" value={fmt(s.trusted_students_count || 0)} sub="No. of trusted students" accent="#0d9488" />
+          <StatCard icon="bi-receipt-cutoff" label={curMonth + ' Expenses'} value={<MaskedAmount amount={s.this_month_expenses || 0} />} sub="Current month expenses" accent="#ea580c" />
           <StatCard icon="bi-people-fill" label="Total Students" value={fmt(s.total_students)} sub="Enrolled" accent={C.orange} />
         </div>
       )}

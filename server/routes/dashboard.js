@@ -204,6 +204,10 @@ router.get('/accountant', async (req, res) => {
             thisMonthTuitionAndPrevRes,
             thisMonthRemainingDuesRes,
             thisMonthExpensesRes,
+            activeStudentPendingRes,
+            inactiveStudentPendingRes,
+            thisMonthAdvanceRes,
+            trustedStudentsRes,
         ] = await Promise.all([
             pool.query(`
                 SELECT COALESCE(SUM(amount_paid),0) AS collected
@@ -216,8 +220,11 @@ router.get('/accountant', async (req, res) => {
                   AND EXTRACT(YEAR  FROM payment_date)=EXTRACT(YEAR  FROM CURRENT_DATE)`),
 
             pool.query(`
-                SELECT COALESCE(SUM(GREATEST(0,total_amount-paid_amount)),0) AS pending
-                FROM monthly_fee_slips WHERE status IN ('unpaid','partial')`),
+                SELECT COALESCE(SUM(GREATEST(0, ms.total_amount - ms.paid_amount)), 0) AS pending
+                FROM monthly_fee_slips ms
+                LEFT JOIN students s ON ms.student_id = s.student_id
+                WHERE ms.status IN ('unpaid', 'partial')
+                  AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')`),
 
             pool.query(`SELECT COUNT(*) AS total FROM students WHERE status='Active'`),
 
@@ -346,6 +353,50 @@ router.get('/accountant', async (req, res) => {
                   AND EXTRACT(YEAR FROM expense_date) = EXTRACT(YEAR FROM CURRENT_DATE)
                   AND (status IS NULL OR LOWER(status) != 'cancelled')
             `),
+
+            // Active Student Pending Dues
+            pool.query(`
+                SELECT COALESCE(SUM(GREATEST(0, ms.total_amount - ms.paid_amount)), 0) AS total
+                FROM monthly_fee_slips ms
+                LEFT JOIN students s ON ms.student_id = s.student_id
+                WHERE ms.status IN ('unpaid', 'partial')
+                  AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
+                  AND (
+                      (ms.family_id IS NOT NULL AND EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active'))
+                      OR
+                      (ms.family_id IS NULL AND LOWER(COALESCE(s.status, 'Active')) = 'active')
+                  )
+            `),
+
+            // Inactive Student Pending Dues
+            pool.query(`
+                SELECT COALESCE(SUM(GREATEST(0, ms.total_amount - ms.paid_amount)), 0) AS total
+                FROM monthly_fee_slips ms
+                LEFT JOIN students s ON ms.student_id = s.student_id
+                WHERE ms.status IN ('unpaid', 'partial')
+                  AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
+                  AND NOT (
+                      (ms.family_id IS NOT NULL AND EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active'))
+                      OR
+                      (ms.family_id IS NULL AND LOWER(COALESCE(s.status, 'Active')) = 'active')
+                  )
+            `),
+
+            // Current Month Advance Fee Collected
+            pool.query(`
+                SELECT COALESCE(SUM(fp.advance_surplus), 0) AS total
+                FROM fee_payments fp
+                WHERE EXTRACT(MONTH FROM fp.payment_date) = EXTRACT(MONTH FROM CURRENT_DATE)
+                  AND EXTRACT(YEAR  FROM fp.payment_date) = EXTRACT(YEAR  FROM CURRENT_DATE)
+            `),
+
+            // Number of Trusted Students
+            pool.query(`
+                SELECT COUNT(*) AS total
+                FROM students
+                WHERE LOWER(TRIM(category)) = 'trusted'
+                  AND LOWER(COALESCE(status, 'Active')) = 'active'
+            `),
         ]);
 
         res.json({
@@ -359,6 +410,10 @@ router.get('/accountant', async (req, res) => {
                 this_month_tuition_and_prev_billed: parseFloat(thisMonthTuitionAndPrevRes.rows[0]?.total) || 0,
                 this_month_remaining_dues: parseFloat(thisMonthRemainingDuesRes.rows[0]?.total) || 0,
                 this_month_expenses: parseFloat(thisMonthExpensesRes.rows[0]?.total) || 0,
+                active_student_pending_dues: parseFloat(activeStudentPendingRes.rows[0]?.total) || 0,
+                inactive_student_pending_dues: parseFloat(inactiveStudentPendingRes.rows[0]?.total) || 0,
+                this_month_advance_collected: parseFloat(thisMonthAdvanceRes.rows[0]?.total) || 0,
+                trusted_students_count: parseInt(trustedStudentsRes.rows[0]?.total) || 0,
             },
             fee_chart: feeChartRes.rows.map(r => ({ date: r.date, label: fmt(r.date), amount: parseFloat(r.amount) || 0 })),
             monthly_chart: monthlyChartRes.rows.map(r => ({ label: r.month_label, amount: parseFloat(r.amount) || 0 })),
@@ -392,6 +447,10 @@ router.get('/', async (req, res) => {
             thisMonthTuitionAndPrevRes,
             thisMonthRemainingDuesRes,
             thisMonthExpensesRes,
+            activeStudentPendingRes,
+            inactiveStudentPendingRes,
+            thisMonthAdvanceRes,
+            trustedStudentsRes,
         ] = await Promise.all([
 
             // 1. Total active students
@@ -403,11 +462,13 @@ router.get('/', async (req, res) => {
             // 3. Total classes
             pool.query(`SELECT COUNT(*) AS total FROM classes`),
 
-            // 4. Total pending fees (unpaid + partial across all time)
+            // 4. Total pending fees (unpaid + partial across all time, excluding trusted)
             pool.query(`
-                SELECT COALESCE(SUM(GREATEST(0, total_amount - paid_amount)), 0) AS pending
-                FROM monthly_fee_slips
-                WHERE status IN ('unpaid', 'partial')
+                SELECT COALESCE(SUM(GREATEST(0, ms.total_amount - ms.paid_amount)), 0) AS pending
+                FROM monthly_fee_slips ms
+                LEFT JOIN students s ON ms.student_id = s.student_id
+                WHERE ms.status IN ('unpaid', 'partial')
+                  AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
             `),
 
             // 5. This month's fee collected
@@ -612,6 +673,50 @@ router.get('/', async (req, res) => {
                   AND EXTRACT(YEAR FROM expense_date) = EXTRACT(YEAR FROM CURRENT_DATE)
                   AND (status IS NULL OR LOWER(status) != 'cancelled')
             `),
+
+            // 17. Active Student Pending Dues
+            pool.query(`
+                SELECT COALESCE(SUM(GREATEST(0, ms.total_amount - ms.paid_amount)), 0) AS total
+                FROM monthly_fee_slips ms
+                LEFT JOIN students s ON ms.student_id = s.student_id
+                WHERE ms.status IN ('unpaid', 'partial')
+                  AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
+                  AND (
+                      (ms.family_id IS NOT NULL AND EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active'))
+                      OR
+                      (ms.family_id IS NULL AND LOWER(COALESCE(s.status, 'Active')) = 'active')
+                  )
+            `),
+
+            // 18. Inactive Student Pending Dues
+            pool.query(`
+                SELECT COALESCE(SUM(GREATEST(0, ms.total_amount - ms.paid_amount)), 0) AS total
+                FROM monthly_fee_slips ms
+                LEFT JOIN students s ON ms.student_id = s.student_id
+                WHERE ms.status IN ('unpaid', 'partial')
+                  AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
+                  AND NOT (
+                      (ms.family_id IS NOT NULL AND EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active'))
+                      OR
+                      (ms.family_id IS NULL AND LOWER(COALESCE(s.status, 'Active')) = 'active')
+                  )
+            `),
+
+            // 19. Current Month Advance Fee Collected
+            pool.query(`
+                SELECT COALESCE(SUM(fp.advance_surplus), 0) AS total
+                FROM fee_payments fp
+                WHERE EXTRACT(MONTH FROM fp.payment_date) = EXTRACT(MONTH FROM CURRENT_DATE)
+                  AND EXTRACT(YEAR  FROM fp.payment_date) = EXTRACT(YEAR  FROM CURRENT_DATE)
+            `),
+
+            // 20. Number of Trusted Students
+            pool.query(`
+                SELECT COUNT(*) AS total
+                FROM students
+                WHERE LOWER(TRIM(category)) = 'trusted'
+                  AND LOWER(COALESCE(status, 'Active')) = 'active'
+            `),
         ]);
 
         // ── Format chart dates ──────────────────────────────────────────────
@@ -660,6 +765,10 @@ router.get('/', async (req, res) => {
                 this_month_tuition_and_prev_billed: parseFloat(thisMonthTuitionAndPrevRes.rows[0]?.total) || 0,
                 this_month_remaining_dues: parseFloat(thisMonthRemainingDuesRes.rows[0]?.total) || 0,
                 this_month_expenses: parseFloat(thisMonthExpensesRes.rows[0]?.total) || 0,
+                active_student_pending_dues: parseFloat(activeStudentPendingRes.rows[0]?.total) || 0,
+                inactive_student_pending_dues: parseFloat(inactiveStudentPendingRes.rows[0]?.total) || 0,
+                this_month_advance_collected: parseFloat(thisMonthAdvanceRes.rows[0]?.total) || 0,
+                trusted_students_count: parseInt(trustedStudentsRes.rows[0]?.total) || 0,
             },
             today_student_att: {
                 present: parseInt(todayStudAtt.present) || 0,
