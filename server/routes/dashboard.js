@@ -292,11 +292,9 @@ router.get('/accountant', async (req, res) => {
                 ), 0) AS total
                 FROM monthly_fee_slips ms
                 LEFT JOIN students s ON ms.student_id = s.student_id
-                LEFT JOIN families f ON ms.family_id = f.family_id
                 WHERE (ms.month = EXTRACT(MONTH FROM CURRENT_DATE) OR (ms.months_list IS NOT NULL AND EXTRACT(MONTH FROM CURRENT_DATE)::int = ANY(ms.months_list)))
                   AND ms.year = EXTRACT(YEAR FROM CURRENT_DATE)
                   AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
-                  AND (f.is_trusted_family IS NULL OR f.is_trusted_family = FALSE)
                   AND (ms.status IS NULL OR LOWER(ms.status) NOT IN ('settled', 'satteled'))
             `),
 
@@ -323,11 +321,9 @@ router.get('/accountant', async (req, res) => {
                 ), 0) AS total
                 FROM monthly_fee_slips ms
                 LEFT JOIN students s ON ms.student_id = s.student_id
-                LEFT JOIN families f ON ms.family_id = f.family_id
                 WHERE (ms.month = EXTRACT(MONTH FROM CURRENT_DATE) OR (ms.months_list IS NOT NULL AND EXTRACT(MONTH FROM CURRENT_DATE)::int = ANY(ms.months_list)))
                   AND ms.year = EXTRACT(YEAR FROM CURRENT_DATE)
                   AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
-                  AND (f.is_trusted_family IS NULL OR f.is_trusted_family = FALSE)
                   AND (ms.status IS NULL OR LOWER(ms.status) NOT IN ('settled', 'satteled'))
             `),
 
@@ -336,11 +332,9 @@ router.get('/accountant', async (req, res) => {
                 SELECT COALESCE(SUM(GREATEST(0, ms.total_amount - ms.paid_amount)), 0) AS total
                 FROM monthly_fee_slips ms
                 LEFT JOIN students s ON ms.student_id = s.student_id
-                LEFT JOIN families f ON ms.family_id = f.family_id
                 WHERE (ms.month = EXTRACT(MONTH FROM CURRENT_DATE) OR (ms.months_list IS NOT NULL AND EXTRACT(MONTH FROM CURRENT_DATE)::int = ANY(ms.months_list)))
                   AND ms.year = EXTRACT(YEAR FROM CURRENT_DATE)
                   AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
-                  AND (f.is_trusted_family IS NULL OR f.is_trusted_family = FALSE)
                   AND (ms.status IS NULL OR LOWER(ms.status) NOT IN ('paid', 'settled', 'satteled'))
             `),
 
@@ -564,11 +558,9 @@ router.get('/', async (req, res) => {
                 ), 0) AS total
                 FROM monthly_fee_slips ms
                 LEFT JOIN students s ON ms.student_id = s.student_id
-                LEFT JOIN families f ON ms.family_id = f.family_id
                 WHERE (ms.month = EXTRACT(MONTH FROM CURRENT_DATE) OR (ms.months_list IS NOT NULL AND EXTRACT(MONTH FROM CURRENT_DATE)::int = ANY(ms.months_list)))
                   AND ms.year = EXTRACT(YEAR FROM CURRENT_DATE)
                   AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
-                  AND (f.is_trusted_family IS NULL OR f.is_trusted_family = FALSE)
                   AND (ms.status IS NULL OR LOWER(ms.status) NOT IN ('settled', 'satteled'))
             `),
 
@@ -595,11 +587,9 @@ router.get('/', async (req, res) => {
                 ), 0) AS total
                 FROM monthly_fee_slips ms
                 LEFT JOIN students s ON ms.student_id = s.student_id
-                LEFT JOIN families f ON ms.family_id = f.family_id
                 WHERE (ms.month = EXTRACT(MONTH FROM CURRENT_DATE) OR (ms.months_list IS NOT NULL AND EXTRACT(MONTH FROM CURRENT_DATE)::int = ANY(ms.months_list)))
                   AND ms.year = EXTRACT(YEAR FROM CURRENT_DATE)
                   AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
-                  AND (f.is_trusted_family IS NULL OR f.is_trusted_family = FALSE)
                   AND (ms.status IS NULL OR LOWER(ms.status) NOT IN ('settled', 'satteled'))
             `),
 
@@ -608,11 +598,9 @@ router.get('/', async (req, res) => {
                 SELECT COALESCE(SUM(GREATEST(0, ms.total_amount - ms.paid_amount)), 0) AS total
                 FROM monthly_fee_slips ms
                 LEFT JOIN students s ON ms.student_id = s.student_id
-                LEFT JOIN families f ON ms.family_id = f.family_id
                 WHERE (ms.month = EXTRACT(MONTH FROM CURRENT_DATE) OR (ms.months_list IS NOT NULL AND EXTRACT(MONTH FROM CURRENT_DATE)::int = ANY(ms.months_list)))
                   AND ms.year = EXTRACT(YEAR FROM CURRENT_DATE)
                   AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
-                  AND (f.is_trusted_family IS NULL OR f.is_trusted_family = FALSE)
                   AND (ms.status IS NULL OR LOWER(ms.status) NOT IN ('paid', 'settled', 'satteled'))
             `),
 
