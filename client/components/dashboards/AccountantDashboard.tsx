@@ -14,6 +14,8 @@ import {
 type AccountantData = {
   stats: {
     today_collected: number; month_collected: number; pending_fees: number; total_students: number;
+    total_staff?: number;
+    total_classes?: number;
     this_month_tuition_billed?: number;
     this_month_tuition_and_prev_billed?: number;
     this_month_remaining_dues?: number;
@@ -43,6 +45,7 @@ export default function AccountantDashboard({ userName }: { userName: string }) 
   const [data, setData] = useState<AccountantData | null>(null);
   const [loading, setLoad] = useState(true);
   const [err, setErr] = useState('');
+  const [cardsExpanded, setCardsExpanded] = useState(false);
 
   useEffect(() => {
     fetch(API + '/dashboard/accountant')
@@ -70,19 +73,89 @@ export default function AccountantDashboard({ userName }: { userName: string }) 
     >
       {/* KPI Row */}
       {hasPermission('dash.acc_kpi', 'read') && (
-        <div className="dash-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(210px,1fr))', gap: 14, marginBottom: 20 }}>
-          <StatCard icon="bi-cash-stack" label="Today Collected" value={<MaskedAmount amount={s.today_collected} />} sub="Received today" accent={C.green} />
-          <StatCard icon="bi-graph-up-arrow" label={curMonth + ' Collected'} value={<MaskedAmount amount={s.month_collected} />} sub="This month total" accent={C.teal} />
-          <StatCard icon="bi-arrow-down-left-circle-fill" label={curMonth + ' Advance Fee'} value={<MaskedAmount amount={s.this_month_advance_collected || 0} />} sub="Advance collected" accent="#8b5cf6" />
-          <StatCard icon="bi-piggy-bank-fill" label={curMonth + ' Tuition Billed'} value={<MaskedAmount amount={s.this_month_tuition_billed || 0} />} sub="Only tuition fee" accent={C.teal} />
-          <StatCard icon="bi-journal-check" label={curMonth + ' Tuition + Prev'} value={<MaskedAmount amount={s.this_month_tuition_and_prev_billed || 0} />} sub="Tuition + past arrears" accent="#0284c7" />
-          <StatCard icon="bi-exclamation-octagon-fill" label={curMonth + ' Dues'} value={<MaskedAmount amount={s.this_month_remaining_dues || 0} />} sub="Current month unpaid" accent={C.red} />
-          <StatCard icon="bi-person-check-fill" label="Active Student Dues" value={<MaskedAmount amount={s.active_student_pending_dues || 0} />} sub="Active student pending dues" accent="#e11d48" />
-          <StatCard icon="bi-person-x-fill" label="Inactive Student Dues" value={<MaskedAmount amount={s.inactive_student_pending_dues || 0} />} sub="Inactive student pending dues" accent="#64748b" />
-          <StatCard icon="bi-exclamation-circle-fill" label="Total Pending" value={<MaskedAmount amount={s.pending_fees} />} sub="All time unpaid" accent={C.red} />
-          <StatCard icon="bi-shield-shaded" label="Trusted Students" value={fmt(s.trusted_students_count || 0)} sub="No. of trusted students" accent="#0d9488" />
-          <StatCard icon="bi-receipt-cutoff" label={curMonth + ' Expenses'} value={<MaskedAmount amount={s.this_month_expenses || 0} />} sub="Current month expenses" accent="#ea580c" />
-          <StatCard icon="bi-people-fill" label="Total Students" value={fmt(s.total_students)} sub="Enrolled" accent={C.orange} />
+        <div style={{ marginBottom: 20 }}>
+          {/* Top 4 Cards Row */}
+          <div className="dash-stat-grid" style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))',
+            gap: 14,
+          }}>
+            <StatCard icon="bi-people-fill" label="Total Students" value={fmt(s.total_students)} sub="Active enrolled" accent={C.teal} />
+            <StatCard icon="bi-person-badge-fill" label="Total Staff" value={fmt(s.total_staff || 0)} sub="Active employees" accent={C.dark} />
+            <StatCard icon="bi-building" label="Classes" value={fmt(s.total_classes || 0)} sub="All sections" accent={C.purple} />
+            <StatCard icon="bi-cash-coin" label="Today Collected" value={<MaskedAmount amount={s.today_collected} />} sub="Fee received today" accent={C.green} />
+          </div>
+
+          {/* Bottom Right Dropdown Toggle [▽] */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: 10 }}>
+            <button
+              type="button"
+              onClick={() => setCardsExpanded(!cardsExpanded)}
+              title={cardsExpanded ? 'Show less cards' : 'Show all cards'}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 7,
+                padding: '6px 14px',
+                background: '#fff',
+                border: '1px solid #e2e8f0',
+                borderRadius: 20,
+                cursor: 'pointer',
+                fontSize: 12,
+                fontWeight: 600,
+                color: '#334155',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = '#f8fafc';
+                e.currentTarget.style.borderColor = '#cbd5e1';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = '#fff';
+                e.currentTarget.style.borderColor = '#e2e8f0';
+                e.currentTarget.style.transform = 'none';
+              }}
+            >
+              <span>{cardsExpanded ? 'Show Less' : 'More Cards (10)'}</span>
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 20,
+                height: 20,
+                borderRadius: '50%',
+                background: cardsExpanded ? '#fee2e2' : '#e0f2fe',
+                color: cardsExpanded ? '#ef4444' : '#0284c7',
+                fontSize: 11,
+                fontWeight: 800,
+              }}>
+                <i className={`bi ${cardsExpanded ? 'bi-chevron-up' : 'bi-chevron-down'}`} />
+              </span>
+            </button>
+          </div>
+
+          {/* Expanded Cards Row */}
+          {cardsExpanded && (
+            <div className="dash-stat-grid" style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))',
+              gap: 14,
+              marginTop: 14,
+            }}>
+              <StatCard icon="bi-graph-up-arrow" label={curMonth + ' Collected'} value={<MaskedAmount amount={s.month_collected} />} sub="This month total" accent={C.teal} />
+              <StatCard icon="bi-arrow-down-left-circle-fill" label={curMonth + ' Advance Fee'} value={<MaskedAmount amount={s.this_month_advance_collected || 0} />} sub="Advance collected" accent="#8b5cf6" />
+              <StatCard icon="bi-piggy-bank-fill" label={curMonth + ' Tuition Billed'} value={<MaskedAmount amount={s.this_month_tuition_billed || 0} />} sub="Only tuition fee" accent={C.teal} />
+              <StatCard icon="bi-journal-check" label={curMonth + ' Tuition + Prev'} value={<MaskedAmount amount={s.this_month_tuition_and_prev_billed || 0} />} sub="Tuition + past arrears" accent="#0284c7" />
+              <StatCard icon="bi-exclamation-octagon-fill" label={curMonth + ' Dues'} value={<MaskedAmount amount={s.this_month_remaining_dues || 0} />} sub="Current month unpaid" accent={C.red} />
+              <StatCard icon="bi-person-check-fill" label="Active Student Dues" value={<MaskedAmount amount={s.active_student_pending_dues || 0} />} sub="Active student pending dues" accent="#e11d48" />
+              <StatCard icon="bi-person-x-fill" label="Inactive Student Dues" value={<MaskedAmount amount={s.inactive_student_pending_dues || 0} />} sub="Inactive student pending dues" accent="#64748b" />
+              <StatCard icon="bi-exclamation-circle-fill" label="Total Pending" value={<MaskedAmount amount={s.pending_fees} />} sub="All time unpaid" accent={C.red} />
+              <StatCard icon="bi-shield-shaded" label="Trusted Students" value={fmt(s.trusted_students_count || 0)} sub="No. of trusted students" accent="#0d9488" />
+              <StatCard icon="bi-receipt-cutoff" label={curMonth + ' Expenses'} value={<MaskedAmount amount={s.this_month_expenses || 0} />} sub="Current month expenses" accent="#ea580c" />
+            </div>
+          )}
         </div>
       )}
 

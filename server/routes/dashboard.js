@@ -197,6 +197,8 @@ router.get('/accountant', async (req, res) => {
             monthRes,
             pendingRes,
             totalStudRes,
+            totalStaffRes,
+            totalClassesRes,
             feeChartRes,
             recentPayRes,
             monthlyChartRes,
@@ -227,6 +229,8 @@ router.get('/accountant', async (req, res) => {
                   AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')`),
 
             pool.query(`SELECT COUNT(*) AS total FROM students WHERE status='Active'`),
+            pool.query(`SELECT COUNT(*) AS total FROM employees WHERE status = 'Active'`),
+            pool.query(`SELECT COUNT(*) AS total FROM classes`),
 
             // Daily last 14 days
             pool.query(`
@@ -406,6 +410,8 @@ router.get('/accountant', async (req, res) => {
                 month_collected: parseFloat(monthRes.rows[0]?.collected) || 0,
                 pending_fees: parseFloat(pendingRes.rows[0]?.pending) || 0,
                 total_students: parseInt(totalStudRes.rows[0]?.total) || 0,
+                total_staff: parseInt(totalStaffRes.rows[0]?.total) || 0,
+                total_classes: parseInt(totalClassesRes.rows[0]?.total) || 0,
                 this_month_tuition_billed: parseFloat(thisMonthTuitionBilledRes.rows[0]?.total) || 0,
                 this_month_tuition_and_prev_billed: parseFloat(thisMonthTuitionAndPrevRes.rows[0]?.total) || 0,
                 this_month_remaining_dues: parseFloat(thisMonthRemainingDuesRes.rows[0]?.total) || 0,
