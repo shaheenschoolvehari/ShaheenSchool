@@ -122,7 +122,14 @@ export default function StudentAttendanceHistoryPage() {
             const res = await fetch(`${API}/attendance/students/history?${queryParams.toString()}`);
             const d = await res.json();
             if (d.students) {
-                setData(d);
+                const sortedStudents = Array.isArray(d.students)
+                    ? [...d.students].sort((a: any, b: any) => {
+                        const nameA = [a.first_name, a.last_name].filter(Boolean).join(' ').trim().toLowerCase();
+                        const nameB = [b.first_name, b.last_name].filter(Boolean).join(' ').trim().toLowerCase();
+                        return nameA.localeCompare(nameB, undefined, { sensitivity: 'base', numeric: true });
+                    })
+                    : d.students;
+                setData({ ...d, students: sortedStudents });
                 if (Array.isArray(d.available_years) && d.available_years.length > 0) {
                     setAcademicYears(d.available_years);
                 }

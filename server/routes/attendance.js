@@ -340,7 +340,7 @@ router.get('/students/daily', async (req, res) => {
                  LEFT JOIN sections sec ON s.section_id = sec.section_id
                  LEFT JOIN student_attendance sa ON sa.student_id = s.student_id AND sa.attendance_date = $2
                  WHERE s.class_id = $1 AND s.status = 'Active' ${sectionFilter}
-                 ORDER BY s.roll_no NULLS LAST, s.first_name`,
+                 ORDER BY LOWER(TRIM(COALESCE(s.first_name, ''))) ASC, LOWER(TRIM(COALESCE(s.last_name, ''))) ASC, s.student_id ASC`,
                 params
             );
 
@@ -538,7 +538,7 @@ router.get('/students/history', async (req, res) => {
         const students = await pool.query(
             `SELECT s.student_id, s.first_name, s.last_name, s.father_name, s.roll_no, s.admission_no
              FROM students s WHERE s.class_id = $1 AND s.status = 'Active'
-             ORDER BY s.roll_no NULLS LAST, s.first_name`,
+             ORDER BY LOWER(TRIM(COALESCE(s.first_name, ''))) ASC, LOWER(TRIM(COALESCE(s.last_name, ''))) ASC, s.student_id ASC`,
             [class_id]
         );
 

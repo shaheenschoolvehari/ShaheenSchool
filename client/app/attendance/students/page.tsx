@@ -112,6 +112,11 @@ export default function StudentAttendancePage() {
       const res = await fetch(`${API}/attendance/students/daily?${queryParams.toString()}`);
       const data = await res.json();
       const records: StudentRow[] = Array.isArray(data) ? data : (data.records || []);
+      const sortedRecords = [...records].sort((a, b) => {
+        const nameA = [a.first_name, a.last_name].filter(Boolean).join(' ').trim().toLowerCase();
+        const nameB = [b.first_name, b.last_name].filter(Boolean).join(' ').trim().toLowerCase();
+        return nameA.localeCompare(nameB, undefined, { sensitivity: 'base', numeric: true });
+      });
       const hol: HolidayInfo | null = data.holiday || null;
 
       if (data.active_year) {
@@ -119,14 +124,14 @@ export default function StudentAttendancePage() {
       }
 
       setHolidayInfo(hol);
-      setStudents(records);
+      setStudents(sortedRecords);
 
-      const alreadyMarked = records.some(s => s.attendance_id);
+      const alreadyMarked = sortedRecords.some(s => s.attendance_id);
       setIsLocked((alreadyMarked && !canEditLocked) || Boolean(hol?.is_holiday));
 
       const st: Record<number, string> = {};
       const rm: Record<number, string> = {};
-      records.forEach((s: StudentRow) => { st[s.student_id] = s.status || 'Present'; rm[s.student_id] = s.remarks || ''; });
+      sortedRecords.forEach((s: StudentRow) => { st[s.student_id] = s.status || 'Present'; rm[s.student_id] = s.remarks || ''; });
       setStatuses(st); setRemarks(rm);
       if (alreadyMarked && !canEditLocked && !hol?.is_holiday) {
         notify.warning('Attendance is locked for editing.');
