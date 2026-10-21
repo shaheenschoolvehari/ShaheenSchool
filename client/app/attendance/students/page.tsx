@@ -144,14 +144,14 @@ export default function StudentAttendancePage() {
   }, [classId, sectionId, date, canEditLocked, user?.id, user?.employee_id]);
 
   const markAll = (status: string) => {
-    if (isLocked) return;
+    if (isLocked || saving) return;
     const u: Record<number, string> = {};
     students.forEach(s => { u[s.student_id] = status; });
     setStatuses(p => ({ ...p, ...u }));
   };
 
   const saveAttendance = async () => {
-    if (isLocked || !classId || !sectionId || !date || !students.length) return;
+    if (isLocked || saving || !classId || !sectionId || !date || !students.length) return;
     setSaving(true);
     try {
       const API = (process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com").replace(/\/+$/, '');
@@ -172,10 +172,20 @@ export default function StudentAttendancePage() {
         })
       });
       const d = await res.json();
-      if (res.ok) notify.success(`Attendance saved for ${students.length} students!`);
-      else notify.error(d.error || 'Save failed');
-    } catch { notify.error('Server error'); }
-    setSaving(false);
+      if (res.ok) {
+        notify.success(`Attendance saved for ${students.length} students!`);
+        if (!canEditLocked) {
+          setIsLocked(true);
+        }
+        await loadAttendance();
+      } else {
+        notify.error(d.error || 'Save failed');
+      }
+    } catch {
+      notify.error('Server error');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const counts = STATUS_OPTS.reduce((a, s) => {
@@ -244,9 +254,13 @@ export default function StudentAttendancePage() {
         {students.length > 0 && (
           <div className="d-flex flex-wrap gap-2">
             {STATUS_OPTS.map(s => (
-              <button key={s} onClick={() => markAll(s)} disabled={isLocked}
+              <button key={s} onClick={() => markAll(s)} disabled={isLocked || saving}
                 className="btn btn-sm fw-semibold"
-                style={{ background: S_BG[s], border: `1.5px solid ${S_COLOR[s]}`, color: S_COLOR[s], borderRadius: 8, fontSize: '0.78rem', opacity: isLocked ? 0.5 : 1 }}>
+                style={{
+                  background: S_BG[s], border: `1.5px solid ${S_COLOR[s]}`, color: S_COLOR[s], borderRadius: 8, fontSize: '0.78rem',
+                  opacity: (isLocked || saving) ? 0.5 : 1,
+                  cursor: (isLocked || saving) ? 'not-allowed' : 'pointer'
+                }}>
                 <i className={`bi ${S_ICON[s]} me-1`} />All {s}
               </button>
             ))}
@@ -265,6 +279,7 @@ export default function StudentAttendancePage() {
                   <i className="bi bi-mortarboard me-1" style={{ color: 'var(--primary-teal)' }} />Class
                 </label>
                 <select className="form-select rounded-3" value={classId} onChange={e => { setClassId(e.target.value); setSectionId(''); }}
+                  disabled={loading || saving}
                   style={{ border: '1.5px solid #dee2e6', height: 42 }}>
                   <option value="">— Select Class —</option>
                   {classes.map(c => <option key={c.class_id} value={c.class_id}>{c.class_name}</option>)}
@@ -274,7 +289,7 @@ export default function StudentAttendancePage() {
                 <label className="form-label fw-semibold small text-uppercase" style={{ color: 'var(--primary-dark)', letterSpacing: '0.05em' }}>
                   <i className="bi bi-diagram-2 me-1" style={{ color: 'var(--primary-teal)' }} />Section
                 </label>
-                <select className="form-select rounded-3" value={sectionId} onChange={e => setSectionId(e.target.value)} disabled={!classId}
+                <select className="form-select rounded-3" value={sectionId} onChange={e => setSectionId(e.target.value)} disabled={!classId || loading || saving}
                   style={{ border: '1.5px solid #dee2e6', height: 42 }}>
                   <option value="">— Select Section —</option>
                   {classSections.map(s => <option key={s.section_id} value={String(s.section_id)}>{s.section_name}</option>)}
@@ -288,6 +303,7 @@ export default function StudentAttendancePage() {
                   type="date"
                   className="form-control rounded-3"
                   value={date}
+                  disabled={loading || saving}
                   min={activeYear?.start_date || undefined}
                   max={canMarkAdvance ? (activeYear?.end_date || undefined) : (activeYear?.end_date && today > activeYear.end_date ? activeYear.end_date : today)}
                   onChange={e => setDate(e.target.value)}
@@ -296,7 +312,7 @@ export default function StudentAttendancePage() {
               </div>
               <div className="col-md-3">
                 <button className="btn btn-primary-custom w-100 fw-bold rounded-3" style={{ height: 42 }}
-                  onClick={loadAttendance} disabled={!classId || !sectionId || loading}>
+                  onClick={loadAttendance} disabled={!classId || !sectionId || loading || saving}>
                   {loading
                     ? <><span className="spinner-border spinner-border-sm me-2" />Loading...</>
                     : <><i className="bi bi-arrow-repeat me-2" />Load Attendance</>}
@@ -388,17 +404,52 @@ export default function StudentAttendancePage() {
             </div>
 
             {/* ===== TABLE ===== */}
-            <div className="card border-0 shadow-sm rounded-4 overflow-hidden animate__animated animate__fadeInUp">
+            <div className="card border-0 shadow-sm rounded-4 overflow-hidden animate__animated animate__fadeInUp position-relative">
               <div className="card-header bg-white border-0 d-flex justify-content-between align-items-center flex-wrap gap-2 px-3 px-md-4 py-3">
-                <span className="fw-bold" style={{ color: 'var(--primary-dark)' }}>
-                  <i className="bi bi-people-fill me-2" style={{ color: 'var(--accent-orange)' }} />
+                <span className="fw-bold d-flex align-items-center gap-2" style={{ color: 'var(--primary-dark)' }}>
+                  <i className="bi bi-people-fill" style={{ color: 'var(--accent-orange)' }} />
                   {total} Students {cls?.class_name} {sec ? `(${sec.section_name})` : ''}
+                  {saving && (
+                    <span className="badge rounded-pill bg-warning text-dark px-2.5 py-1 small fw-semibold animate__animated animate__pulse animate__infinite">
+                      <i className="bi bi-lock-fill me-1" />
+                      Locked &amp; Saving…
+                    </span>
+                  )}
+                  {isLocked && !saving && (
+                    <span className="badge rounded-pill bg-secondary text-white px-2.5 py-1 small fw-semibold">
+                      <i className="bi bi-lock-fill me-1" />
+                      Locked
+                    </span>
+                  )}
                 </span>
                 <span className="badge" style={{ background: 'rgba(33,94,97,0.1)', color: 'var(--primary-teal)', fontWeight: 600, fontSize: '0.78rem', padding: '5px 12px', borderRadius: 8 }}>
                   <i className="bi bi-calendar3 me-1" />{date ? fmtDate(date) : ''}
                 </span>
               </div>
-              <div className="table-responsive">
+              <div className="table-responsive" style={{
+                position: 'relative',
+                pointerEvents: saving ? 'none' : 'auto',
+                opacity: saving ? 0.65 : 1,
+                transition: 'opacity 0.2s ease, filter 0.2s ease',
+                filter: saving ? 'grayscale(25%)' : 'none'
+              }}>
+                {saving && (
+                  <div style={{
+                    position: 'absolute',
+                    top: 0, left: 0, right: 0, bottom: 0,
+                    zIndex: 20,
+                    background: 'rgba(255, 255, 255, 0.55)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backdropFilter: 'blur(1.5px)'
+                  }}>
+                    <div className="badge bg-dark text-white px-3.5 py-2.5 rounded-pill shadow d-flex align-items-center gap-2" style={{ fontSize: '0.9rem' }}>
+                      <span className="spinner-border spinner-border-sm text-warning" />
+                      <span><i className="bi bi-lock-fill text-warning me-1" />Locked &amp; Saving Attendance... Please wait</span>
+                    </div>
+                  </div>
+                )}
                 <table className="table table-hover align-middle mb-0">
                   <thead style={{ background: 'var(--primary-dark)' }}>
                     <tr>
@@ -413,6 +464,10 @@ export default function StudentAttendancePage() {
                   <tbody>
                     {students.map((s, idx) => {
                       const cur = (statuses[s.student_id] || 'Present') as StatusType;
+                      const fullName = [s.first_name, s.last_name].filter(Boolean).join(' ').trim() || 'Student';
+                      const initial1 = (s.first_name?.[0] || fullName[0] || '?').toUpperCase();
+                      const initial2 = (s.last_name?.[0] || '').toUpperCase();
+                      const rowLocked = isLocked || saving;
                       return (
                         <tr key={s.student_id}
                           style={{
@@ -448,8 +503,11 @@ export default function StudentAttendancePage() {
                             ) : (
                               <div className="btn-group" role="group">
                                 {STATUS_OPTS.map(opt => (
-                                  <button key={opt} type="button" disabled={isLocked}
-                                    onClick={() => setStatuses(p => ({ ...p, [s.student_id]: opt }))}
+                                  <button key={opt} type="button" disabled={rowLocked}
+                                    onClick={() => {
+                                      if (rowLocked) return;
+                                      setStatuses(p => ({ ...p, [s.student_id]: opt }));
+                                    }}
                                     className="btn btn-sm fw-semibold"
                                     style={{
                                       padding: '4px 12px', fontSize: '0.78rem',
@@ -457,7 +515,8 @@ export default function StudentAttendancePage() {
                                       border: `1.5px solid ${cur === opt ? S_COLOR[opt] : '#dee2e6'}`,
                                       color: cur === opt ? '#fff' : S_COLOR[opt],
                                       transition: 'all 0.15s',
-                                      opacity: isLocked && cur !== opt ? 0.5 : 1
+                                      opacity: rowLocked && cur !== opt ? 0.45 : 1,
+                                      cursor: rowLocked ? 'not-allowed' : 'pointer'
                                     }}>
                                     <i className={`bi ${S_ICON[opt]}`} style={{ fontSize: '0.72rem' }} />
                                     <span className="d-none d-sm-inline ms-1">{opt}</span>
@@ -469,10 +528,17 @@ export default function StudentAttendancePage() {
                           <td style={{ padding: '12px 16px', minWidth: 180 }}>
                             <input type="text" className="form-control form-control-sm rounded-3"
                               placeholder={holidayInfo?.is_holiday ? 'School holiday' : 'Add remark…'}
-                              disabled={isLocked || holidayInfo?.is_holiday}
+                              disabled={rowLocked || holidayInfo?.is_holiday}
                               value={remarks[s.student_id] || ''}
-                              onChange={e => setRemarks(p => ({ ...p, [s.student_id]: e.target.value }))}
-                              style={{ border: '1.5px solid #e9ecef', fontSize: '0.82rem' }} />
+                              onChange={e => {
+                                if (rowLocked) return;
+                                setRemarks(p => ({ ...p, [s.student_id]: e.target.value }));
+                              }}
+                              style={{
+                                border: '1.5px solid #e9ecef',
+                                fontSize: '0.82rem',
+                                cursor: (rowLocked || holidayInfo?.is_holiday) ? 'not-allowed' : 'text'
+                              }} />
                           </td>
                         </tr>
                       );
@@ -491,9 +557,16 @@ export default function StudentAttendancePage() {
                 </div>
                 {hasPermission('attendance', 'write') && (
                   <button className="btn fw-bold px-4 rounded-3" onClick={saveAttendance} disabled={saving || isLocked || holidayInfo?.is_holiday}
-                    style={{ background: (isLocked || holidayInfo?.is_holiday) ? '#adb5bd' : 'var(--accent-orange)', color: '#fff', border: 'none', boxShadow: (isLocked || holidayInfo?.is_holiday) ? 'none' : '0 4px 14px rgba(254,127,45,0.4)', transition: 'opacity 0.2s', cursor: (isLocked || holidayInfo?.is_holiday) ? 'not-allowed' : 'pointer' }}>
+                    style={{
+                      background: (isLocked || holidayInfo?.is_holiday || saving) ? '#adb5bd' : 'var(--accent-orange)',
+                      color: '#fff',
+                      border: 'none',
+                      boxShadow: (isLocked || holidayInfo?.is_holiday || saving) ? 'none' : '0 4px 14px rgba(254,127,45,0.4)',
+                      transition: 'opacity 0.2s',
+                      cursor: (isLocked || holidayInfo?.is_holiday || saving) ? 'not-allowed' : 'pointer'
+                    }}>
                     {saving
-                      ? <><span className="spinner-border spinner-border-sm me-2" />Saving…</>
+                      ? <><span className="spinner-border spinner-border-sm me-2" />Locking &amp; Saving…</>
                       : holidayInfo?.is_holiday
                         ? <><i className="bi bi-calendar-check-fill me-2" />Holiday Attendance Exempt</>
                         : isLocked ? <><i className="bi bi-lock-fill me-2" />Locked</> : <><i className="bi bi-cloud-check-fill me-2" />Save Attendance</>}
