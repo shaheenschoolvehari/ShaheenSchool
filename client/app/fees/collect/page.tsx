@@ -102,6 +102,46 @@ function StatusBadge({ status }: { status: string }) {
     return <span className="badge rounded-pill" style={{ backgroundColor: s.bg, fontSize: '0.7rem' }}>{s.label}</span>;
 }
 
+function getClassRank(className?: string, classList?: { class_id: number; class_name: string }[]): number {
+    if (!className) return -999;
+    const name = className.trim().toLowerCase();
+
+    // 1. Direct digit matching (e.g. "Class 10", "Grade 10", "10th", "10")
+    const match = name.match(/(\d+)/);
+    if (match) return parseInt(match[1], 10);
+
+    // 2. Roman numerals
+    if (/\b(xii|12th)\b/.test(name)) return 12;
+    if (/\b(xi|11th)\b/.test(name)) return 11;
+    if (/\b(x|10th)\b/.test(name)) return 10;
+    if (/\b(ix|9th)\b/.test(name)) return 9;
+    if (/\b(viii|8th)\b/.test(name)) return 8;
+    if (/\b(vii|7th)\b/.test(name)) return 7;
+    if (/\b(vi|6th)\b/.test(name)) return 6;
+    if (/\b(v|5th)\b/.test(name)) return 5;
+    if (/\b(iv|4th)\b/.test(name)) return 4;
+    if (/\b(iii|3rd)\b/.test(name)) return 3;
+    if (/\b(ii|2nd)\b/.test(name)) return 2;
+    if (/\b(i|1st)\b/.test(name)) return 1;
+
+    // 3. Early childhood / Pre-primary
+    if (name.includes('prep') || name.includes('pre-primary')) return 0;
+    if (name.includes('kg') || name.includes('kindergarten')) return -1;
+    if (name.includes('nursery')) return -2;
+    if (name.includes('reception')) return -3;
+    if (name.includes('playgroup') || name.includes('pg') || name.includes('toddler')) return -4;
+
+    // 4. Fallback: match from classes array by class_id
+    if (classList && classList.length > 0) {
+        const found = classList.find(c => c.class_name.trim().toLowerCase() === name);
+        if (found) {
+            return -50 + found.class_id;
+        }
+    }
+
+    return -100;
+}
+
 function normalizeSlips(rawSlips: any[]): SlipRow[] {
     return (rawSlips || []).map((s: any) => {
         const isTrusted = Boolean(
@@ -1079,17 +1119,243 @@ export default function CollectFeePage() {
             }
         });
         const allGroups = Array.from(map.values());
+        let result = allGroups;
         if (statusFilter !== 'all') {
             if (statusFilter === 'advanced') {
-                return allGroups.filter(g => g.status === 'advanced' || g.advance_balance > 0);
+                result = allGroups.filter(g => g.status === 'advanced' || g.advance_balance > 0);
             } else if (statusFilter === 'satteled' || statusFilter === 'settled') {
-                return allGroups.filter(g => ['satteled', 'settled'].includes((g.status || '').toLowerCase()));
+                result = allGroups.filter(g => ['satteled', 'settled'].includes((g.status || '').toLowerCase()));
             } else {
-                return allGroups.filter(g => (g.status || '').toLowerCase() === statusFilter);
+                result = allGroups.filter(g => (g.status || '').toLowerCase() === statusFilter);
             }
         }
-        return allGroups;
+
+        // Sort: 1. Higher class to lower (10, 9, 8... 1, Prep, Nursery, Reception)
+        //       2. Section alphabetical sequence (A, B, C...)
+        //       3. Student name alphabetical (A to Z)
+        result.sort((a, b) => {
+            const rankA = getClassRank(a.class_name, classes);
+            const rankB = getClassRank(b.class_name, classes);
+            if (rankA !== rankB) {
+                return rankB - rankA;
+            }
+
+            const secA = (a.section_name || '').trim().toUpperCase();
+            const secB = (b.section_name || '').trim().toUpperCase();
+            if (secA !== secB) {
+                if (!secA) return 1;
+                if (!secB) return -1;
+                return secA.localeCompare(secB, undefined, { sensitivity: 'base' });
+            }
+
+            const nameA = `${a.first_name || ''} ${a.last_name || ''}`.trim().toLowerCase();
+            const nameB = `${b.first_name || ''} ${b.last_name || ''}`.trim().toLowerCase();
+            if (nameA !== nameB) {
+                return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
+            }
+            return (a.admission_no || '').localeCompare(b.admission_no || '');
+        });
+
+        return result;
     })();
+
+    const printVouchersList = () => {
+        if (!groupedFiltered || groupedFiltered.length === 0) {
+            notify.warning('No vouchers found to print.');
+            return;
+        }
+
+        const printWindow = window.open('', '_blank', 'width=1100,height=800,scrollbars=yes,resizable=yes');
+        if (!printWindow) {
+            notify.error('Please allow popups to print report.');
+            return;
+        }
+
+        const dateStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        const timeStr = new Date().toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit' });
+
+        let totalBill = 0;
+        let totalPaid = 0;
+        let totalPending = 0;
+
+        const tableRowsHtml = groupedFiltered.map((g, idx) => {
+            const bill = parseFloat(g.latest_unpaid?.total_amount as any || 0);
+            const paid = g.slips.reduce((sum, s) => sum + parseFloat(s.paid_amount as any || 0), 0);
+            const isSettled = ['satteled', 'settled'].includes((g.status || '').toLowerCase());
+            const pending = isSettled ? 0 : (g.balance || 0);
+
+            totalBill += bill;
+            totalPaid += paid;
+            totalPending += pending;
+
+            const slipDesc = g.slips.length === 1
+                ? `${MONTHS[(g.slips[0].month ?? 1) - 1]?.slice(0, 3)} ${g.slips[0].year}`
+                : `${g.slips.length} months (${g.slips.map(s => MONTHS[(s.month ?? 1) - 1]?.slice(0, 3)).filter(Boolean).join(', ')})`;
+
+            const studentDisplayName = `${g.first_name || ''} ${g.last_name || ''}`.trim();
+            const classSec = `${g.class_name || '—'}${g.section_name ? ` (${g.section_name})` : ''}`;
+
+            const statusColors: Record<string, { bg: string; text: string; label: string }> = {
+                paid: { bg: '#e8f5e9', text: '#198754', label: 'Paid' },
+                partial: { bg: '#fff3cd', text: '#d97706', label: 'Partial' },
+                unpaid: { bg: '#fde8e8', text: '#dc3545', label: 'Unpaid' },
+                satteled: { bg: '#e0f2fe', text: '#0284c7', label: 'Settled' },
+                settled: { bg: '#e0f2fe', text: '#0284c7', label: 'Settled' },
+                advanced: { bg: '#ede9fe', text: '#7c3aed', label: 'Advanced' }
+            };
+            const stBadge = statusColors[(g.status || '').toLowerCase()] || { bg: '#f3f4f6', text: '#4b5563', label: g.status };
+
+            const familyBadge = g.is_family_slip ? '<span style="background:#e8f5f5;color:#215E61;padding:1px 4px;border-radius:3px;font-size:7pt;margin-left:4px;font-weight:bold;">Family</span>' : '';
+            const trustedBadge = g.is_trusted ? '<span style="background:#e0f2fe;color:#0369a1;padding:1px 4px;border-radius:3px;font-size:7pt;margin-left:4px;font-weight:bold;">Trusted</span>' : '';
+
+            return `
+                <tr style="border-bottom: 1px solid #e5e7eb; font-size: 8.5pt;">
+                    <td style="text-align: center; padding: 6px 4px; color: #555;">${idx + 1}</td>
+                    <td style="padding: 6px 8px; font-weight: 600; color: #111;">
+                        ${studentDisplayName} ${familyBadge} ${trustedBadge}
+                        <div style="font-size: 7.5pt; color: #666; font-weight: normal;">Adm: ${g.admission_no || '—'}${g.family_id ? ` · Fam: ${g.family_id}` : ''}</div>
+                    </td>
+                    <td style="padding: 6px 8px; font-size: 8pt; color: #333;">
+                        ${g.father_name || '—'}
+                        ${g.father_phone ? `<div style="font-size: 7.5pt; color: #666;">${g.father_phone}</div>` : ''}
+                    </td>
+                    <td style="text-align: center; padding: 6px 6px; font-weight: bold; color: #215E61; font-size: 8.5pt;">
+                        ${classSec}
+                    </td>
+                    <td style="text-align: center; padding: 6px 6px; font-size: 8pt; color: #555;">
+                        ${slipDesc}
+                    </td>
+                    <td style="text-align: right; padding: 6px 8px; font-weight: 600; color: #111;">
+                        PKR ${bill.toLocaleString('en-PK')}
+                    </td>
+                    <td style="text-align: right; padding: 6px 8px; font-weight: 600; color: #198754;">
+                        ${paid > 0 ? `PKR ${paid.toLocaleString('en-PK')}` : '—'}
+                    </td>
+                    <td style="text-align: right; padding: 6px 8px; font-weight: 700; color: ${isSettled ? '#0284c7' : pending > 0 ? '#dc3545' : '#198754'};">
+                        ${isSettled ? '0 (Settled)' : pending > 0 ? `PKR ${pending.toLocaleString('en-PK')}` : '0 (Clear)'}
+                    </td>
+                    <td style="text-align: center; padding: 6px 6px;">
+                        <span style="background:${stBadge.bg};color:${stBadge.text};padding:2px 6px;border-radius:10px;font-size:7.5pt;font-weight:bold;display:inline-block;">
+                            ${stBadge.label}
+                        </span>
+                        ${g.advance_balance > 0 ? `<div style="font-size:7pt;color:#4338ca;margin-top:2px;font-weight:bold;">+PKR ${Number(g.advance_balance).toLocaleString('en-PK')} Adv</div>` : ''}
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        const selectedClassName = selectedClass ? (classes.find(c => c.class_id.toString() === selectedClass)?.class_name || selectedClass) : 'All Classes';
+
+        const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8" />
+                <title>Fee Vouchers List - ${school.school_name || 'School'}</title>
+                <style>
+                    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 8mm 8mm; color: #111; background: #fff; }
+                    .header { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 8px; }
+                    .logo { width: 55px; height: 55px; object-fit: contain; }
+                    .school-name { font-size: 16pt; font-weight: bold; text-transform: uppercase; color: #215E61; text-align: center; margin: 0; line-height: 1.2; }
+                    .school-sub { font-size: 8.5pt; text-align: center; margin-top: 3px; color: #555; }
+                    .title-bar { background-color: #215E61; color: #fff; text-align: center; padding: 6px 10px; font-size: 10.5pt; font-weight: bold; text-transform: uppercase; margin: 8px 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; border-radius: 4px; letter-spacing: 0.5px; }
+                    .meta-info { display: flex; justify-content: space-between; flex-wrap: wrap; font-size: 8.5pt; margin-bottom: 8px; border-bottom: 1px solid #ddd; padding-bottom: 5px; color: #333; }
+                    .meta-item { margin-right: 15px; }
+                    table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+                    th { background-color: #f1f5f9; border: 1px solid #cbd5e1; padding: 7px 6px; font-weight: 700; text-align: center; color: #1e293b; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                    td { border: 1px solid #e2e8f0; }
+                    .totals-row td { background-color: #f8fafc; font-weight: bold; border-top: 2px solid #215E61; padding: 8px 6px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                    .action-bar { margin-bottom: 10px; display: flex; justify-content: flex-end; gap: 8px; }
+                    .btn-print { background: #215E61; color: #fff; border: none; padding: 6px 14px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 9pt; }
+                    .btn-close { background: #e5e7eb; color: #374151; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 9pt; }
+                    @media print {
+                        .action-bar { display: none !important; }
+                        body { margin: 5mm; }
+                        @page { size: A4 landscape; margin: 8mm; }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="action-bar">
+                    <button class="btn-print" onclick="window.print()">🖨️ Print List</button>
+                    <button class="btn-close" onclick="window.close()">Close</button>
+                </div>
+                <div class="header">
+                    ${school.school_logo_url ? `<img src="${school.school_logo_url}" class="logo" alt="Logo" />` : ''}
+                    <div>
+                        <h1 class="school-name">${school.school_name || 'Smart School System'}</h1>
+                        <div class="school-sub">${school.school_address || ''} ${school.phone_number ? `| Ph: ${school.phone_number}` : ''}</div>
+                    </div>
+                </div>
+                <div class="title-bar">
+                    FEE VOUCHERS LIST / COLLECTION REPORT ${statusFilter !== 'all' ? `(${statusFilter.toUpperCase()})` : ''}
+                </div>
+                <div class="meta-info">
+                    <div>
+                        <span class="meta-item"><strong>Academic Session:</strong> ${activeYear?.year_name || year}</span>
+                        <span class="meta-item"><strong>Class:</strong> ${selectedClassName}</span>
+                        <span class="meta-item"><strong>Status:</strong> ${statusFilter.toUpperCase()}</span>
+                        ${search ? `<span class="meta-item"><strong>Search:</strong> "${search}"</span>` : ''}
+                    </div>
+                    <div>
+                        <span class="meta-item"><strong>Total Records:</strong> ${groupedFiltered.length}</span>
+                        <span class="meta-item"><strong>Generated:</strong> ${dateStr} ${timeStr}</span>
+                    </div>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 4%;">Sr.#</th>
+                            <th style="width: 22%; text-align: left;">Student / Family</th>
+                            <th style="width: 17%; text-align: left;">Father Name & Phone</th>
+                            <th style="width: 10%;">Class (Sec)</th>
+                            <th style="width: 12%;">Month / Slips</th>
+                            <th style="width: 11%; text-align: right;">Bill (PKR)</th>
+                            <th style="width: 11%; text-align: right;">Paid (PKR)</th>
+                            <th style="width: 11%; text-align: right;">Pending (PKR)</th>
+                            <th style="width: 8%;">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tableRowsHtml}
+                        <tr class="totals-row">
+                            <td colspan="5" style="text-align: right; padding-right: 12px; font-weight: bold; color: #215E61;">
+                                TOTAL SUMMARY (${groupedFiltered.length} Vouchers):
+                            </td>
+                            <td style="text-align: right; font-weight: bold; color: #111;">
+                                PKR ${totalBill.toLocaleString('en-PK')}
+                            </td>
+                            <td style="text-align: right; font-weight: bold; color: #198754;">
+                                PKR ${totalPaid.toLocaleString('en-PK')}
+                            </td>
+                            <td style="text-align: right; font-weight: bold; color: ${totalPending > 0 ? '#dc3545' : '#198754'};">
+                                PKR ${totalPending.toLocaleString('en-PK')}
+                            </td>
+                            <td style="text-align: center; font-size: 8pt; color: #555;">
+                                —
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <script>
+                    window.onload = function() {
+                        var img = document.querySelector('.logo');
+                        if (img && !img.complete) {
+                            img.onload = function() { window.print(); };
+                            img.onerror = function() { window.print(); };
+                        } else {
+                            setTimeout(function() { window.print(); }, 250);
+                        }
+                    };
+                </script>
+            </body>
+            </html>
+        `;
+
+        printWindow.document.open();
+        printWindow.document.write(html);
+        printWindow.document.close();
+    };
 
     const totalDue = stats ? stats.total_amount - stats.paid_amount : 0;
     const collectionPct = stats && stats.total_amount > 0 ? Math.round((stats.paid_amount / stats.total_amount) * 100) : 0;
@@ -1275,14 +1541,26 @@ export default function CollectFeePage() {
                                 </span>
                             )}
                         </h6>
-                        <div style={{ width: 240 }}>
-                            <div className="input-group input-group-sm">
-                                <span className="input-group-text bg-white"><i className="bi bi-search text-muted"></i></span>
-                                <input type="text" className="form-control border-start-0"
-                                    placeholder="Search by name or adm no..."
-                                    value={search} onChange={e => setSearch(e.target.value)} />
-                                {search && <button className="btn btn-outline-secondary btn-sm" onClick={() => setSearch('')}><i className="bi bi-x"></i></button>}
+                        <div className="d-flex align-items-center gap-2">
+                            <div style={{ width: 220 }}>
+                                <div className="input-group input-group-sm">
+                                    <span className="input-group-text bg-white"><i className="bi bi-search text-muted"></i></span>
+                                    <input type="text" className="form-control border-start-0"
+                                        placeholder="Search by name or adm no..."
+                                        value={search} onChange={e => setSearch(e.target.value)} />
+                                    {search && <button className="btn btn-outline-secondary btn-sm" onClick={() => setSearch('')}><i className="bi bi-x"></i></button>}
+                                </div>
                             </div>
+                            <button
+                                type="button"
+                                className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1 shadow-sm px-2.5 py-1"
+                                onClick={printVouchersList}
+                                title="Print Vouchers List"
+                                style={{ borderRadius: 6, height: 31, borderColor: '#dee2e6', background: '#fff' }}
+                            >
+                                <i className="bi bi-printer-fill" style={{ color: 'var(--primary-teal)', fontSize: '0.9rem' }}></i>
+                                <span className="d-none d-sm-inline small fw-semibold" style={{ color: 'var(--primary-dark)' }}>Print</span>
+                            </button>
                         </div>
                     </div>
                     <div className="card-body p-0">
