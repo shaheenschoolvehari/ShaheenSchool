@@ -70,14 +70,6 @@ export default function StudentAttendancePage() {
 
         if (Array.isArray(classesRes?.classes)) {
           setClasses(classesRes.classes);
-          if (classesRes.classes.length > 0) {
-            setClassId(prev => {
-              if (prev && classesRes.classes.some((c: ClassItem) => String(c.class_id) === prev)) {
-                return prev;
-              }
-              return String(classesRes.classes[0].class_id);
-            });
-          }
         }
         if (Array.isArray(classesRes?.sections)) {
           setSections(classesRes.sections);
@@ -201,7 +193,7 @@ export default function StudentAttendancePage() {
 
   const classSections = sections.filter(s => String(s.class_id) === String(classId));
 
-  // Auto-select section if only one exists or auto-select first section when class changes
+  // Ensure selected section belongs to current class
   useEffect(() => {
     if (!classId || classSections.length === 0) {
       setSectionId('');
@@ -210,7 +202,7 @@ export default function StudentAttendancePage() {
 
     const currentValid = classSections.some(s => String(s.section_id) === sectionId);
     if (!currentValid) {
-      setSectionId(String(classSections[0].section_id));
+      setSectionId('');
     }
   }, [classId, classSections, sectionId]);
 
@@ -278,10 +270,20 @@ export default function StudentAttendancePage() {
                 <label className="form-label fw-semibold small text-uppercase" style={{ color: 'var(--primary-dark)', letterSpacing: '0.05em' }}>
                   <i className="bi bi-mortarboard me-1" style={{ color: 'var(--primary-teal)' }} />Class
                 </label>
-                <select className="form-select rounded-3" value={classId} onChange={e => { setClassId(e.target.value); setSectionId(''); }}
+                <select className="form-select rounded-3" value={classId}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setClassId(val);
+                    setSectionId('');
+                    setStudents([]);
+                    setStatuses({});
+                    setRemarks({});
+                    setHolidayInfo(null);
+                    setIsLocked(false);
+                  }}
                   disabled={loading || saving}
                   style={{ border: '1.5px solid #dee2e6', height: 42 }}>
-                  <option value="">— Select Class —</option>
+                  <option value="">Select Class</option>
                   {classes.map(c => <option key={c.class_id} value={c.class_id}>{c.class_name}</option>)}
                 </select>
               </div>
@@ -289,9 +291,21 @@ export default function StudentAttendancePage() {
                 <label className="form-label fw-semibold small text-uppercase" style={{ color: 'var(--primary-dark)', letterSpacing: '0.05em' }}>
                   <i className="bi bi-diagram-2 me-1" style={{ color: 'var(--primary-teal)' }} />Section
                 </label>
-                <select className="form-select rounded-3" value={sectionId} onChange={e => setSectionId(e.target.value)} disabled={!classId || loading || saving}
+                <select className="form-select rounded-3" value={sectionId}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setSectionId(val);
+                    if (!val) {
+                      setStudents([]);
+                      setStatuses({});
+                      setRemarks({});
+                      setHolidayInfo(null);
+                      setIsLocked(false);
+                    }
+                  }}
+                  disabled={!classId || loading || saving}
                   style={{ border: '1.5px solid #dee2e6', height: 42 }}>
-                  <option value="">— Select Section —</option>
+                  <option value="">Select Section</option>
                   {classSections.map(s => <option key={s.section_id} value={String(s.section_id)}>{s.section_name}</option>)}
                 </select>
               </div>
