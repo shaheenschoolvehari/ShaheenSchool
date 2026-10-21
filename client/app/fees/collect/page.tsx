@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { notify } from '@/app/utils/notify';
 
@@ -7,6 +7,21 @@ const API = process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.c
 
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+interface AccountGroup {
+    key: string; student_id: number; first_name: string; last_name: string;
+    admission_no: string; father_name: string | null; father_phone: string | null;
+    class_name: string; section_name?: string; family_id: string | null; is_family_slip: boolean;
+    family_members?: any[];
+    latest_slip: SlipRow;
+    latest_unpaid: SlipRow;
+    latest_paid: SlipRow | null;
+    has_payments: boolean;
+    balance: number;
+    is_trusted: boolean;
+    advance_balance: number;
+    slips: SlipRow[]; status: 'paid' | 'partial' | 'unpaid' | 'satteled' | 'advanced';
+}
 
 interface SlipRow {
     category?: string;
@@ -94,8 +109,8 @@ function StatusBadge({ status }: { status: string }) {
         advanced: { bg: '#6366f1', label: 'Advanced' },
         advance: { bg: '#6366f1', label: 'Advanced' },
         paid: { bg: '#198754', label: 'Paid' },
-        satteled: { bg: '#0891b2', label: 'Settled' },
-        settled: { bg: '#0891b2', label: 'Settled' },
+        satteled: { bg: '#0891b2', label: 'Settled / Trusted' },
+        settled: { bg: '#0891b2', label: 'Settled / Trusted' },
         partial: { bg: '#fd7e14', label: 'Partial' },
         unpaid: { bg: '#dc3545', label: 'Unpaid' },
     };
@@ -147,8 +162,8 @@ function normalizeSlips(rawSlips: any[]): SlipRow[] {
     return (rawSlips || []).map((s: any) => {
         const isTrusted = Boolean(
             s.is_trusted ||
-            (s.category && s.category.trim().toLowerCase() === 'trusted') ||
-            (s.family_members && s.family_members.length > 0 && s.family_members.every((m: any) => (m.category || '').toLowerCase() === 'trusted'))
+            (s.category && s.category.trim().toLowerCase().includes('trust')) ||
+            (s.family_members && s.family_members.length > 0 && s.family_members.every((m: any) => (m.category || '').toLowerCase().includes('trust')))
         );
 
         if (isTrusted) {
@@ -168,9 +183,9 @@ function normalizeSlips(rawSlips: any[]): SlipRow[] {
 
             const paid = parseFloat(s.paid_amount as any || 0);
             const status: 'paid' | 'partial' | 'unpaid' | 'satteled' = 
-                nonTuitionTotal <= 0 
+                (nonTuitionTotal <= 0 || paid >= nonTuitionTotal) 
                     ? 'satteled' 
-                    : (paid >= nonTuitionTotal ? 'paid' : (paid > 0 ? 'partial' : 'unpaid'));
+                    : (paid > 0 ? 'partial' : 'unpaid');
 
             return {
                 ...s,
@@ -970,18 +985,8 @@ export default function CollectFeePage() {
     };
 
     // Filtered slips
+    // Filtered slips (Search filter across slips)
     const filtered = slips.filter(s => {
-        if (statusFilter !== 'all') {
-            const st = (s.status || '').toLowerCase();
-            const advBal = parseFloat((s as any).advance_balance || 0);
-            if (statusFilter === 'advanced') {
-                if (st !== 'advanced' && !(advBal > 0)) return false;
-            } else if (statusFilter === 'satteled' || statusFilter === 'settled') {
-                if (!['satteled', 'settled'].includes(st)) return false;
-            } else if (st !== statusFilter) {
-                return false;
-            }
-        }
         if (search && search.trim()) {
             const qTokens = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
             if (qTokens.length === 0) return true;
@@ -1008,24 +1013,11 @@ export default function CollectFeePage() {
         return true;
     });
 
-    // Group filtered slips by student/family one row per student
+    // Group slips by student/family one row per student
     // NOTE: Each slip already embeds previous months' unpaid balance as "Previous Balance" line item.
     //       So we NEVER sum across slips we only look at the LATEST slip per student.
-    const groupedFiltered = (() => {
-        const map = new Map<string, {
-            key: string; student_id: number; first_name: string; last_name: string;
-            admission_no: string; father_name: string | null; father_phone: string | null;
-            class_name: string; section_name?: string; family_id: string | null; is_family_slip: boolean;
-            family_members?: any[];
-            latest_slip: SlipRow;      // the most recent slip (highest year then month)
-            latest_unpaid: SlipRow;    // most recent unpaid/partial slip collect THIS one
-            latest_paid: SlipRow | null;  // most recent slip with paid_amount > 0 (for Reverse)
-            has_payments: boolean;     // any slip in this group has been paid at least partially
-            balance: number;           // balance from latest_unpaid only
-            is_trusted: boolean;
-            advance_balance: number;
-            slips: SlipRow[]; status: 'paid' | 'partial' | 'unpaid' | 'satteled' | 'advanced';
-        }>();
+    const allGroups: AccountGroup[] = (() => {
+        const map = new Map<string, AccountGroup>();
         filtered.forEach(slip => {
             const key = (slip.is_family_slip && slip.family_id) ? `fam_${slip.family_id}` : `stu_${slip.student_id}`;
             if (!map.has(key)) {
@@ -1077,9 +1069,10 @@ export default function CollectFeePage() {
             }
 
             const isTrustedGroup = Boolean(
-                (g.family_members && g.family_members.length > 0 && g.family_members.every((m: any) => (m.category || '').toLowerCase() === 'trusted')) ||
-                ((g.latest_slip?.category || '').toLowerCase() === 'trusted') ||
-                ((g.latest_unpaid as any)?.is_trusted)
+                (g.family_members && g.family_members.length > 0 && g.family_members.every((m: any) => (m.category || '').toLowerCase().includes('trust'))) ||
+                ((g.latest_slip?.category || '').toLowerCase().includes('trust')) ||
+                ((g.latest_unpaid as any)?.is_trusted) ||
+                g.is_trusted
             );
             g.is_trusted = isTrustedGroup;
 
@@ -1099,36 +1092,52 @@ export default function CollectFeePage() {
                 const tot = parseFloat(g.latest_unpaid.total_amount as any || 0);
                 const paid = parseFloat(g.latest_unpaid.paid_amount as any || 0);
                 g.balance = Math.max(0, tot - paid);
-                g.status = g.balance <= 0 ? (hasAdvance ? 'advanced' : (isTrustedGroup ? 'satteled' : 'paid')) : (paid > 0 ? 'partial' : 'unpaid');
             } else {
                 g.latest_unpaid = g.latest_slip;
                 const tot = parseFloat(g.latest_slip.total_amount as any || 0);
                 const paid = parseFloat(g.latest_slip.paid_amount as any || 0);
                 g.balance = Math.max(0, tot - paid);
-                if (g.balance > 0) {
-                    g.status = paid > 0 ? 'partial' : 'unpaid';
-                } else {
-                    if (hasAdvance) {
-                        g.status = 'advanced';
-                    } else if (isTrustedGroup) {
-                        g.status = 'satteled';
-                    } else if (['satteled', 'settled'].includes((g.latest_slip.status || '').toLowerCase())) {
-                        g.status = 'satteled';
-                    } else {
-                        g.status = 'paid';
-                    }
-                }
+            }
+
+            const isSettledStatus = ['satteled', 'settled'].includes((g.latest_slip?.status || '').toLowerCase()) ||
+                ['satteled', 'settled'].includes((g.latest_unpaid?.status || '').toLowerCase());
+
+            // Primary status categorization
+            if (isTrustedGroup || isSettledStatus) {
+                g.status = 'satteled';
+            } else if (hasAdvance && g.balance <= 0) {
+                g.status = 'advanced';
+            } else if (g.balance <= 0) {
+                g.status = 'paid';
+            } else if (g.has_payments || (unpaid.length > 0 && parseFloat(g.latest_unpaid.paid_amount as any || 0) > 0)) {
+                g.status = 'partial';
+            } else {
+                g.status = 'unpaid';
             }
         });
-        const allGroups = Array.from(map.values());
-        let result = allGroups;
+        return Array.from(map.values());
+    })();
+
+    // Stats breakdown calculated from all loaded accounts
+    const statsBreakdown = useMemo(() => {
+        const total = allGroups.length;
+        const settled = allGroups.filter(g => ['satteled', 'settled'].includes((g.status || '').toLowerCase()) || g.is_trusted).length;
+        const paid = allGroups.filter(g => g.status === 'paid' && !g.is_trusted && !['satteled', 'settled'].includes((g.status || '').toLowerCase())).length;
+        const partial = allGroups.filter(g => g.status === 'partial' && !g.is_trusted && !['satteled', 'settled'].includes((g.status || '').toLowerCase())).length;
+        const unpaid = allGroups.filter(g => g.status === 'unpaid' && !g.is_trusted && !['satteled', 'settled'].includes((g.status || '').toLowerCase())).length;
+        const advanced = allGroups.filter(g => g.status === 'advanced' || g.advance_balance > 0).length;
+        return { total, settled, paid, partial, unpaid, advanced };
+    }, [allGroups]);
+
+    const groupedFiltered: AccountGroup[] = useMemo(() => {
+        let result: AccountGroup[] = [...allGroups];
         if (statusFilter !== 'all') {
             if (statusFilter === 'advanced') {
                 result = allGroups.filter(g => g.status === 'advanced' || g.advance_balance > 0);
             } else if (statusFilter === 'satteled' || statusFilter === 'settled') {
-                result = allGroups.filter(g => ['satteled', 'settled'].includes((g.status || '').toLowerCase()));
+                result = allGroups.filter(g => ['satteled', 'settled'].includes((g.status || '').toLowerCase()) || g.is_trusted);
             } else {
-                result = allGroups.filter(g => (g.status || '').toLowerCase() === statusFilter);
+                result = allGroups.filter(g => (g.status || '').toLowerCase() === statusFilter && !g.is_trusted && !['satteled', 'settled'].includes((g.status || '').toLowerCase()));
             }
         }
 
@@ -1159,7 +1168,7 @@ export default function CollectFeePage() {
         });
 
         return result;
-    })();
+    }, [allGroups, statusFilter, classes]);
 
     const printVouchersList = () => {
         if (!groupedFiltered || groupedFiltered.length === 0) {
@@ -1201,8 +1210,8 @@ export default function CollectFeePage() {
                 paid: { bg: '#e8f5e9', text: '#198754', label: 'Paid' },
                 partial: { bg: '#fff3cd', text: '#d97706', label: 'Partial' },
                 unpaid: { bg: '#fde8e8', text: '#dc3545', label: 'Unpaid' },
-                satteled: { bg: '#e0f2fe', text: '#0284c7', label: 'Settled' },
-                settled: { bg: '#e0f2fe', text: '#0284c7', label: 'Settled' },
+                satteled: { bg: '#e0f2fe', text: '#0284c7', label: 'Settled / Trusted' },
+                settled: { bg: '#e0f2fe', text: '#0284c7', label: 'Settled / Trusted' },
                 advanced: { bg: '#ede9fe', text: '#7c3aed', label: 'Advanced' }
             };
             const stBadge = statusColors[(g.status || '').toLowerCase()] || { bg: '#f3f4f6', text: '#4b5563', label: g.status };
@@ -1359,8 +1368,8 @@ export default function CollectFeePage() {
         printWindow.document.close();
     };
 
-    const totalDue = stats ? stats.total_amount - stats.paid_amount : 0;
-    const collectionPct = stats && stats.total_amount > 0 ? Math.round((stats.paid_amount / stats.total_amount) * 100) : 0;
+    const totalDue = stats ? Math.max(0, stats.total_amount - stats.paid_amount) : 0;
+    const collectionPct = stats && stats.total_amount > 0 ? Math.min(100, Math.max(0, Math.round((stats.paid_amount / stats.total_amount) * 100))) : 0;
 
     const isModalSlipSettled = activeSlip ? (
         parseFloat(activeSlip.total_amount as any || 0) <= 0
@@ -1480,10 +1489,10 @@ export default function CollectFeePage() {
             {stats && loaded && (
                 <div className="row g-3 mb-4">
                     {[
-                        { label: 'Total Vouchers', value: slips.length, icon: 'bi-receipt', color: 'var(--primary-teal)', sub: `All months · ${year}` },
-                        { label: 'Total Amount', value: fmt(stats.total_amount), icon: 'bi-currency-exchange', color: 'var(--primary-dark)', sub: `${stats.total_students} student(s)` },
+                        { label: 'Total Vouchers', value: allGroups.length, icon: 'bi-receipt', color: 'var(--primary-teal)', sub: `${slips.length} slips · ${year}` },
+                        { label: 'Total Amount', value: fmt(stats.total_amount), icon: 'bi-currency-exchange', color: 'var(--primary-dark)', sub: `${statsBreakdown.total} student(s)` },
                         { label: 'Collected', value: fmt(stats.paid_amount), icon: 'bi-check-circle-fill', color: '#198754', sub: `${collectionPct}% of total` },
-                        { label: 'Pending', value: fmt(totalDue), icon: 'bi-hourglass-split', color: '#dc3545', sub: `${stats.unpaid_count} unpaid · ${stats.partial_count} partial${stats.settled_count ? ` · ${stats.settled_count} settled` : ''}` },
+                        { label: 'Pending', value: fmt(totalDue), icon: 'bi-hourglass-split', color: '#dc3545', sub: `${statsBreakdown.unpaid} unpaid · ${statsBreakdown.partial} partial${statsBreakdown.settled ? ` · ${statsBreakdown.settled} settled/trusted` : ''}` },
                     ].map((s, i) => (
                         <div className="col-md-3" key={i}>
                             <div className="card border-0 shadow-sm h-100" style={{ borderLeft: `4px solid ${s.color}` }}>
@@ -1507,19 +1516,35 @@ export default function CollectFeePage() {
                         <div className="card border-0 shadow-sm">
                             <div className="card-body py-2 px-4">
                                 <div className="d-flex justify-content-between small text-muted mb-1">
-                                    <span>Collection Progress</span>
-                                    <span className="fw-bold" style={{ color: 'var(--primary-teal)' }}>{collectionPct}%</span>
+                                    <span className="fw-semibold">Collection Progress</span>
+                                    <span className="fw-bold" style={{ color: 'var(--primary-teal)' }}>
+                                        {collectionPct}% <span className="fw-normal text-muted" style={{ fontSize: '0.72rem' }}>({fmt(stats.paid_amount)} / {fmt(stats.total_amount)})</span>
+                                    </span>
                                 </div>
-                                <div className="progress" style={{ height: 8, borderRadius: 8 }}>
-                                    <div className="progress-bar" style={{ width: `${collectionPct}%`, backgroundColor: 'var(--primary-teal)', borderRadius: 8 }} />
+                                <div className="progress" style={{ height: 10, borderRadius: 8, backgroundColor: '#e9ecef', overflow: 'hidden' }}>
+                                    <div
+                                        className="progress-bar bg-success"
+                                        style={{ width: `${statsBreakdown.total > 0 ? (statsBreakdown.paid / statsBreakdown.total) * 100 : 0}%` }}
+                                        title={`${statsBreakdown.paid} Paid`}
+                                    />
+                                    <div
+                                        className="progress-bar"
+                                        style={{ width: `${statsBreakdown.total > 0 ? (statsBreakdown.partial / statsBreakdown.total) * 100 : 0}%`, backgroundColor: '#fd7e14' }}
+                                        title={`${statsBreakdown.partial} Partial`}
+                                    />
+                                    <div
+                                        className="progress-bar"
+                                        style={{ width: `${statsBreakdown.total > 0 ? (statsBreakdown.settled / statsBreakdown.total) * 100 : 0}%`, backgroundColor: '#0891b2' }}
+                                        title={`${statsBreakdown.settled} Settled / Trusted`}
+                                    />
                                 </div>
-                                <div className="d-flex gap-3 mt-2 flex-wrap" style={{ fontSize: '0.72rem', color: '#888' }}>
-                                    <span><span className="badge bg-success me-1">●</span>{stats.paid_count} Paid</span>
-                                    <span><span className="badge me-1" style={{ backgroundColor: '#fd7e14' }}>●</span>{stats.partial_count} Partial</span>
-                                    <span><span className="badge bg-danger me-1">●</span>{stats.unpaid_count} Unpaid</span>
-                                    <span><span className="badge me-1" style={{ backgroundColor: '#0891b2' }}>●</span>{stats.settled_count ?? groupedFiltered.filter(g => ['satteled', 'settled'].includes((g.status || '').toLowerCase()) || g.is_trusted).length} Settled / Trusted</span>
-                                    {Number(stats.advance_count || 0) > 0 && (
-                                        <span><span className="badge me-1" style={{ backgroundColor: '#6366f1' }}>●</span>{stats.advance_count} Advanced (PKR {Number(stats.advance_total || 0).toLocaleString('en-PK')})</span>
+                                <div className="d-flex gap-3 mt-2 flex-wrap" style={{ fontSize: '0.75rem', color: '#666' }}>
+                                    <span><span className="badge bg-success me-1">●</span><strong>{statsBreakdown.paid}</strong> Paid</span>
+                                    <span><span className="badge me-1" style={{ backgroundColor: '#fd7e14' }}>●</span><strong>{statsBreakdown.partial}</strong> Partial</span>
+                                    <span><span className="badge bg-danger me-1">●</span><strong>{statsBreakdown.unpaid}</strong> Unpaid</span>
+                                    <span><span className="badge me-1" style={{ backgroundColor: '#0891b2' }}>●</span><strong>{statsBreakdown.settled}</strong> Settled / Trusted</span>
+                                    {statsBreakdown.advanced > 0 && (
+                                        <span><span className="badge me-1" style={{ backgroundColor: '#6366f1' }}>●</span><strong>{statsBreakdown.advanced}</strong> Advanced (PKR {Number(stats.advance_total || 0).toLocaleString('en-PK')})</span>
                                     )}
                                 </div>
                             </div>

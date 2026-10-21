@@ -1111,8 +1111,8 @@ router.get('/', async (req, res) => {
             } else {
                 r.family_members = [];
             }
-            const isSingleTrusted = (r.category || '').trim().toLowerCase() === 'trusted';
-            const isFamilyAllTrusted = r.family_members.length > 0 && r.family_members.every(m => (m.category || '').trim().toLowerCase() === 'trusted');
+            const isSingleTrusted = (r.category || '').toLowerCase().includes('trust');
+            const isFamilyAllTrusted = r.family_members.length > 0 && r.family_members.every(m => (m.category || '').toLowerCase().includes('trust'));
             r.is_trusted = isSingleTrusted || isFamilyAllTrusted;
 
             if (r.is_trusted) {
@@ -1126,10 +1126,10 @@ router.get('/', async (req, res) => {
                 const payableTotal = nonTuitionHeads.reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
                 r.total_amount = payableTotal;
                 const slipPaid = parseFloat(r.paid_amount || 0);
-                if (payableTotal <= 0) {
+                if (payableTotal <= 0 || slipPaid >= payableTotal) {
                     r.status = 'satteled';
                 } else {
-                    r.status = slipPaid >= payableTotal ? 'paid' : slipPaid > 0 ? 'partial' : 'unpaid';
+                    r.status = slipPaid > 0 ? 'partial' : 'unpaid';
                 }
             }
         });
@@ -1140,8 +1140,12 @@ router.get('/', async (req, res) => {
 
         if (month) {
             // Single month query
-            const settledRows = result.rows.filter(r => ['satteled', 'settled'].includes((r.status || '').toLowerCase()) || Boolean(r.is_trusted && parseFloat(r.total_amount || 0) <= 0));
-            const payableRows = result.rows.filter(r => !['satteled', 'settled'].includes((r.status || '').toLowerCase()) && !(r.is_trusted && parseFloat(r.total_amount || 0) <= 0));
+            const isSettledRow = r => {
+                const isTrust = Boolean(r.is_trusted || (r.category && r.category.trim().toLowerCase().includes('trust')));
+                return ['satteled', 'settled'].includes((r.status || '').toLowerCase()) || isTrust;
+            };
+            const settledRows = result.rows.filter(isSettledRow);
+            const payableRows = result.rows.filter(r => !isSettledRow(r));
             stats = {
                 total_students: result.rows.length,
                 total_amount: payableRows.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0),
@@ -1174,16 +1178,21 @@ router.get('/', async (req, res) => {
             accountMap.forEach(slips => {
                 slips.sort((a, b) => (a.year - b.year) || (a.month - b.month));
                 const latestSlip = slips[slips.length - 1];
-                const isSettled = ['satteled', 'settled'].includes((latestSlip.status || '').toLowerCase()) || Boolean(latestSlip.is_trusted && parseFloat(latestSlip.total_amount || 0) <= 0);
+                const isTrustedAccount = Boolean(
+                    latestSlip.is_trusted ||
+                    (latestSlip.category && latestSlip.category.trim().toLowerCase().includes('trust')) ||
+                    (latestSlip.family_members && latestSlip.family_members.length > 0 && latestSlip.family_members.every(m => (m.category || '').toLowerCase().includes('trust')))
+                );
+                const isExplicitSettled = ['satteled', 'settled'].includes((latestSlip.status || '').toLowerCase());
 
                 const acctPaid = slips.reduce((sum, s) => sum + parseFloat(s.paid_amount || 0), 0);
-                const acctDue = isSettled ? 0 : Math.max(0, parseFloat(latestSlip.total_amount || 0) - parseFloat(latestSlip.paid_amount || 0));
+                const acctDue = (isExplicitSettled || isTrustedAccount) ? 0 : Math.max(0, parseFloat(latestSlip.total_amount || 0) - parseFloat(latestSlip.paid_amount || 0));
                 const acctBilled = acctPaid + acctDue;
 
                 totalPaid += acctPaid;
                 totalNetBilled += acctBilled;
 
-                if (isSettled) {
+                if (isExplicitSettled || isTrustedAccount) {
                     settledCount++;
                 } else if (acctDue === 0) {
                     paidCount++;
