@@ -66,6 +66,7 @@ interface SlipRow {
 interface Stats {
     total_students: number; total_amount: number; paid_amount: number;
     paid_count: number; unpaid_count: number; partial_count: number;
+    settled_count?: number;
     advance_count?: number; advance_total?: number;
 }
 interface Payment {
@@ -951,10 +952,11 @@ export default function CollectFeePage() {
             setStats(prev => prev ? {
                 ...prev,
                 paid_amount: (prev.paid_amount || 0) + receivingSnap,
-                paid_count: ['paid', 'satteled'].includes(d.slip.status) ? (prev.paid_count + 1) : prev.paid_count,
-                unpaid_count: d.slip.status !== 'unpaid' && activeSlip?.status === 'unpaid' ? prev.unpaid_count - 1 : prev.unpaid_count,
+                paid_count: d.slip.status === 'paid' && !['satteled', 'settled'].includes(d.slip.status) ? (prev.paid_count + 1) : prev.paid_count,
+                unpaid_count: d.slip.status !== 'unpaid' && activeSlip?.status === 'unpaid' ? Math.max(0, prev.unpaid_count - 1) : prev.unpaid_count,
                 partial_count: d.slip.status === 'partial' ? (activeSlip?.status === 'unpaid' ? prev.partial_count + 1 : prev.partial_count) :
-                    ['paid', 'satteled'].includes(d.slip.status) && (activeSlip?.status === 'partial') ? prev.partial_count - 1 : prev.partial_count
+                    d.slip.status === 'paid' && (activeSlip?.status === 'partial') ? Math.max(0, prev.partial_count - 1) : prev.partial_count,
+                settled_count: prev.settled_count || 0
             } : null);
             setActiveSlip(prev => prev ? { ...prev, total_amount: d.slip.total_amount, paid_amount: d.slip.paid_amount, status: d.slip.status, line_items: dh.line_items || prev.line_items, advance_balance: dh.advance_balance ?? (prev as any).advance_balance } : null);
             setHeadPayVals({});
@@ -1450,7 +1452,7 @@ export default function CollectFeePage() {
                                 <option value="partial">Partial</option>
                                 <option value="paid">Paid</option>
                                 <option value="advanced">Advanced</option>
-                                <option value="satteled">Settled</option>
+                                <option value="satteled">Settled / Trusted</option>
                             </select>
                         </div>
                         <div className="col-md-3">
@@ -1481,7 +1483,7 @@ export default function CollectFeePage() {
                         { label: 'Total Vouchers', value: slips.length, icon: 'bi-receipt', color: 'var(--primary-teal)', sub: `All months · ${year}` },
                         { label: 'Total Amount', value: fmt(stats.total_amount), icon: 'bi-currency-exchange', color: 'var(--primary-dark)', sub: `${stats.total_students} student(s)` },
                         { label: 'Collected', value: fmt(stats.paid_amount), icon: 'bi-check-circle-fill', color: '#198754', sub: `${collectionPct}% of total` },
-                        { label: 'Pending', value: fmt(totalDue), icon: 'bi-hourglass-split', color: '#dc3545', sub: `${stats.unpaid_count} unpaid · ${stats.partial_count} partial` },
+                        { label: 'Pending', value: fmt(totalDue), icon: 'bi-hourglass-split', color: '#dc3545', sub: `${stats.unpaid_count} unpaid · ${stats.partial_count} partial${stats.settled_count ? ` · ${stats.settled_count} settled` : ''}` },
                     ].map((s, i) => (
                         <div className="col-md-3" key={i}>
                             <div className="card border-0 shadow-sm h-100" style={{ borderLeft: `4px solid ${s.color}` }}>
@@ -1515,6 +1517,7 @@ export default function CollectFeePage() {
                                     <span><span className="badge bg-success me-1">●</span>{stats.paid_count} Paid</span>
                                     <span><span className="badge me-1" style={{ backgroundColor: '#fd7e14' }}>●</span>{stats.partial_count} Partial</span>
                                     <span><span className="badge bg-danger me-1">●</span>{stats.unpaid_count} Unpaid</span>
+                                    <span><span className="badge me-1" style={{ backgroundColor: '#0891b2' }}>●</span>{stats.settled_count ?? groupedFiltered.filter(g => ['satteled', 'settled'].includes((g.status || '').toLowerCase()) || g.is_trusted).length} Settled / Trusted</span>
                                     {Number(stats.advance_count || 0) > 0 && (
                                         <span><span className="badge me-1" style={{ backgroundColor: '#6366f1' }}>●</span>{stats.advance_count} Advanced (PKR {Number(stats.advance_total || 0).toLocaleString('en-PK')})</span>
                                     )}

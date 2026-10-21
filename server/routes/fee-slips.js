@@ -1140,14 +1140,16 @@ router.get('/', async (req, res) => {
 
         if (month) {
             // Single month query
-            const payableRows = result.rows.filter(r => !['satteled', 'settled'].includes((r.status || '').toLowerCase()));
+            const settledRows = result.rows.filter(r => ['satteled', 'settled'].includes((r.status || '').toLowerCase()) || Boolean(r.is_trusted && parseFloat(r.total_amount || 0) <= 0));
+            const payableRows = result.rows.filter(r => !['satteled', 'settled'].includes((r.status || '').toLowerCase()) && !(r.is_trusted && parseFloat(r.total_amount || 0) <= 0));
             stats = {
                 total_students: result.rows.length,
                 total_amount: payableRows.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0),
                 paid_amount: payableRows.reduce((s, r) => s + parseFloat(r.paid_amount || 0), 0),
-                paid_count: result.rows.filter(r => ['paid', 'satteled', 'settled'].includes((r.status || '').toLowerCase())).length,
-                unpaid_count: result.rows.filter(r => (r.status || '').toLowerCase() === 'unpaid').length,
-                partial_count: result.rows.filter(r => (r.status || '').toLowerCase() === 'partial').length,
+                paid_count: payableRows.filter(r => (r.status || '').toLowerCase() === 'paid').length,
+                unpaid_count: payableRows.filter(r => (r.status || '').toLowerCase() === 'unpaid').length,
+                partial_count: payableRows.filter(r => (r.status || '').toLowerCase() === 'partial').length,
+                settled_count: settledRows.length,
                 advance_count: advanceCount,
                 advance_total: advanceTotal,
             };
@@ -1167,11 +1169,12 @@ router.get('/', async (req, res) => {
             let paidCount = 0;
             let unpaidCount = 0;
             let partialCount = 0;
+            let settledCount = 0;
 
             accountMap.forEach(slips => {
                 slips.sort((a, b) => (a.year - b.year) || (a.month - b.month));
                 const latestSlip = slips[slips.length - 1];
-                const isSettled = ['satteled', 'settled'].includes((latestSlip.status || '').toLowerCase()) && (parseFloat(latestSlip.total_amount || 0) <= 0);
+                const isSettled = ['satteled', 'settled'].includes((latestSlip.status || '').toLowerCase()) || Boolean(latestSlip.is_trusted && parseFloat(latestSlip.total_amount || 0) <= 0);
 
                 const acctPaid = slips.reduce((sum, s) => sum + parseFloat(s.paid_amount || 0), 0);
                 const acctDue = isSettled ? 0 : Math.max(0, parseFloat(latestSlip.total_amount || 0) - parseFloat(latestSlip.paid_amount || 0));
@@ -1180,7 +1183,9 @@ router.get('/', async (req, res) => {
                 totalPaid += acctPaid;
                 totalNetBilled += acctBilled;
 
-                if (isSettled || acctDue === 0) {
+                if (isSettled) {
+                    settledCount++;
+                } else if (acctDue === 0) {
                     paidCount++;
                 } else if (acctPaid > 0) {
                     partialCount++;
@@ -1196,6 +1201,7 @@ router.get('/', async (req, res) => {
                 paid_count: paidCount,
                 unpaid_count: unpaidCount,
                 partial_count: partialCount,
+                settled_count: settledCount,
                 advance_count: advanceCount,
                 advance_total: advanceTotal,
             };
