@@ -74,7 +74,7 @@ export default function AccountantDashboard({ userName }: { userName: string }) 
       {/* KPI Row */}
       {hasPermission('dash.acc_kpi', 'read') && (
         <div style={{ marginBottom: 20 }}>
-          {/* Top 4 Cards Row */}
+          {/* Top 5 Cards Row */}
           <div className="dash-stat-grid" style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))',
@@ -84,7 +84,7 @@ export default function AccountantDashboard({ userName }: { userName: string }) 
             <StatCard icon="bi-person-badge-fill" label="Total Staff" value={fmt(s.total_staff || 0)} sub="Active employees" accent={C.dark} />
             <StatCard icon="bi-building" label="Classes" value={fmt(s.total_classes || 0)} sub="All sections" accent={C.purple} />
             <StatCard icon="bi-shield-shaded" label="Trusted Students" value={fmt(s.trusted_students_count || 0)} sub="No. of trusted students" accent="#0d9488" />
-            {/* <StatCard icon="bi-cash-coin" label="Today Collected" value={<MaskedAmount amount={s.today_collected} />} sub="Fee received today" accent={C.green} /> */}
+            <StatCard icon="bi-cash-coin" label="Today Collected" value={<MaskedAmount amount={s.today_collected} />} sub="Fee received today" accent={C.green} />
           </div>
 
           {/* Bottom Right Dropdown Toggle [▽] */}
