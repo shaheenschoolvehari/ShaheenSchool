@@ -1263,19 +1263,47 @@ export function DailyFeeReceipts() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               <div style={{
                                 width: 30, height: 30, borderRadius: 8, flexShrink: 0,
-                                background: `linear-gradient(135deg,${C.teal},${C.dark})`,
+                                background: p.is_family_slip ? 'linear-gradient(135deg,#6366f1,#4338ca)' : `linear-gradient(135deg,${C.teal},${C.dark})`,
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                                 fontSize: 11, fontWeight: 800, color: '#fff',
                               }}>
-                                {(p.is_family_slip ? 'F' : (p.student_name || '?').charAt(0)).toUpperCase()}
+                                {(p.student_name ? p.student_name.trim().charAt(0) : (p.is_family_slip ? 'F' : '?')).toUpperCase()}
                               </div>
-                              <span>{p.is_family_slip ? `Family: ${p.family_id}` : p.student_name}</span>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ color: '#1e293b' }}>{p.student_name || (p.is_family_slip ? `Family: ${p.family_id}` : 'Student')}</span>
+                                  {p.is_family_slip && (
+                                    <span style={{
+                                      background: '#e0f2fe', color: '#0369a1', borderRadius: 4,
+                                      padding: '1px 5px', fontSize: 10, fontWeight: 700
+                                    }}>
+                                      Family
+                                    </span>
+                                  )}
+                                </div>
+                                {(p.admission_no || p.father_name) && (
+                                  <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 400, display: 'flex', gap: 4 }}>
+                                    {p.admission_no && <span>{p.admission_no}</span>}
+                                    {p.admission_no && p.father_name && <span>•</span>}
+                                    {p.father_name && <span>S/D/O {p.father_name}</span>}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </td>
                           <td style={{ padding: '11px 14px', color: '#64748b' }}>
-                            {p.is_family_slip ? (
-                              <span style={{ background: `${C.teal}1a`, color: C.teal, borderRadius: 20, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>Family</span>
-                            ) : (p.class_name || '—')}
+                            {p.class_name && p.class_name !== '—' && p.class_name !== 'Family Slip' ? (
+                              <span style={{
+                                padding: '2px 8px', borderRadius: 6, background: '#f1f5f9',
+                                fontWeight: 600, color: '#334155', fontSize: 11
+                              }}>
+                                {p.class_name}
+                              </span>
+                            ) : (
+                              p.is_family_slip ? (
+                                <span style={{ background: `${C.teal}1a`, color: C.teal, borderRadius: 20, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>Family</span>
+                              ) : '—'
+                            )}
                           </td>
                           <td style={{ padding: '11px 14px', color: '#64748b' }}>{p.month} {p.year}</td>
                           <td style={{ padding: '11px 14px' }}><AmtCell v={parseFloat(p.amount_paid)} /></td>
@@ -1329,7 +1357,7 @@ export function DailyFeeReceipts() {
                                 </button>
                               )}
                               <Link
-                                href={`/fees/collect?search=${encodeURIComponent(p.is_family_slip ? (p.family_id || '') : (p.student_name || ''))}`}
+                                href={`/fees/collect?search=${encodeURIComponent(p.student_name || p.family_id || '')}`}
                                 title="Open in Fee Collection"
                                 style={{
                                   display: 'inline-flex',

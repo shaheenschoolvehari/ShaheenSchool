@@ -262,13 +262,13 @@ router.get('/accountant', async (req, res) => {
                            NULLIF(TRIM(CONCAT_WS(' ', fam_s.first_name, fam_s.last_name)), ''),
                            NULLIF(TRIM(f.family_name), ''),
                            NULLIF(TRIM(f.primary_contact_name), ''),
-                           CASE WHEN mfs.is_family_slip THEN 'Family #' || COALESCE(mfs.family_id::text, '') ELSE 'Student #' || COALESCE(mfs.student_id::text, fp.slip_id::text) END
+                           'Student #' || COALESCE(mfs.student_id::text, fp.slip_id::text)
                        ) AS student_name,
                        COALESCE(s.first_name, fam_s.first_name, '') AS first_name,
                        COALESCE(s.last_name, fam_s.last_name, '') AS last_name,
                        COALESCE(s.father_name, fam_s.father_name, f.primary_contact_name, '') AS father_name,
                        COALESCE(s.admission_no, fam_s.admission_no, CASE WHEN mfs.family_id IS NOT NULL THEN 'Fam-' || mfs.family_id ELSE '—' END) AS admission_no,
-                       COALESCE(c.class_name, c_slip.class_name, c_fam.class_name, CASE WHEN mfs.is_family_slip THEN 'Family Slip' ELSE '—' END) AS class_name,
+                       COALESCE(c.class_name, c_slip.class_name, c_fam.class_name, '—') AS class_name,
                        mfs.slip_id, mfs.month, mfs.year, mfs.months_list, mfs.has_multi_months, mfs.is_family_slip, mfs.family_id, mfs.status AS slip_status
                 FROM fee_payments fp
                 JOIN monthly_fee_slips mfs ON fp.slip_id=mfs.slip_id
@@ -277,10 +277,10 @@ router.get('/accountant', async (req, res) => {
                 LEFT JOIN LATERAL (
                     SELECT s2.student_id, s2.first_name, s2.last_name, s2.admission_no, s2.father_name, s2.class_id
                     FROM students s2
-                    WHERE s2.family_id = mfs.family_id AND s2.status = 'Active'
-                    ORDER BY s2.student_id ASC
+                    WHERE s2.family_id = mfs.family_id
+                    ORDER BY CASE WHEN LOWER(COALESCE(s2.status, 'Active')) = 'active' THEN 0 ELSE 1 END, s2.student_id ASC
                     LIMIT 1
-                ) fam_s ON mfs.student_id IS NULL AND mfs.family_id IS NOT NULL
+                ) fam_s ON (mfs.student_id IS NULL OR s.student_id IS NULL) AND mfs.family_id IS NOT NULL
                 LEFT JOIN classes c ON s.class_id=c.class_id
                 LEFT JOIN classes c_slip ON mfs.class_id=c_slip.class_id
                 LEFT JOIN classes c_fam ON fam_s.class_id=c_fam.class_id
@@ -661,13 +661,13 @@ router.get('/', async (req, res) => {
                         NULLIF(TRIM(CONCAT_WS(' ', fam_s.first_name, fam_s.last_name)), ''),
                         NULLIF(TRIM(f.family_name), ''),
                         NULLIF(TRIM(f.primary_contact_name), ''),
-                        CASE WHEN mfs.is_family_slip THEN 'Family #' || COALESCE(mfs.family_id::text, '') ELSE 'Student #' || COALESCE(mfs.student_id::text, fp.slip_id::text) END
+                        'Student #' || COALESCE(mfs.student_id::text, fp.slip_id::text)
                     ) AS student_name,
                     COALESCE(s.first_name, fam_s.first_name, '') AS first_name,
                     COALESCE(s.last_name, fam_s.last_name, '') AS last_name,
                     COALESCE(s.father_name, fam_s.father_name, f.primary_contact_name, '') AS father_name,
                     COALESCE(s.admission_no, fam_s.admission_no, CASE WHEN mfs.family_id IS NOT NULL THEN 'Fam-' || mfs.family_id ELSE '—' END) AS admission_no,
-                    COALESCE(c.class_name, c_slip.class_name, c_fam.class_name, CASE WHEN mfs.is_family_slip THEN 'Family Slip' ELSE '—' END) AS class_name,
+                    COALESCE(c.class_name, c_slip.class_name, c_fam.class_name, '—') AS class_name,
                     mfs.slip_id,
                     mfs.month,
                     mfs.year,
@@ -683,10 +683,10 @@ router.get('/', async (req, res) => {
                 LEFT JOIN LATERAL (
                     SELECT s2.student_id, s2.first_name, s2.last_name, s2.admission_no, s2.father_name, s2.class_id
                     FROM students s2
-                    WHERE s2.family_id = mfs.family_id AND s2.status = 'Active'
-                    ORDER BY s2.student_id ASC
+                    WHERE s2.family_id = mfs.family_id
+                    ORDER BY CASE WHEN LOWER(COALESCE(s2.status, 'Active')) = 'active' THEN 0 ELSE 1 END, s2.student_id ASC
                     LIMIT 1
-                ) fam_s ON mfs.student_id IS NULL AND mfs.family_id IS NOT NULL
+                ) fam_s ON (mfs.student_id IS NULL OR s.student_id IS NULL) AND mfs.family_id IS NOT NULL
                 LEFT JOIN classes c ON s.class_id = c.class_id
                 LEFT JOIN classes c_slip ON mfs.class_id = c_slip.class_id
                 LEFT JOIN classes c_fam ON fam_s.class_id = c_fam.class_id
@@ -1037,12 +1037,12 @@ router.get('/daily-fee-receipts', async (req, res) => {
                         NULLIF(TRIM(CONCAT_WS(' ', fam_s.first_name, fam_s.last_name)), ''),
                         NULLIF(TRIM(f.family_name), ''),
                         NULLIF(TRIM(f.primary_contact_name), ''),
-                        CASE WHEN mfs.is_family_slip THEN 'Family #' || COALESCE(mfs.family_id::text, '') ELSE 'Student #' || COALESCE(mfs.student_id::text, fp.slip_id::text) END
+                        'Student #' || COALESCE(mfs.student_id::text, fp.slip_id::text)
                     ) AS student_name,
                     COALESCE(s.student_id, fam_s.student_id) AS student_id,
                     COALESCE(s.admission_no, fam_s.admission_no, CASE WHEN mfs.family_id IS NOT NULL THEN 'Fam-' || mfs.family_id ELSE '—' END) AS admission_no,
                     COALESCE(s.father_name, fam_s.father_name, f.primary_contact_name, '') AS father_name,
-                    COALESCE(c.class_name, c_slip.class_name, c_fam.class_name, CASE WHEN mfs.is_family_slip THEN 'Family Slip' ELSE '—' END) AS class_name,
+                    COALESCE(c.class_name, c_slip.class_name, c_fam.class_name, '—') AS class_name,
                     mfs.month, mfs.year, mfs.months_list, mfs.has_multi_months, mfs.is_family_slip, mfs.family_id
              FROM fee_payments fp
              JOIN monthly_fee_slips mfs ON fp.slip_id = mfs.slip_id
@@ -1051,10 +1051,10 @@ router.get('/daily-fee-receipts', async (req, res) => {
              LEFT JOIN LATERAL (
                  SELECT s2.student_id, s2.first_name, s2.last_name, s2.admission_no, s2.father_name, s2.class_id
                  FROM students s2
-                 WHERE s2.family_id = mfs.family_id AND s2.status = 'Active'
-                 ORDER BY s2.student_id ASC
+                 WHERE s2.family_id = mfs.family_id
+                 ORDER BY CASE WHEN LOWER(COALESCE(s2.status, 'Active')) = 'active' THEN 0 ELSE 1 END, s2.student_id ASC
                  LIMIT 1
-             ) fam_s ON mfs.student_id IS NULL AND mfs.family_id IS NOT NULL
+             ) fam_s ON (mfs.student_id IS NULL OR s.student_id IS NULL) AND mfs.family_id IS NOT NULL
              LEFT JOIN classes c ON s.class_id = c.class_id
              LEFT JOIN classes c_slip ON mfs.class_id = c_slip.class_id
              LEFT JOIN classes c_fam ON fam_s.class_id = c_fam.class_id
