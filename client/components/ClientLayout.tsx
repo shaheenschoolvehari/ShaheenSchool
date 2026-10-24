@@ -287,8 +287,55 @@ const SidebarInner = memo(function SidebarInner({ user, isLoggedIn, logout, hasP
   const [activePath, setActivePath] = useState(pathname);
   useEffect(() => { setActivePath(pathname); }, [pathname]);
 
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [isPinned, setIsPinned] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Restore saved pin preference on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('sidebar_pinned');
+      if (saved === 'true') {
+        setIsPinned(true);
+      }
+    } catch {}
+  }, []);
+
+  const togglePin = useCallback(() => {
+    setIsPinned(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('sidebar_pinned', String(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  const handleMouseEnter = useCallback(() => {
+    if (isMobile) return;
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    setIsHovered(true);
+  }, [isMobile]);
+
+  const handleMouseLeave = useCallback(() => {
+    if (isMobile) return;
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = setTimeout(() => {
+      setIsHovered(false);
+    }, 120);
+  }, [isMobile]);
+
+  useEffect(() => {
+    return () => {
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    };
+  }, []);
+
   const [openMenu, setOpenMenu] = useState<string | null>(() => {
     // initialise synchronously so there's no delayed openMenu flash
     const g = NAV_GROUPS.find(g => {
@@ -299,12 +346,14 @@ const SidebarInner = memo(function SidebarInner({ user, isLoggedIn, logout, hasP
     return g?.key ?? null;
   });
 
-  // Responsive
+  // Responsive: track mobile breakpoint
   useEffect(() => {
     const handle = () => {
       const m = window.innerWidth <= 991;
       setIsMobile(m);
-      setOpen(!m);
+      if (m) {
+        setOpen(false);
+      }
     };
     handle();
     window.addEventListener('resize', handle);
@@ -337,7 +386,6 @@ const SidebarInner = memo(function SidebarInner({ user, isLoggedIn, logout, hasP
     [canSeeRoute]
   );
 
-  const toggleSidebar = useCallback(() => setOpen(p => !p), []);
   const closeMobile = useCallback(() => { if (isMobile) setOpen(false); }, [isMobile]);
 
   // Uses activePath (optimistic) so highlight changes on click, not on nav-complete
@@ -349,9 +397,8 @@ const SidebarInner = memo(function SidebarInner({ user, isLoggedIn, logout, hasP
 
   const handleGroup = useCallback((g: NavGroup) => {
     if (!g.subs) { closeMobile(); return; }
-    if (!open && !isMobile) { setOpen(true); setOpenMenu(g.key); return; }
     setOpenMenu(prev => prev === g.key ? null : g.key);
-  }, [open, isMobile, closeMobile]);
+  }, [closeMobile]);
 
   // Navigate to a sub-item: update active state immediately (no waiting for pathname)
   const handleSubClick = useCallback((href: string) => {
@@ -368,7 +415,7 @@ const SidebarInner = memo(function SidebarInner({ user, isLoggedIn, logout, hasP
     if (isMobile) setOpen(false);
   }, [isMobile, startNav]);
 
-  const expanded = open;
+  const expanded = isMobile ? open : (isPinned || isHovered);
 
   return (
     <>
@@ -405,17 +452,23 @@ const SidebarInner = memo(function SidebarInner({ user, isLoggedIn, logout, hasP
       {isMobile && open && <div className="sl-overlay" onClick={() => setOpen(false)} />}
 
       {/* ══════ SIDEBAR ══════ */}
-      <aside className={`sl-sidebar ${expanded ? 'sl-open' : 'sl-closed'} ${isMobile ? 'sl-mobile' : 'sl-desktop'}`}>
+      <aside
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        className={`sl-sidebar ${expanded ? 'sl-open' : 'sl-closed'} ${isMobile ? 'sl-mobile' : 'sl-desktop'}`}
+      >
 
         {/* Header */}
         <div className="sl-header">
           <div className="sl-brand">
             {schoolSettings.logo_url ? (
-              <div style={{ width: 34, height: 34, minWidth: 34, borderRadius: '50%', background: '#fff', border: '1.5px solid rgba(255,255,255,0.2)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: 10, flexShrink: 0 }}>
+              <div className="sl-brand-logo" style={{ width: 34, height: 34, minWidth: 34, borderRadius: '50%', background: '#fff', border: '1.5px solid rgba(255,255,255,0.2)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <img src={schoolSettings.logo_url} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 2 }} />
               </div>
             ) : (
-              <span style={{ fontSize: '1.4rem', marginRight: 10, flexShrink: 0 }}>🏫</span>
+              <div className="sl-brand-logo" style={{ width: 34, height: 34, minWidth: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '1.4rem' }}>
+                🏫
+              </div>
             )}
             <div className="sl-brand-text">
               <span className="sl-brand-name">{schoolSettings.school_name}</span>
@@ -423,12 +476,18 @@ const SidebarInner = memo(function SidebarInner({ user, isLoggedIn, logout, hasP
             </div>
           </div>
           {!isMobile && (
-            <button onClick={toggleSidebar} className="sl-toggle" title={expanded ? 'Collapse' : 'Expand'}>
-              <i className={`bi ${expanded ? 'bi-chevron-left' : 'bi-chevron-right'}`} />
+            <button
+              type="button"
+              onClick={togglePin}
+              className={`sl-toggle${isPinned ? ' sl-toggle-pinned' : ''}`}
+              title={isPinned ? 'Unpin Sidebar (Auto-collapse on mouse leave)' : 'Pin Sidebar (Keep expanded)'}
+              aria-label={isPinned ? 'Unpin Sidebar' : 'Pin Sidebar'}
+            >
+              <i className={`bi ${isPinned ? 'bi-pin-angle-fill' : 'bi-pin-angle'}`} />
             </button>
           )}
           {isMobile && (
-            <button onClick={() => setOpen(false)} className="sl-toggle">
+            <button type="button" onClick={() => setOpen(false)} className="sl-toggle" title="Close Menu">
               <i className="bi bi-x-lg" />
             </button>
           )}
