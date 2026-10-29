@@ -79,7 +79,7 @@ router.post('/login', async (req, res) => {
                 LEFT JOIN app_roles r ON u.role_id = r.id
                 LEFT JOIN role_permissions p ON r.id = p.role_id
                 LEFT JOIN employees e ON u.id = e.app_user_id
-                WHERE LOWER(u.username) = LOWER($1)
+                WHERE LOWER(u.username) = LOWER($1) OR REPLACE(LOWER(u.username), ' ', '') = REPLACE(LOWER($1), ' ', '')
                 GROUP BY u.id, u.username, u.password_hash, u.full_name, u.email, u.is_active, u.role_id, u.failed_login_attempts, u.locked_until, r.role_name, r.role_level, r.dashboard_access
             `, [cleanUsername]);
         } catch (e) {
@@ -92,7 +92,7 @@ router.post('/login', async (req, res) => {
                     NULL as employee_id, NULL as incharge_class, '[]'::json AS permissions
                 FROM app_users u
                 LEFT JOIN app_roles r ON u.role_id = r.id
-                WHERE LOWER(u.username) = LOWER($1)
+                WHERE LOWER(u.username) = LOWER($1) OR REPLACE(LOWER(u.username), ' ', '') = REPLACE(LOWER($1), ' ', '')
             `, [cleanUsername]);
         }
 

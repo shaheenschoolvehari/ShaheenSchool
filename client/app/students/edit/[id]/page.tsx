@@ -244,7 +244,10 @@ export default function EditStudent({ params }: { params: { id: string } }) {
             const data = await res.json();
 
             if (res.ok) {
-                toast.update(toastId, { render: "Updated Successfully!", type: "success", isLoading: false, autoClose: 2000 });
+                const successMsg = data.siblings_updated > 0
+                    ? `Updated Successfully! (${data.siblings_updated} sibling(s) father info also updated)`
+                    : "Updated Successfully!";
+                toast.update(toastId, { render: successMsg, type: "success", isLoading: false, autoClose: 2500 });
                 router.push(`/students/profile/${params.id}`);
             } else {
                 toast.update(toastId, { render: data.error || "Update Failed", type: "error", isLoading: false, autoClose: 5000 });
@@ -442,7 +445,15 @@ export default function EditStudent({ params }: { params: { id: string } }) {
                             </div>
                             <div className="card-body p-4">
                                 <div className={`row g-3 ${form.is_orphan ? 'opacity-50' : ''}`}>
-                                    <h6 className="fw-bold text-muted border-bottom pb-2">Parents Information</h6>
+                                    <div className="d-flex justify-content-between align-items-center border-bottom pb-2">
+                                        <h6 className="fw-bold text-muted mb-0">Parents Information</h6>
+                                        {familyInfo.family_id && familyInfo.family_size > 1 && (
+                                            <span className="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1">
+                                                <i className="bi bi-people-fill me-1"></i>
+                                                Family {familyInfo.family_id}: Father Name & Phone changes will auto-sync to {familyInfo.family_size - 1} sibling(s)
+                                            </span>
+                                        )}
+                                    </div>
                                     {/* FATHER */}
                                     <div className="col-md-3">
                                         <label className="form-label fw-bold">Father Name</label>

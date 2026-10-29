@@ -1821,6 +1821,23 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
 
         await client.query('BEGIN');
 
+        // Fetch current student's existing details before updating
+        const existingStudentRes = await client.query(`
+            SELECT student_id, family_id, father_name, father_phone, father_cnic, father_occupation
+            FROM students
+            WHERE student_id = $1
+        `, [id]);
+
+        if (existingStudentRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: "Student not found" });
+        }
+
+        const existingStudent = existingStudentRes.rows[0];
+        const oldFamilyId = existingStudent.family_id;
+        const oldFatherName = (existingStudent.father_name || '').trim();
+        const oldFatherPhone = (existingStudent.father_phone || '').trim();
+
         const updateQ = `UPDATE students SET
             roll_no=$1, class_id=$2, section_id=$3, admission_date=$4, category=$5,
             first_name=$6, last_name=$7, gender=$8, dob=$9, cnic_bform=$10,
@@ -1885,7 +1902,138 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
         }
 
         const user_id = resUpd.rows[0].user_id;
-        const fam_id_updated = resUpd.rows[0].family_id;
+        const fam_id_updated = resUpd.rows[0].family_id || oldFamilyId;
+
+        // Auto-propagate father details to all same-father siblings in the same family
+        let siblingsUpdatedCount = 0;
+        const cleanFatherName = father_name && String(father_name).trim() !== '' ? String(father_name).trim() : null;
+        const cleanFatherPhone = father_phone && String(father_phone).trim() !== '' ? String(father_phone).trim() : null;
+        const cleanFatherCnic = father_cnic && String(father_cnic).trim() !== '' ? String(father_cnic).trim() : null;
+        const cleanFatherOcc = father_occupation && String(father_occupation).trim() !== '' ? String(father_occupation).trim() : null;
+
+        if (fam_id_updated && (cleanFatherName || cleanFatherPhone)) {
+            const normOldFather = oldFatherName.toLowerCase().replace(/\s+/g, ' ');
+
+            // Check if there is only 1 distinct father in this family
+            const distinctFathersRes = await client.query(`
+                SELECT COUNT(DISTINCT LOWER(TRIM(REGEXP_REPLACE(father_name, '\\s+', ' ', 'g')))) as father_count
+                FROM students
+                WHERE family_id = $1 AND father_name IS NOT NULL AND TRIM(father_name) != ''
+            `, [fam_id_updated]);
+            const singleFatherFamily = parseInt(distinctFathersRes.rows[0]?.father_count || '0', 10) <= 1;
+
+            // Fetch siblings in this family
+            const siblingsRes = await client.query(`
+                SELECT s.student_id, s.father_name, s.father_phone, s.guardian_relation, s.guardian_name,
+                       (
+                           SELECT ss.relation_type 
+                           FROM student_siblings ss 
+                           WHERE (ss.student_id = $1 AND ss.sibling_id = s.student_id)
+                              OR (ss.student_id = s.student_id AND ss.sibling_id = $1)
+                           ORDER BY CASE WHEN ss.relation_type = 'blood' THEN 1 ELSE 2 END
+                           LIMIT 1
+                       ) AS explicit_relation
+                FROM students s
+                WHERE s.family_id = $2 AND s.student_id != $1
+            `, [id, fam_id_updated]);
+
+            const siblingIdsToUpdate = [];
+            const updateGuardiansFor = [];
+
+            for (const sib of siblingsRes.rows) {
+                // If explicitly marked as cousin (different father), do NOT touch
+                if (sib.explicit_relation === 'cousin') {
+                    continue;
+                }
+
+                const sibFatherNorm = (sib.father_name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+                const isSameFather =
+                    sib.explicit_relation === 'blood' ||
+                    (normOldFather !== '' && sibFatherNorm === normOldFather) ||
+                    sibFatherNorm === '' ||
+                    singleFatherFamily;
+
+                if (isSameFather) {
+                    siblingIdsToUpdate.push(sib.student_id);
+
+                    if (
+                        (sib.guardian_relation && sib.guardian_relation.toLowerCase() === 'father') ||
+                        (normOldFather !== '' && (sib.guardian_name || '').trim().toLowerCase().replace(/\s+/g, ' ') === normOldFather)
+                    ) {
+                        updateGuardiansFor.push(sib.student_id);
+                    }
+                }
+            }
+
+            if (siblingIdsToUpdate.length > 0) {
+                await client.query(`
+                    UPDATE students
+                    SET father_name = COALESCE($1, father_name),
+                        father_phone = COALESCE($2, father_phone),
+                        father_cnic = COALESCE($3, father_cnic),
+                        father_occupation = COALESCE($4, father_occupation)
+                    WHERE student_id = ANY($5::int[])
+                `, [
+                    cleanFatherName,
+                    cleanFatherPhone,
+                    cleanFatherCnic,
+                    cleanFatherOcc,
+                    siblingIdsToUpdate
+                ]);
+
+                if (updateGuardiansFor.length > 0) {
+                    await client.query(`
+                        UPDATE students
+                        SET guardian_name = COALESCE($1, guardian_name),
+                            guardian_phone = COALESCE($2, guardian_phone),
+                            guardian_cnic = COALESCE($3, guardian_cnic)
+                        WHERE student_id = ANY($4::int[])
+                    `, [
+                        cleanFatherName,
+                        cleanFatherPhone,
+                        cleanFatherCnic,
+                        updateGuardiansFor
+                    ]);
+                }
+
+                siblingsUpdatedCount = siblingIdsToUpdate.length;
+                console.log(`[STUDENT EDIT] Propagated updated father details (Name: "${cleanFatherName}", Phone: "${cleanFatherPhone}") to ${siblingsUpdatedCount} sibling(s):`, siblingIdsToUpdate);
+            }
+
+            // Also update primary contact in families table
+            await client.query(`
+                UPDATE families
+                SET primary_contact_name = COALESCE($1, primary_contact_name),
+                    primary_contact_phone = COALESCE($2, primary_contact_phone)
+                WHERE family_id = $3
+                  AND (
+                      primary_contact_name IS NULL 
+                      OR TRIM(primary_contact_name) = ''
+                      OR LOWER(TRIM(REGEXP_REPLACE(primary_contact_name, '\\s+', ' ', 'g'))) = $4
+                      OR $5 = TRUE
+                  )
+            `, [
+                cleanFatherName,
+                cleanFatherPhone,
+                fam_id_updated,
+                normOldFather,
+                singleFatherFamily
+            ]);
+
+            // If family_name matched the old father name or 'Family of [old father name]'
+            if (cleanFatherName && oldFatherName) {
+                await client.query(`
+                    UPDATE families
+                    SET family_name = CASE
+                        WHEN family_name = $1 THEN $2
+                        WHEN family_name = 'Family of ' || $1 THEN 'Family of ' || $2
+                        ELSE family_name
+                    END
+                    WHERE family_id = $3
+                `, [oldFatherName, cleanFatherName, fam_id_updated]);
+            }
+        }
 
         // Update family fee in families table if provided
         if (family_fee !== undefined && family_fee !== null && family_fee !== '' && !isNaN(parseFloat(family_fee)) && parseFloat(family_fee) > 0 && fam_id_updated) {
@@ -1967,7 +2115,7 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
         }
 
         await client.query('COMMIT');
-        res.json({ message: "Updated successfully" });
+        res.json({ message: "Updated successfully", siblings_updated: siblingsUpdatedCount });
 
     } catch (err) {
         await client.query('ROLLBACK');
