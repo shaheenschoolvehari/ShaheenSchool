@@ -1969,10 +1969,10 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
             if (siblingIdsToUpdate.length > 0) {
                 await client.query(`
                     UPDATE students
-                    SET father_name = COALESCE($1, father_name),
-                        father_phone = COALESCE($2, father_phone),
-                        father_cnic = COALESCE($3, father_cnic),
-                        father_occupation = COALESCE($4, father_occupation)
+                    SET father_name = COALESCE($1::varchar, father_name),
+                        father_phone = COALESCE($2::varchar, father_phone),
+                        father_cnic = COALESCE($3::varchar, father_cnic),
+                        father_occupation = COALESCE($4::varchar, father_occupation)
                     WHERE student_id = ANY($5::int[])
                 `, [
                     cleanFatherName,
@@ -1985,9 +1985,9 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
                 if (updateGuardiansFor.length > 0) {
                     await client.query(`
                         UPDATE students
-                        SET guardian_name = COALESCE($1, guardian_name),
-                            guardian_phone = COALESCE($2, guardian_phone),
-                            guardian_cnic = COALESCE($3, guardian_cnic)
+                        SET guardian_name = COALESCE($1::varchar, guardian_name),
+                            guardian_phone = COALESCE($2::varchar, guardian_phone),
+                            guardian_cnic = COALESCE($3::varchar, guardian_cnic)
                         WHERE student_id = ANY($4::int[])
                     `, [
                         cleanFatherName,
@@ -2004,14 +2004,14 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
             // Also update primary contact in families table
             await client.query(`
                 UPDATE families
-                SET primary_contact_name = COALESCE($1, primary_contact_name),
-                    primary_contact_phone = COALESCE($2, primary_contact_phone)
+                SET primary_contact_name = COALESCE($1::varchar, primary_contact_name),
+                    primary_contact_phone = COALESCE($2::varchar, primary_contact_phone)
                 WHERE family_id = $3
                   AND (
                       primary_contact_name IS NULL 
                       OR TRIM(primary_contact_name) = ''
                       OR LOWER(TRIM(REGEXP_REPLACE(primary_contact_name, '\\s+', ' ', 'g'))) = $4
-                      OR $5 = TRUE
+                      OR $5::boolean = TRUE
                   )
             `, [
                 cleanFatherName,
@@ -2021,17 +2021,22 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
                 singleFatherFamily
             ]);
 
-            // If family_name matched the old father name or 'Family of [old father name]'
+            // If family_name matched the old father name or 'Family of [old father name]' or '[old father name] Family'
             if (cleanFatherName && oldFatherName) {
+                const oldFamilyName = `${oldFatherName} Family`;
+                const newFamilyName = `${cleanFatherName} Family`;
+                const oldFamilyOf = `Family of ${oldFatherName}`;
+                const newFamilyOf = `Family of ${cleanFatherName}`;
                 await client.query(`
                     UPDATE families
                     SET family_name = CASE
-                        WHEN family_name = $1 THEN $2
-                        WHEN family_name = 'Family of ' || $1 THEN 'Family of ' || $2
+                        WHEN family_name = $1 THEN $2::varchar
+                        WHEN family_name = $3 THEN $4::varchar
+                        WHEN family_name = $5 THEN $6::varchar
                         ELSE family_name
                     END
-                    WHERE family_id = $3
-                `, [oldFatherName, cleanFatherName, fam_id_updated]);
+                    WHERE family_id = $7
+                `, [oldFatherName, cleanFatherName, oldFamilyName, newFamilyName, oldFamilyOf, newFamilyOf, fam_id_updated]);
             }
         }
 
