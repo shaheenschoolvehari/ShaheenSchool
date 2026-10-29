@@ -1940,21 +1940,35 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
             const siblingIdsToUpdate = [];
             const updateGuardiansFor = [];
 
+            const stripName = (s) => (s || '').toLowerCase().replace(/[-_.\s]+/g, '');
+            const strippedOldFather = stripName(oldFatherName);
+            const strippedNewFather = stripName(cleanFatherName);
+
             for (const sib of siblingsRes.rows) {
-                // If explicitly marked as cousin (different father), do NOT touch
-                if (sib.explicit_relation === 'cousin') {
+                const sibFatherRaw = (sib.father_name || '').trim();
+                const sibFatherNorm = sibFatherRaw.toLowerCase().replace(/\s+/g, ' ');
+                const strippedSibFather = stripName(sibFatherRaw);
+
+                // Check if this sibling belongs to the same father:
+                // 1) Father name matches old father (normalized or stripped of spaces/hyphens)
+                // 2) Father name matches new father (in case one child was already updated)
+                // 3) Father name was empty/missing
+                // 4) Explicitly marked as blood
+                // 5) Or all active children in this family belong to a single father
+                const matchesFather = 
+                    (strippedOldFather !== '' && (sibFatherNorm === normOldFather || strippedSibFather === strippedOldFather)) ||
+                    (strippedNewFather !== '' && strippedSibFather === strippedNewFather) ||
+                    sibFatherRaw === '' ||
+                    sib.explicit_relation === 'blood' ||
+                    singleFatherFamily;
+
+                // Only skip if the sibling genuinely belongs to a completely different father
+                // (e.g. father name is non-empty, does not match, and is explicitly a cousin)
+                if (!matchesFather && sib.explicit_relation === 'cousin') {
                     continue;
                 }
 
-                const sibFatherNorm = (sib.father_name || '').trim().toLowerCase().replace(/\s+/g, ' ');
-
-                const isSameFather =
-                    sib.explicit_relation === 'blood' ||
-                    (normOldFather !== '' && sibFatherNorm === normOldFather) ||
-                    sibFatherNorm === '' ||
-                    singleFatherFamily;
-
-                if (isSameFather) {
+                if (matchesFather) {
                     siblingIdsToUpdate.push(sib.student_id);
 
                     if (
@@ -1967,6 +1981,8 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
             }
 
             if (siblingIdsToUpdate.length > 0) {
+                const allFamilyStudentIds = [parseInt(id, 10), ...siblingIdsToUpdate];
+
                 await client.query(`
                     UPDATE students
                     SET father_name = COALESCE($1::varchar, father_name),
@@ -1981,6 +1997,14 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
                     cleanFatherOcc,
                     siblingIdsToUpdate
                 ]);
+
+                // Ensure sibling links between updated same-father siblings are marked as 'blood'
+                await client.query(`
+                    UPDATE student_siblings
+                    SET relation_type = 'blood'
+                    WHERE student_id = ANY($1::int[]) AND sibling_id = ANY($1::int[])
+                      AND relation_type != 'blood'
+                `, [allFamilyStudentIds]);
 
                 if (updateGuardiansFor.length > 0) {
                     await client.query(`
