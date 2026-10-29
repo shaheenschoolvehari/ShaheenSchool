@@ -447,7 +447,7 @@ export default function EditStudent({ params }: { params: { id: string } }) {
                                 <div className={`row g-3 ${form.is_orphan ? 'opacity-50' : ''}`}>
                                     <div className="d-flex justify-content-between align-items-center border-bottom pb-2">
                                         <h6 className="fw-bold text-muted mb-0">Parents Information</h6>
-                                        {familyInfo.family_id && familyInfo.family_size > 1 && (
+                                        {familyInfo && familyInfo.family_id && familyInfo.family_size > 1 && (
                                             <span className="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1">
                                                 <i className="bi bi-people-fill me-1"></i>
                                                 Family {familyInfo.family_id}: Father Name & Phone changes will auto-sync to {familyInfo.family_size - 1} sibling(s)
