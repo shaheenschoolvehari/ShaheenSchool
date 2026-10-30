@@ -2219,7 +2219,7 @@ router.post('/approvals/change-status', async (req, res) => {
                     await client.query(
                         `UPDATE exam_sheet_approvals
                          SET status = $1,
-                             approved_by = COALESCE(approved_by, $2),
+                             approved_by = COALESCE(approved_by, $2::int),
                              approved_at = COALESCE(approved_at, NOW()),
                              published_by = $2,
                              published_at = NOW(),
@@ -2231,7 +2231,7 @@ router.post('/approvals/change-status', async (req, res) => {
                     await client.query(
                         `UPDATE exam_sheet_approvals
                          SET status = $1,
-                             approved_by = COALESCE(approved_by, $2),
+                             approved_by = COALESCE(approved_by, $2::int),
                              approved_at = COALESCE(approved_at, NOW()),
                              updated_at = NOW()
                          WHERE sheet_type = 'term_exam' AND term_id = $3 AND class_id = $4 AND section_id = $5 AND subject_id = $6`,
@@ -2265,7 +2265,7 @@ router.post('/approvals/change-status', async (req, res) => {
                 await client.query(
                     `UPDATE test_papers 
                      SET status = $1,
-                         approved_by = COALESCE(approved_by, $2),
+                         approved_by = COALESCE(approved_by, $2::int),
                          published_by = $2
                      WHERE test_id = $3`,
                     [targetStatus, userId, testId]
@@ -2274,7 +2274,7 @@ router.post('/approvals/change-status', async (req, res) => {
                 await client.query(
                     `UPDATE test_papers 
                      SET status = $1,
-                         approved_by = COALESCE(approved_by, $2)
+                         approved_by = COALESCE(approved_by, $2::int)
                      WHERE test_id = $3`,
                     [targetStatus, userId, testId]
                 );
@@ -2318,7 +2318,7 @@ router.post('/approvals/change-status', async (req, res) => {
                     await client.query(
                         `UPDATE exam_sheet_approvals
                          SET status = $1,
-                             approved_by = COALESCE(approved_by, $2),
+                             approved_by = COALESCE(approved_by, $2::int),
                              approved_at = COALESCE(approved_at, NOW()),
                              published_by = $2,
                              published_at = NOW(),
@@ -2330,7 +2330,7 @@ router.post('/approvals/change-status', async (req, res) => {
                     await client.query(
                         `UPDATE exam_sheet_approvals
                          SET status = $1,
-                             approved_by = COALESCE(approved_by, $2),
+                             approved_by = COALESCE(approved_by, $2::int),
                              approved_at = COALESCE(approved_at, NOW()),
                              updated_at = NOW()
                          WHERE sheet_type = 'class_test' AND test_id = $3`,

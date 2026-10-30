@@ -969,11 +969,11 @@ router.post('/staff/verify-biometric', async (req, res) => {
                 ON CONFLICT (employee_id, attendance_date)
                 DO UPDATE SET 
                     status = CASE 
-                        WHEN staff_attendance.status = 'Absent' THEN $3
-                        WHEN staff_attendance.status = 'Leave' THEN $3
-                        ELSE COALESCE($3, staff_attendance.status)
+                        WHEN staff_attendance.status = 'Absent' THEN $3::varchar
+                        WHEN staff_attendance.status = 'Leave' THEN $3::varchar
+                        ELSE COALESCE($3::varchar, staff_attendance.status)
                     END,
-                    check_in_time = COALESCE(staff_attendance.check_in_time, $4),
+                    check_in_time = COALESCE(staff_attendance.check_in_time, $4::time),
                     in_verified = TRUE,
                     in_verification_mode = $5,
                     is_in_late = $6,
@@ -1119,14 +1119,14 @@ router.post('/staff/daily', async (req, res) => {
                 ON CONFLICT (employee_id, attendance_date)
                 DO UPDATE SET 
                     status = $3, 
-                    check_in_time = COALESCE($4, staff_attendance.check_in_time), 
-                    check_out_time = COALESCE($5, staff_attendance.check_out_time), 
-                    remarks = COALESCE($6, staff_attendance.remarks),
-                    in_verified = CASE WHEN $7 = TRUE THEN TRUE ELSE staff_attendance.in_verified END,
-                    out_verified = CASE WHEN $8 = TRUE THEN TRUE ELSE staff_attendance.out_verified END,
-                    is_in_late = CASE WHEN $9::boolean IS NOT NULL THEN $9 ELSE staff_attendance.is_in_late END,
-                    is_out_early = CASE WHEN $10::boolean IS NOT NULL THEN $10 ELSE staff_attendance.is_out_early END,
-                    academic_year_id = COALESCE($12, staff_attendance.academic_year_id),
+                    check_in_time = COALESCE($4::time, staff_attendance.check_in_time), 
+                    check_out_time = COALESCE($5::time, staff_attendance.check_out_time), 
+                    remarks = COALESCE($6::varchar, staff_attendance.remarks),
+                    in_verified = CASE WHEN $7::boolean = TRUE THEN TRUE ELSE staff_attendance.in_verified END,
+                    out_verified = CASE WHEN $8::boolean = TRUE THEN TRUE ELSE staff_attendance.out_verified END,
+                    is_in_late = CASE WHEN $9::boolean IS NOT NULL THEN $9::boolean ELSE staff_attendance.is_in_late END,
+                    is_out_early = CASE WHEN $10::boolean IS NOT NULL THEN $10::boolean ELSE staff_attendance.is_out_early END,
+                    academic_year_id = COALESCE($12::int, staff_attendance.academic_year_id),
                     updated_at = CURRENT_TIMESTAMP`,
                 [empId, date, status, checkIn, checkOut, remarks, inVerified, outVerified, isInLate, isOutEarly, markedById, yearId]
             );
@@ -1455,18 +1455,18 @@ router.put('/settings', async (req, res) => {
 
         const updateRes = await pool.query(`
             UPDATE attendance_settings
-            SET staff_in_time = COALESCE($1, staff_in_time),
-                staff_out_time = COALESCE($2, staff_out_time),
-                staff_grace_minutes = COALESCE($3, staff_grace_minutes),
-                staff_biometric_mode = COALESCE($4, staff_biometric_mode),
-                staff_auto_absent_enabled = COALESCE($5, staff_auto_absent_enabled),
-                staff_notify_in_out = COALESCE($6, staff_notify_in_out),
-                staff_notify_holidays = COALESCE($7, staff_notify_holidays),
-                student_notify_parents = COALESCE($8, student_notify_parents),
-                student_notify_holidays = COALESCE($9, student_notify_holidays),
-                student_auto_absent_enabled = COALESCE($10, student_auto_absent_enabled),
-                family_notify_each_child = COALESCE($11, family_notify_each_child),
-                consecutive_absent_alert_days = COALESCE($12, consecutive_absent_alert_days),
+                        SET staff_in_time = COALESCE($1::time, staff_in_time),
+                staff_out_time = COALESCE($2::time, staff_out_time),
+                staff_grace_minutes = COALESCE($3::int, staff_grace_minutes),
+                staff_biometric_mode = COALESCE($4::varchar, staff_biometric_mode),
+                staff_auto_absent_enabled = COALESCE($5::boolean, staff_auto_absent_enabled),
+                staff_notify_in_out = COALESCE($6::boolean, staff_notify_in_out),
+                staff_notify_holidays = COALESCE($7::boolean, staff_notify_holidays),
+                student_notify_parents = COALESCE($8::boolean, student_notify_parents),
+                student_notify_holidays = COALESCE($9::boolean, student_notify_holidays),
+                student_auto_absent_enabled = COALESCE($10::boolean, student_auto_absent_enabled),
+                family_notify_each_child = COALESCE($11::boolean, family_notify_each_child),
+                consecutive_absent_alert_days = COALESCE($12::int, consecutive_absent_alert_days),
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = 1
             RETURNING *;

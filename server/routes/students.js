@@ -441,7 +441,7 @@ router.post('/families/merge', async (req, res) => {
             for (let j = i + 1; j < family1.rows.length; j++) {
                 await client.query(
                     `INSERT INTO student_siblings (student_id, sibling_id, relation_type)
-                     VALUES ($1, $2, 'blood'), ($2, $1, 'blood')
+                     VALUES ($1::int, $2::int, 'blood'), ($2::int, $1::int, 'blood')
                      ON CONFLICT (student_id, sibling_id) DO NOTHING`,
                     [family1.rows[i].student_id, family1.rows[j].student_id]
                 );
@@ -453,7 +453,7 @@ router.post('/families/merge', async (req, res) => {
             for (let j = i + 1; j < family2.rows.length; j++) {
                 await client.query(
                     `INSERT INTO student_siblings (student_id, sibling_id, relation_type)
-                     VALUES ($1, $2, 'blood'), ($2, $1, 'blood')
+                     VALUES ($1::int, $2::int, 'blood'), ($2::int, $1::int, 'blood')
                      ON CONFLICT (student_id, sibling_id) DO NOTHING`,
                     [family2.rows[i].student_id, family2.rows[j].student_id]
                 );
@@ -609,7 +609,7 @@ router.post('/families/manual-link', async (req, res) => {
                 const pB = primaryFamilyStudents.rows[j].student_id;
                 await client.query(
                     `INSERT INTO student_siblings (student_id, sibling_id, relation_type)
-                     VALUES ($1, $2, 'blood'), ($2, $1, 'blood')
+                     VALUES ($1::int, $2::int, 'blood'), ($2::int, $1::int, 'blood')
                      ON CONFLICT (student_id, sibling_id) DO NOTHING`,
                     [pA, pB]
                 );
@@ -623,7 +623,7 @@ router.post('/families/manual-link', async (req, res) => {
                 const sB = secondaryFamilyStudents.rows[j].student_id;
                 await client.query(
                     `INSERT INTO student_siblings (student_id, sibling_id, relation_type)
-                     VALUES ($1, $2, 'blood'), ($2, $1, 'blood')
+                     VALUES ($1::int, $2::int, 'blood'), ($2::int, $1::int, 'blood')
                      ON CONFLICT (student_id, sibling_id) DO NOTHING`,
                     [sA, sB]
                 );
@@ -975,14 +975,14 @@ router.get('/families/:family_id', async (req, res) => {
         const { family_id } = req.params;
         // Get family record (upsert if missing)
         let familyResult = await pool.query(
-            `SELECT * FROM families WHERE family_id = $1`, [family_id]
+            `SELECT * FROM families WHERE family_id = $1::varchar`, [family_id]
         );
         if (familyResult.rows.length === 0) {
             // Create a stub record for this family_id
             await pool.query(
-                `INSERT INTO families (family_id, family_fee) VALUES ($1, 0) ON CONFLICT DO NOTHING`, [family_id]
+                `INSERT INTO families (family_id, family_fee) VALUES ($1::varchar, 0) ON CONFLICT DO NOTHING`, [family_id]
             );
-            familyResult = await pool.query(`SELECT * FROM families WHERE family_id = $1`, [family_id]);
+            familyResult = await pool.query(`SELECT * FROM families WHERE family_id = $1::varchar`, [family_id]);
         }
         // Get all members
         const members = await pool.query(`
@@ -990,7 +990,7 @@ router.get('/families/:family_id', async (req, res) => {
                    s.monthly_fee, c.class_name, s.status
             FROM students s
             LEFT JOIN classes c ON s.class_id = c.class_id
-            WHERE s.family_id = $1 AND s.status = 'Active'
+            WHERE s.family_id = $1::varchar AND s.status = 'Active'
             ORDER BY c.class_id DESC NULLS LAST, s.first_name
         `, [family_id]);
         res.json({
@@ -1015,7 +1015,7 @@ router.put('/families/:family_id/fee', async (req, res) => {
         // Upsert families record
         const result = await pool.query(`
             INSERT INTO families (family_id, family_fee)
-            VALUES ($1, $2)
+            VALUES ($1::varchar, $2::numeric)
             ON CONFLICT (family_id) DO UPDATE SET family_fee = EXCLUDED.family_fee
             RETURNING *
         `, [family_id, parsedFee]);
@@ -1024,11 +1024,11 @@ router.put('/families/:family_id/fee', async (req, res) => {
             // Also update any student in this family whose monthly_fee is 0 or if there is only 1 active student
             await pool.query(`
                 UPDATE students
-                SET monthly_fee = $2
-                WHERE family_id = $1 AND (
+                SET monthly_fee = $2::numeric
+                WHERE family_id = $1::varchar AND (
                     monthly_fee IS NULL 
                     OR monthly_fee <= 0 
-                    OR (SELECT COUNT(*) FROM students s2 WHERE s2.family_id = $1 AND LOWER(COALESCE(s2.status, 'Active')) = 'active') = 1
+                    OR (SELECT COUNT(*) FROM students s2 WHERE s2.family_id = $1::varchar AND LOWER(COALESCE(s2.status, 'Active')) = 'active') = 1
                 )
             `, [family_id, parsedFee]);
         }
@@ -1147,7 +1147,7 @@ router.post('/', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'documen
                     // Update all siblings with the new family_id
                     for (const sib of siblingsArray) {
                         await client.query(
-                            `UPDATE students SET family_id = $1 WHERE student_id = $2`,
+                            `UPDATE students SET family_id = $1::varchar WHERE student_id = $2::int`,
                             [family_id, sib.sibling_id]
                         );
                     }
@@ -1165,21 +1165,30 @@ router.post('/', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'documen
         // If family_fee is provided, update it. Otherwise keep existing.
         // If opening_balance is provided, set it on the family.
         // -------------------------------------------------------
-        const familyFeeVal = parseFloat(family_fee) || 0;
+                const familyFeeVal = parseFloat(family_fee) || 0;
         const opbVal = parseFloat(opening_balance) || 0;
+        const cleanFatherName = father_name && String(father_name).trim() !== '' ? String(father_name).trim() : null;
+        const cleanFatherPhone = father_phone && String(father_phone).trim() !== '' ? String(father_phone).trim() : null;
+        const cleanGuardianName = guardian_name && String(guardian_name).trim() !== '' ? String(guardian_name).trim() : null;
+        const cleanGuardianPhone = guardian_phone && String(guardian_phone).trim() !== '' ? String(guardian_phone).trim() : null;
+        const contactName = cleanFatherName || cleanGuardianName;
+        const contactPhone = cleanFatherPhone || cleanGuardianPhone;
+
         await client.query(`
-            INSERT INTO families (family_id, family_fee, opening_balance, created_at)
-            VALUES ($1, $2, $3, NOW())
+            INSERT INTO families (family_id, family_fee, opening_balance, primary_contact_name, primary_contact_phone, created_at)
+            VALUES ($1::varchar, $2::numeric, $3::numeric, $4::varchar, $5::varchar, NOW())
             ON CONFLICT (family_id) DO UPDATE
                 SET family_fee = CASE 
-                    WHEN $2 > 0 THEN $2 
+                    WHEN $2::numeric > 0 THEN $2::numeric 
                     ELSE families.family_fee 
                 END,
                 opening_balance = CASE
-                    WHEN $3 > 0 THEN $3
+                    WHEN $3::numeric > 0 THEN $3::numeric
                     ELSE families.opening_balance
-                END
-        `, [family_id, familyFeeVal, opbVal]);
+                END,
+                primary_contact_name = COALESCE(families.primary_contact_name, $4::varchar),
+                primary_contact_phone = COALESCE(families.primary_contact_phone, $5::varchar)
+        `, [family_id, familyFeeVal, opbVal, contactName, contactPhone]);
 
         // Determine primary sibling_relation for the student record
         // Use 'blood' if any sibling is blood relation, otherwise 'cousin'
@@ -1223,7 +1232,7 @@ router.post('/', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'documen
         // Create User
         const newUser = await client.query(
             `INSERT INTO app_users (username, password_hash, plain_password, full_name, email, role_id, is_active)
-             VALUES ($1, $2, $3, $4, $5, $6, true) RETURNING id`,
+             VALUES ($1::varchar, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::int, true) RETURNING id`,
             [username, password_hash, 'student123', `${first_name} ${last_name}`, email, role_id]
         );
         const user_id = newUser.rows[0].id;
@@ -1231,6 +1240,9 @@ router.post('/', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'documen
         // ----------------------------------------------------
         // STUDENT CREATION
         // ----------------------------------------------------
+
+                const validDob = dob && String(dob).trim() !== '' ? String(dob).trim() : null;
+        const validAdmDate = admission_date && String(admission_date).trim() !== '' ? String(admission_date).trim() : new Date();
 
         const newStudent = await client.query(
             `INSERT INTO students (
@@ -1245,30 +1257,61 @@ router.post('/', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'documen
                 image_url, documents, user_id,
                 family_id, sibling_relation
             ) VALUES (
-                $1, $2, $3, $4, $5, $6,
-                $7, $8, $9, $10, $11,
-                $12, $13, $14, $15,
-                $16, $17, $18, $19, $20,
-                $21, $22, $23, $24,
-                $25, $26, $27, $28,
-                $29, $30, $31, $32, $33, $34,
-                $35, $36, $37,
-                $38, $39, $40,
-                $41, $42
+                $1::varchar, $2::varchar, $3::int, $4::int, $5::date, $6::varchar,
+                $7::varchar, $8::varchar, $9::varchar, $10::date, $11::varchar,
+                $12::varchar, $13::varchar, $14::boolean, $15::varchar,
+                $16::varchar, $17::varchar, $18::varchar, $19::varchar, $20::varchar,
+                $21::varchar, $22::varchar, $23::varchar, $24::varchar,
+                $25::varchar, $26::varchar, $27::varchar, $28::varchar,
+                $29::boolean, $30::varchar, $31::varchar, $32::varchar, $33::varchar, $34::varchar,
+                $35::numeric, $36::numeric, $37::numeric,
+                $38::varchar, $39::text, $40::int,
+                $41::varchar, $42::varchar
             )
             RETURNING *`,
             [
-                auto_admission_no, roll_no, class_id, section_id, admission_date || new Date(), category || 'Normal',
-                first_name, last_name, gender, dob, cnic_bform,
-                religion, blood_group, has_disability === 'true' || has_disability === true, disability_details,
-                mobile_no, email, current_address, permanent_address, city,
-                father_name, father_phone, father_cnic, father_occupation,
-                mother_name, mother_phone, mother_cnic, mother_occupation,
-                is_orphan === 'true' || is_orphan === true, guardian_name, guardian_relation, guardian_phone, guardian_cnic, guardian_address,
+                auto_admission_no,
+                roll_no && String(roll_no).trim() !== '' ? String(roll_no).trim() : null,
+                class_id && !isNaN(parseInt(class_id, 10)) ? parseInt(class_id, 10) : null,
+                section_id && !isNaN(parseInt(section_id, 10)) ? parseInt(section_id, 10) : null,
+                validAdmDate,
+                category || 'Normal',
+                first_name ? String(first_name).trim() : '',
+                last_name && String(last_name).trim() !== '' ? String(last_name).trim() : null,
+                gender && String(gender).trim() !== '' ? String(gender).trim() : null,
+                validDob,
+                cnic_bform && String(cnic_bform).trim() !== '' ? String(cnic_bform).trim() : null,
+                religion && String(religion).trim() !== '' ? String(religion).trim() : null,
+                blood_group && String(blood_group).trim() !== '' ? String(blood_group).trim() : null,
+                has_disability === 'true' || has_disability === true,
+                disability_details && String(disability_details).trim() !== '' ? String(disability_details).trim() : null,
+                mobile_no && String(mobile_no).trim() !== '' ? String(mobile_no).trim() : null,
+                email && String(email).trim() !== '' ? String(email).trim() : null,
+                current_address && String(current_address).trim() !== '' ? String(current_address).trim() : null,
+                permanent_address && String(permanent_address).trim() !== '' ? String(permanent_address).trim() : null,
+                city && String(city).trim() !== '' ? String(city).trim() : null,
+                cleanFatherName,
+                cleanFatherPhone,
+                father_cnic && String(father_cnic).trim() !== '' ? String(father_cnic).trim() : null,
+                father_occupation && String(father_occupation).trim() !== '' ? String(father_occupation).trim() : null,
+                mother_name && String(mother_name).trim() !== '' ? String(mother_name).trim() : null,
+                mother_phone && String(mother_phone).trim() !== '' ? String(mother_phone).trim() : null,
+                mother_cnic && String(mother_cnic).trim() !== '' ? String(mother_cnic).trim() : null,
+                mother_occupation && String(mother_occupation).trim() !== '' ? String(mother_occupation).trim() : null,
+                is_orphan === 'true' || is_orphan === true,
+                cleanGuardianName,
+                guardian_relation && String(guardian_relation).trim() !== '' ? String(guardian_relation).trim() : null,
+                cleanGuardianPhone,
+                guardian_cnic && String(guardian_cnic).trim() !== '' ? String(guardian_cnic).trim() : null,
+                guardian_address && String(guardian_address).trim() !== '' ? String(guardian_address).trim() : null,
                 (parseFloat(monthly_fee) > 0 ? parseFloat(monthly_fee) : (familyFeeVal > 0 ? familyFeeVal : 0)),
-                admission_fee || 0, other_charges || 0,
-                image_url, JSON.stringify(documents), user_id,
-                family_id, final_sibling_relation
+                parseFloat(admission_fee) || 0,
+                parseFloat(other_charges) || 0,
+                image_url,
+                JSON.stringify(documents),
+                user_id,
+                family_id,
+                final_sibling_relation
             ]
         );
 
@@ -1278,8 +1321,8 @@ router.post('/', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'documen
         if (familyFeeVal > 0) {
             await client.query(`
                 UPDATE students
-                SET monthly_fee = $2
-                WHERE family_id = $1 AND (monthly_fee IS NULL OR monthly_fee <= 0)
+                SET monthly_fee = $2::numeric
+                WHERE family_id = $1::varchar AND (monthly_fee IS NULL OR monthly_fee <= 0)
             `, [family_id, familyFeeVal]);
         }
 
@@ -1291,7 +1334,7 @@ router.post('/', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'documen
                 // Create forward relationship
                 await client.query(
                     `INSERT INTO student_siblings (student_id, sibling_id, relation_type)
-                     VALUES ($1, $2, $3)
+                     VALUES ($1::int, $2::int, $3::varchar)
                      ON CONFLICT (student_id, sibling_id) DO NOTHING`,
                     [new_student_id, sibling_id, relation_type]
                 );
@@ -1299,7 +1342,7 @@ router.post('/', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'documen
                 // Create reverse relationship
                 await client.query(
                     `INSERT INTO student_siblings (student_id, sibling_id, relation_type)
-                     VALUES ($1, $2, $3)
+                     VALUES ($1::int, $2::int, $3::varchar)
                      ON CONFLICT (student_id, sibling_id) DO NOTHING`,
                     [sibling_id, new_student_id, relation_type]
                 );
@@ -1319,7 +1362,7 @@ router.post('/', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'documen
             await client.query(`
                 INSERT INTO admission_fee_ledger
                     (student_id, total_amount, paid_amount, status, admission_date, notes, academic_year_id)
-                VALUES ($1, $2, 0, 'unpaid', $3, 'Auto-created on admission', $4)
+                VALUES ($1::int, $2::numeric, 0, 'unpaid', $3::date, 'Auto-created on admission', $4::int)
                 ON CONFLICT (student_id) DO UPDATE
                     SET total_amount = EXCLUDED.total_amount,
                         status = CASE WHEN EXCLUDED.total_amount = 0 THEN 'paid' ELSE 'unpaid' END,
@@ -1541,14 +1584,14 @@ router.post('/bulk', async (req, res) => {
                         guardian_name, guardian_relation, guardian_phone, guardian_cnic, guardian_address,
                         monthly_fee, admission_fee, family_id, sibling_relation
                     ) VALUES (
-                        $1, $2, $3, $4, $5, $6,
-                        $7, $8, $9, $10, $11,
-                        $12, $13, 
-                        $14, $15, $16, $17, $18,
-                        $19, $20, $21, $22,
-                        $23, $24, $25, $26,
-                        $27, $28, $29, $30, $31,
-                        $32, $33, $34, $35
+                        $1::varchar, $2::varchar, $3::int, $4::int, $5::date, $6::varchar,
+                        $7::varchar, $8::varchar, $9::varchar, $10::date, $11::varchar,
+                        $12::varchar, $13::varchar, 
+                        $14::varchar, $15::varchar, $16::varchar, $17::varchar, $18::varchar,
+                        $19::varchar, $20::varchar, $21::varchar, $22::varchar,
+                        $23::varchar, $24::varchar, $25::varchar, $26::varchar,
+                        $27::varchar, $28::varchar, $29::varchar, $30::varchar, $31::varchar,
+                        $32::numeric, $33::numeric, $34::varchar, $35::varchar
                     )
                     RETURNING student_id`,
                     [
@@ -1576,7 +1619,7 @@ router.post('/bulk', async (req, res) => {
                     for (const sibling of siblings.rows) {
                         await client.query(
                             `INSERT INTO student_siblings (student_id, sibling_id, relation_type)
-                             VALUES ($1, $2, 'blood'), ($2, $1, 'blood')
+                             VALUES ($1::int, $2::int, 'blood'), ($2::int, $1::int, 'blood')
                              ON CONFLICT (student_id, sibling_id) DO NOTHING`,
                             [newStudentId, sibling.student_id]
                         );
@@ -1588,10 +1631,10 @@ router.post('/bulk', async (req, res) => {
                 const bulkOpb = parseFloat(s.opening_balance) || 0;
                 await client.query(`
                     INSERT INTO families (family_id, family_fee, opening_balance, created_at)
-                    VALUES ($1, $2, $3, NOW())
+                    VALUES ($1::varchar, $2::numeric, $3::numeric, NOW())
                     ON CONFLICT (family_id) DO UPDATE
-                        SET family_fee = CASE WHEN $2 > 0 THEN $2 ELSE families.family_fee END,
-                            opening_balance = CASE WHEN $3 > 0 THEN $3 ELSE families.opening_balance END
+                        SET family_fee = CASE WHEN $2::numeric > 0 THEN $2::numeric ELSE families.family_fee END,
+                            opening_balance = CASE WHEN $3::numeric > 0 THEN $3::numeric ELSE families.opening_balance END
                 `, [family_id, bulkFamilyFee, bulkOpb]);
 
                 // Handle User Profile for Bulk Import
@@ -1618,12 +1661,12 @@ router.post('/bulk', async (req, res) => {
                 }
 
                 const newUser = await client.query(
-                    "INSERT INTO app_users (username, password_hash, plain_password, full_name, email, role_id, is_active) VALUES ($1, $2, $3, $4, $5, $6, true) RETURNING id",
+                    "INSERT INTO app_users (username, password_hash, plain_password, full_name, email, role_id, is_active) VALUES ($1::varchar, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::int, true) RETURNING id",
                     [username, password_hash, 'student123', (s.first_name + ' ' + (s.last_name || '')).trim(), s.email || '', role_id]
                 );
                 const user_id = newUser.rows[0].id;
 
-                await client.query("UPDATE students SET user_id = $1 WHERE student_id = $2", [user_id, newStudentId]);
+                await client.query("UPDATE students SET user_id = $1::int WHERE student_id = $2::int", [user_id, newStudentId]);
 
                 results.success++;
                 results.familyStats.totalStudents++;
@@ -1838,17 +1881,17 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
         const oldFatherName = (existingStudent.father_name || '').trim();
         const oldFatherPhone = (existingStudent.father_phone || '').trim();
 
-        const updateQ = `UPDATE students SET
-            roll_no=$1, class_id=$2, section_id=$3, admission_date=$4, category=$5,
-            first_name=$6, last_name=$7, gender=$8, dob=$9, cnic_bform=$10,
-            religion=$11, blood_group=$12, has_disability=$13, disability_details=$14,
-            student_mobile=$15, email=$16, current_address=$17, permanent_address=$18, city=$19,
-            father_name=$20, father_phone=$21, father_cnic=$22, father_occupation=$23,
-            mother_name=$24, mother_phone=$25, mother_cnic=$26, mother_occupation=$27,
-            is_orphan=$28, guardian_name=$29, guardian_relation=$30, guardian_phone=$31, guardian_cnic=$32, guardian_address=$33,
-            monthly_fee=$34, admission_fee=$35, other_charges=$36,
-            image_url=$37, documents=$38
-            WHERE student_id=$39 RETURNING user_id, family_id`;
+                const updateQ = `UPDATE students SET
+            roll_no=$1::varchar, class_id=$2::int, section_id=$3::int, admission_date=$4::date, category=$5::varchar,
+            first_name=$6::varchar, last_name=$7::varchar, gender=$8::varchar, dob=$9::date, cnic_bform=$10::varchar,
+            religion=$11::varchar, blood_group=$12::varchar, has_disability=$13::boolean, disability_details=$14::varchar,
+            student_mobile=$15::varchar, email=$16::varchar, current_address=$17::varchar, permanent_address=$18::varchar, city=$19::varchar,
+            father_name=$20::varchar, father_phone=$21::varchar, father_cnic=$22::varchar, father_occupation=$23::varchar,
+            mother_name=$24::varchar, mother_phone=$25::varchar, mother_cnic=$26::varchar, mother_occupation=$27::varchar,
+            is_orphan=$28::boolean, guardian_name=$29::varchar, guardian_relation=$30::varchar, guardian_phone=$31::varchar, guardian_cnic=$32::varchar, guardian_address=$33::varchar,
+            monthly_fee=$34::numeric, admission_fee=$35::numeric, other_charges=$36::numeric,
+            image_url=$37::varchar, documents=$38::text
+            WHERE student_id=$39::int RETURNING user_id, family_id`;
 
         const vals = [
             roll_no && String(roll_no).trim() !== '' ? String(roll_no).trim() : null,
@@ -1904,14 +1947,26 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
         const user_id = resUpd.rows[0].user_id;
         const fam_id_updated = resUpd.rows[0].family_id || oldFamilyId;
 
-        // Auto-propagate father details to all same-father siblings in the same family
+                // Auto-propagate parent & contact details to all same-father siblings in the same family
         let siblingsUpdatedCount = 0;
         const cleanFatherName = father_name && String(father_name).trim() !== '' ? String(father_name).trim() : null;
         const cleanFatherPhone = father_phone && String(father_phone).trim() !== '' ? String(father_phone).trim() : null;
         const cleanFatherCnic = father_cnic && String(father_cnic).trim() !== '' ? String(father_cnic).trim() : null;
         const cleanFatherOcc = father_occupation && String(father_occupation).trim() !== '' ? String(father_occupation).trim() : null;
+        const cleanMotherName = mother_name && String(mother_name).trim() !== '' ? String(mother_name).trim() : null;
+        const cleanMotherPhone = mother_phone && String(mother_phone).trim() !== '' ? String(mother_phone).trim() : null;
+        const cleanMotherCnic = mother_cnic && String(mother_cnic).trim() !== '' ? String(mother_cnic).trim() : null;
+        const cleanMotherOcc = mother_occupation && String(mother_occupation).trim() !== '' ? String(mother_occupation).trim() : null;
+        const cleanCurrentAddress = current_address && String(current_address).trim() !== '' ? String(current_address).trim() : null;
+        const cleanPermanentAddress = permanent_address && String(permanent_address).trim() !== '' ? String(permanent_address).trim() : null;
+        const cleanCity = city && String(city).trim() !== '' ? String(city).trim() : null;
+        const cleanGuardianName = guardian_name && String(guardian_name).trim() !== '' ? String(guardian_name).trim() : null;
+        const cleanGuardianPhone = guardian_phone && String(guardian_phone).trim() !== '' ? String(guardian_phone).trim() : null;
+        const cleanGuardianCnic = guardian_cnic && String(guardian_cnic).trim() !== '' ? String(guardian_cnic).trim() : null;
+        const cleanGuardianRelation = guardian_relation && String(guardian_relation).trim() !== '' ? String(guardian_relation).trim() : null;
+        const cleanGuardianAddress = guardian_address && String(guardian_address).trim() !== '' ? String(guardian_address).trim() : null;
 
-        if (fam_id_updated && (cleanFatherName || cleanFatherPhone)) {
+        if (fam_id_updated && (cleanFatherName || cleanFatherPhone || cleanMotherName || cleanMotherPhone || cleanCurrentAddress)) {
             const normOldFather = oldFatherName.toLowerCase().replace(/\s+/g, ' ');
 
             // Check if there is only 1 distinct father in this family
@@ -1983,18 +2038,32 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
             if (siblingIdsToUpdate.length > 0) {
                 const allFamilyStudentIds = [parseInt(id, 10), ...siblingIdsToUpdate];
 
-                await client.query(`
+                                await client.query(`
                     UPDATE students
                     SET father_name = COALESCE($1::varchar, father_name),
                         father_phone = COALESCE($2::varchar, father_phone),
                         father_cnic = COALESCE($3::varchar, father_cnic),
-                        father_occupation = COALESCE($4::varchar, father_occupation)
-                    WHERE student_id = ANY($5::int[])
+                        father_occupation = COALESCE($4::varchar, father_occupation),
+                        mother_name = COALESCE($5::varchar, mother_name),
+                        mother_phone = COALESCE($6::varchar, mother_phone),
+                        mother_cnic = COALESCE($7::varchar, mother_cnic),
+                        mother_occupation = COALESCE($8::varchar, mother_occupation),
+                        current_address = COALESCE($9::varchar, current_address),
+                        permanent_address = COALESCE($10::varchar, permanent_address),
+                        city = COALESCE($11::varchar, city)
+                    WHERE student_id = ANY($12::int[])
                 `, [
                     cleanFatherName,
                     cleanFatherPhone,
                     cleanFatherCnic,
                     cleanFatherOcc,
+                    cleanMotherName,
+                    cleanMotherPhone,
+                    cleanMotherCnic,
+                    cleanMotherOcc,
+                    cleanCurrentAddress,
+                    cleanPermanentAddress,
+                    cleanCity,
                     siblingIdsToUpdate
                 ]);
 
@@ -2006,17 +2075,21 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
                       AND relation_type != 'blood'
                 `, [allFamilyStudentIds]);
 
-                if (updateGuardiansFor.length > 0) {
+                                if (updateGuardiansFor.length > 0) {
                     await client.query(`
                         UPDATE students
                         SET guardian_name = COALESCE($1::varchar, guardian_name),
                             guardian_phone = COALESCE($2::varchar, guardian_phone),
-                            guardian_cnic = COALESCE($3::varchar, guardian_cnic)
-                        WHERE student_id = ANY($4::int[])
+                            guardian_cnic = COALESCE($3::varchar, guardian_cnic),
+                            guardian_relation = COALESCE($4::varchar, guardian_relation),
+                            guardian_address = COALESCE($5::varchar, guardian_address)
+                        WHERE student_id = ANY($6::int[])
                     `, [
-                        cleanFatherName,
-                        cleanFatherPhone,
-                        cleanFatherCnic,
+                        cleanFatherName || cleanGuardianName,
+                        cleanFatherPhone || cleanGuardianPhone,
+                        cleanFatherCnic || cleanGuardianCnic,
+                        cleanGuardianRelation,
+                        cleanGuardianAddress,
                         updateGuardiansFor
                     ]);
                 }
@@ -2030,11 +2103,11 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
                 UPDATE families
                 SET primary_contact_name = COALESCE($1::varchar, primary_contact_name),
                     primary_contact_phone = COALESCE($2::varchar, primary_contact_phone)
-                WHERE family_id = $3
+                WHERE family_id = $3::varchar
                   AND (
                       primary_contact_name IS NULL 
                       OR TRIM(primary_contact_name) = ''
-                      OR LOWER(TRIM(REGEXP_REPLACE(primary_contact_name, '\\s+', ' ', 'g'))) = $4
+                      OR LOWER(TRIM(REGEXP_REPLACE(primary_contact_name, '\\s+', ' ', 'g'))) = $4::varchar
                       OR $5::boolean = TRUE
                   )
             `, [
@@ -2054,12 +2127,12 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
                 await client.query(`
                     UPDATE families
                     SET family_name = CASE
-                        WHEN family_name = $1 THEN $2::varchar
-                        WHEN family_name = $3 THEN $4::varchar
-                        WHEN family_name = $5 THEN $6::varchar
+                        WHEN family_name = $1::varchar THEN $2::varchar
+                        WHEN family_name = $3::varchar THEN $4::varchar
+                        WHEN family_name = $5::varchar THEN $6::varchar
                         ELSE family_name
                     END
-                    WHERE family_id = $7
+                    WHERE family_id = $7::varchar
                 `, [oldFatherName, cleanFatherName, oldFamilyName, newFamilyName, oldFamilyOf, newFamilyOf, fam_id_updated]);
             }
         }
@@ -2069,18 +2142,18 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
             const parsedFamFee = parseFloat(family_fee);
             await client.query(`
                 INSERT INTO families (family_id, family_fee)
-                VALUES ($1, $2)
-                ON CONFLICT (family_id) DO UPDATE SET family_fee = $2
+                VALUES ($1::varchar, $2::numeric)
+                ON CONFLICT (family_id) DO UPDATE SET family_fee = $2::numeric
             `, [fam_id_updated, parsedFamFee]);
 
             // Also update any siblings in this family who have monthly_fee <= 0 or if exactly 1 active student remains
             await client.query(`
                 UPDATE students
-                SET monthly_fee = $2
-                WHERE family_id = $1 AND (
+                SET monthly_fee = $2::numeric
+                WHERE family_id = $1::varchar AND (
                     monthly_fee IS NULL 
                     OR monthly_fee <= 0
-                    OR (SELECT COUNT(*) FROM students s2 WHERE s2.family_id = $1 AND LOWER(COALESCE(s2.status, 'Active')) = 'active') = 1
+                    OR (SELECT COUNT(*) FROM students s2 WHERE s2.family_id = $1::varchar AND LOWER(COALESCE(s2.status, 'Active')) = 'active') = 1
                 )
             `, [fam_id_updated, parsedFamFee]);
         }
@@ -2089,7 +2162,7 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
         if (opening_balance !== undefined && opening_balance !== null && opening_balance !== '' && fam_id_updated) {
             const opbVal = parseFloat(opening_balance);
             if (!isNaN(opbVal) && opbVal >= 0) {
-                const famRes = await client.query(`SELECT opening_balance, opening_balance_paid FROM families WHERE family_id = $1`, [fam_id_updated]);
+                const famRes = await client.query(`SELECT opening_balance, opening_balance_paid FROM families WHERE family_id = $1::varchar`, [fam_id_updated]);
                 const currentOpb = parseFloat(famRes.rows[0]?.opening_balance || 0);
                 const currentPaid = parseFloat(famRes.rows[0]?.opening_balance_paid || 0);
 
@@ -2099,8 +2172,8 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
                     const finalOpb = Math.max(opbVal, currentPaid);
                     await client.query(`
                         INSERT INTO families (family_id, opening_balance, created_at)
-                        VALUES ($1, $2, NOW())
-                        ON CONFLICT (family_id) DO UPDATE SET opening_balance = $2
+                        VALUES ($1::varchar, $2::numeric, NOW())
+                        ON CONFLICT (family_id) DO UPDATE SET opening_balance = $2::numeric
                     `, [fam_id_updated, finalOpb]);
                 }
             }
@@ -2110,7 +2183,7 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
         if (user_id) {
             const fullName = `${first_name || ''} ${last_name || ''}`.trim() || 'Student';
             await client.query(
-                "UPDATE app_users SET full_name = $1, email = $2 WHERE id = $3",
+                "UPDATE app_users SET full_name = $1::varchar, email = $2::varchar WHERE id = $3::int",
                 [fullName, email && String(email).trim() !== '' ? String(email).trim() : null, user_id]
             );
         }
@@ -2125,7 +2198,7 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
             await client.query(`
                 INSERT INTO admission_fee_ledger 
                     (student_id, total_amount, paid_amount, status, admission_date, notes, academic_year_id)
-                VALUES ($1, $2, 0, 'unpaid', $3, 'Auto-created/Updated via student edit', $4)
+                VALUES ($1::int, $2::numeric, 0, 'unpaid', $3::date, 'Auto-created/Updated via student edit', $4::int)
                 ON CONFLICT (student_id) DO UPDATE 
                     SET total_amount = EXCLUDED.total_amount,
                         status = CASE 
@@ -2139,7 +2212,7 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
             await client.query(`
                 UPDATE admission_fee_ledger
                 SET total_amount = 0, status = 'paid'
-                WHERE student_id = $1 AND paid_amount = 0
+                WHERE student_id = $1::int AND paid_amount = 0
             `, [id]);
         }
 
@@ -2333,13 +2406,13 @@ router.patch('/:id/generate-credentials', async (req, res) => {
         // 4. Create User
         const newUser = await client.query(
             `INSERT INTO app_users (username, password_hash, plain_password, full_name, email, role_id, is_active)
-             VALUES ($1, $2, $3, $4, $5, $6, true) RETURNING id`,
+             VALUES ($1::varchar, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::int, true) RETURNING id`,
             [username, password_hash, 'student123', `${student.first_name} ${student.last_name}`, student.email, role_id]
         );
         const user_id = newUser.rows[0].id;
 
         // 5. Link to Student
-        await client.query("UPDATE students SET user_id = $1 WHERE student_id = $2", [user_id, id]);
+        await client.query("UPDATE students SET user_id = $1::int WHERE student_id = $2::int", [user_id, id]);
 
         await client.query('COMMIT');
         res.json({ message: "Credentials Generated", username });
@@ -2488,7 +2561,7 @@ router.get('/opb/families/:family_id', async (req, res) => {
             SELECT s.student_id, s.admission_no, s.first_name, s.last_name, c.class_name
             FROM students s
             LEFT JOIN classes c ON c.class_id = s.class_id
-            WHERE s.family_id = $1 AND s.status = 'Active'
+            WHERE s.family_id = $1::varchar AND s.status = 'Active'
             ORDER BY s.first_name
         `, [family_id]);
 
@@ -2594,8 +2667,8 @@ router.post('/opb/families/:family_id/payment', async (req, res) => {
         // Update families.opening_balance_paid
         await client.query(`
             UPDATE families
-            SET opening_balance_paid = opening_balance_paid + $1
-            WHERE family_id = $2
+            SET opening_balance_paid = opening_balance_paid + $1::numeric
+            WHERE family_id = $2::varchar
         `, [payAmt, family_id]);
 
         const updatedFamily = await client.query(`
