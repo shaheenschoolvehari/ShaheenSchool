@@ -945,7 +945,17 @@ const cleanupCorruptLineItems = async () => {
             const slipPaid = parseFloat(s.paid_amount) || 0;
             await pool.query('UPDATE slip_line_items SET paid_amount = 0 WHERE slip_id = $1', [slipId]);
             if (slipPaid > 0) {
-                const items = await pool.query('SELECT item_id, amount FROM slip_line_items WHERE slip_id = $1 ORDER BY item_id', [slipId]);
+                const items = await pool.query(`
+                    SELECT item_id, amount 
+                    FROM slip_line_items 
+                    WHERE slip_id = $1 
+                    ORDER BY 
+                        CASE 
+                            WHEN head_name ILIKE '%previous balance%' OR head_name ILIKE '%opening balance%' THEN 1
+                            WHEN is_carried_forward = TRUE THEN 2
+                            ELSE 3
+                        END, item_id ASC
+                `, [slipId]);
                 let remAlloc = slipPaid;
                 for (const item of items.rows) {
                     if (remAlloc <= 0) break;
@@ -2350,7 +2360,17 @@ router.delete('/payments/:payment_id', async (req, res) => {
         // ── Re-sync slip_line_items paid_amount for this slip ─────────────
         await client.query('UPDATE slip_line_items SET paid_amount = 0 WHERE slip_id = $1', [p.slip_id]);
         if (newPaid > 0) {
-            const itemsRes = await client.query('SELECT item_id, amount FROM slip_line_items WHERE slip_id = $1 ORDER BY item_id', [p.slip_id]);
+            const itemsRes = await client.query(`
+                SELECT item_id, amount 
+                FROM slip_line_items 
+                WHERE slip_id = $1 
+                ORDER BY 
+                    CASE 
+                        WHEN head_name ILIKE '%previous balance%' OR head_name ILIKE '%opening balance%' THEN 1
+                        WHEN is_carried_forward = TRUE THEN 2
+                        ELSE 3
+                    END, item_id ASC
+            `, [p.slip_id]);
             let remAlloc = newPaid;
             for (const item of itemsRes.rows) {
                 if (remAlloc <= 0) break;
