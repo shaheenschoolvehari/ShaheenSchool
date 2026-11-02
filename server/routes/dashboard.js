@@ -373,7 +373,7 @@ router.get('/accountant', async (req, res) => {
                   AND (status IS NULL OR LOWER(status) != 'cancelled')
             `),
 
-            // Active Student Pending Dues
+            // Active Student Pending Dues (Any active solo student or any family slip with at least 1 active student)
             pool.query(`
                 SELECT COALESCE(SUM(
                     CASE
@@ -381,28 +381,12 @@ router.get('/accountant', async (req, res) => {
                         WHEN ms.family_id IS NULL THEN
                             CASE WHEN LOWER(COALESCE(s.status, 'Active')) = 'active' THEN GREATEST(0, ms.total_amount - ms.paid_amount) ELSE 0 END
                         
-                        -- Family slip with NO active students (purely inactive)
-                        WHEN NOT EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active') THEN 0
-
-                        -- Family slip with NO inactive students (purely active)
-                        WHEN NOT EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) != 'active') THEN
+                        -- Family slip: if at least 1 student is active, the entire slip is Active Family Dues
+                        WHEN EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active') THEN
                             GREATEST(0, ms.total_amount - ms.paid_amount)
 
-                        -- Mixed family slip (both active and inactive members exist):
-                        -- Active portion is the total remaining slip balance minus the inactive previous balance portion
-                        ELSE
-                            GREATEST(0,
-                                GREATEST(0, ms.total_amount - ms.paid_amount) -
-                                LEAST(
-                                    GREATEST(0, ms.total_amount - ms.paid_amount),
-                                    COALESCE((
-                                        SELECT SUM(GREATEST(0, sli.amount - COALESCE(sli.paid_amount, 0)))
-                                        FROM slip_line_items sli
-                                        WHERE sli.slip_id = ms.slip_id
-                                          AND (sli.head_name ILIKE '%previous balance%' OR sli.head_name ILIKE '%opening balance%')
-                                    ), 0)
-                                )
-                            )
+                        -- Family slip with NO active students remaining
+                        ELSE 0
                     END
                 ), 0) AS total
                 FROM monthly_fee_slips ms
@@ -411,35 +395,22 @@ router.get('/accountant', async (req, res) => {
                   AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
             `),
 
-            // Inactive Student Pending Dues
+            // Inactive Student Pending Dues (Solo inactive students or families where NO active students remain)
             pool.query(`
                 SELECT (
-                    -- 1. Inactive portion on monthly fee slips
+                    -- 1. Inactive fee slips
                     COALESCE(SUM(
                         CASE
                             -- Solo student slip
                             WHEN ms.family_id IS NULL THEN
                                 CASE WHEN LOWER(COALESCE(s.status, 'Active')) != 'active' THEN GREATEST(0, ms.total_amount - ms.paid_amount) ELSE 0 END
                             
-                            -- Family slip with NO active students (purely inactive)
+                            -- Family slip with NO active students (purely inactive families)
                             WHEN NOT EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active') THEN
                                 GREATEST(0, ms.total_amount - ms.paid_amount)
 
-                            -- Family slip with NO inactive students (purely active)
-                            WHEN NOT EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) != 'active') THEN 0
-
-                            -- Mixed family slip (has both active and inactive members):
-                            -- Inactive portion is the unpaid previous balance / arrears carried over from the inactive members
-                            ELSE
-                                LEAST(
-                                    GREATEST(0, ms.total_amount - ms.paid_amount),
-                                    COALESCE((
-                                        SELECT SUM(GREATEST(0, sli.amount - COALESCE(sli.paid_amount, 0)))
-                                        FROM slip_line_items sli
-                                        WHERE sli.slip_id = ms.slip_id
-                                          AND (sli.head_name ILIKE '%previous balance%' OR sli.head_name ILIKE '%opening balance%')
-                                    ), 0)
-                                )
+                            -- Family slip with at least one active student enrolled -> NOT inactive dues
+                            ELSE 0
                         END
                     ), 0)
                     +
@@ -772,7 +743,7 @@ router.get('/', async (req, res) => {
                   AND (status IS NULL OR LOWER(status) != 'cancelled')
             `),
 
-            // 17. Active Student Pending Dues
+            // 17. Active Student Pending Dues (Any active solo student or any family slip with at least 1 active student)
             pool.query(`
                 SELECT COALESCE(SUM(
                     CASE
@@ -780,28 +751,12 @@ router.get('/', async (req, res) => {
                         WHEN ms.family_id IS NULL THEN
                             CASE WHEN LOWER(COALESCE(s.status, 'Active')) = 'active' THEN GREATEST(0, ms.total_amount - ms.paid_amount) ELSE 0 END
                         
-                        -- Family slip with NO active students (purely inactive)
-                        WHEN NOT EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active') THEN 0
-
-                        -- Family slip with NO inactive students (purely active)
-                        WHEN NOT EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) != 'active') THEN
+                        -- Family slip: if at least 1 student is active, the entire slip is Active Family Dues
+                        WHEN EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active') THEN
                             GREATEST(0, ms.total_amount - ms.paid_amount)
 
-                        -- Mixed family slip (both active and inactive members exist):
-                        -- Active portion is the total remaining slip balance minus the inactive previous balance portion
-                        ELSE
-                            GREATEST(0,
-                                GREATEST(0, ms.total_amount - ms.paid_amount) -
-                                LEAST(
-                                    GREATEST(0, ms.total_amount - ms.paid_amount),
-                                    COALESCE((
-                                        SELECT SUM(GREATEST(0, sli.amount - COALESCE(sli.paid_amount, 0)))
-                                        FROM slip_line_items sli
-                                        WHERE sli.slip_id = ms.slip_id
-                                          AND (sli.head_name ILIKE '%previous balance%' OR sli.head_name ILIKE '%opening balance%')
-                                    ), 0)
-                                )
-                            )
+                        -- Family slip with NO active students remaining
+                        ELSE 0
                     END
                 ), 0) AS total
                 FROM monthly_fee_slips ms
@@ -810,35 +765,22 @@ router.get('/', async (req, res) => {
                   AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
             `),
 
-            // 18. Inactive Student Pending Dues
+            // 18. Inactive Student Pending Dues (Solo inactive students or families where NO active students remain)
             pool.query(`
                 SELECT (
-                    -- 1. Inactive portion on monthly fee slips
+                    -- 1. Inactive fee slips
                     COALESCE(SUM(
                         CASE
                             -- Solo student slip
                             WHEN ms.family_id IS NULL THEN
                                 CASE WHEN LOWER(COALESCE(s.status, 'Active')) != 'active' THEN GREATEST(0, ms.total_amount - ms.paid_amount) ELSE 0 END
                             
-                            -- Family slip with NO active students (purely inactive)
+                            -- Family slip with NO active students (purely inactive families)
                             WHEN NOT EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active') THEN
                                 GREATEST(0, ms.total_amount - ms.paid_amount)
 
-                            -- Family slip with NO inactive students (purely active)
-                            WHEN NOT EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) != 'active') THEN 0
-
-                            -- Mixed family slip (has both active and inactive members):
-                            -- Inactive portion is the unpaid previous balance / arrears carried over from the inactive members
-                            ELSE
-                                LEAST(
-                                    GREATEST(0, ms.total_amount - ms.paid_amount),
-                                    COALESCE((
-                                        SELECT SUM(GREATEST(0, sli.amount - COALESCE(sli.paid_amount, 0)))
-                                        FROM slip_line_items sli
-                                        WHERE sli.slip_id = ms.slip_id
-                                          AND (sli.head_name ILIKE '%previous balance%' OR sli.head_name ILIKE '%opening balance%')
-                                    ), 0)
-                                )
+                            -- Family slip with at least one active student enrolled -> NOT inactive dues
+                            ELSE 0
                         END
                     ), 0)
                     +

@@ -254,6 +254,26 @@ export default function StudentDashboard({ user }: { user: any }) {
             if (res.ok) {
                 setStudent({ ...student, status: newStatus });
                 notify.success(`Status updated to ${newStatus}`);
+
+                if (newStatus === 'Inactive') {
+                    setTimeout(() => {
+                        alert(
+                            `⚠️ STUDENT DEACTIVATION & FEE ALERT / فیس کم کرنے کا الرٹ\n\n` +
+                            `--------------------------------------------------\n` +
+                            `[ENGLISH]:\n` +
+                            `You have marked this student (${student.first_name || ''} ${student.last_name || ''}) as INACTIVE.\n\n` +
+                            `Please check: Do you need to REDUCE or ADJUST the monthly tuition fee / family fee for this student?\n` +
+                            `• If YES: Please go to Edit Student or Family Fee settings to reduce the fee.\n` +
+                            `• If NO: Keep the fee as is.\n\n` +
+                            `--------------------------------------------------\n` +
+                            `[اردو]:\n` +
+                            `آپ نے اس طالب علم (${student.first_name || ''} ${student.last_name || ''}) کو غیر فعال (Inactive) کر دیا ہے۔\n\n` +
+                            `برائے مہربانی چیک کریں: کیا آپ کو اس طالب علم یا اس کی فیملی کی ماہانہ فیس کم (Reduce) کرنی ہے یا نہیں؟\n` +
+                            `• اگر فیس کم کرنی ہے: تو برائے مہربانی اسٹوڈنٹ ایڈٹ (Edit Student) یا فیملی فیس سیٹنگز میں جا کر فیس کم کریں۔\n` +
+                            `• اگر فیس کم نہیں کرنی: تو فیس کو ویسے ہی رہنے دیں۔`
+                        );
+                    }, 350);
+                }
             } else {
                 notify.error('Failed to update status');
             }
