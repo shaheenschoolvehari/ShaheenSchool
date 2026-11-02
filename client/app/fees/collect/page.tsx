@@ -1019,14 +1019,14 @@ export default function CollectFeePage() {
     const allGroups: AccountGroup[] = (() => {
         const map = new Map<string, AccountGroup>();
         filtered.forEach(slip => {
-            const key = (slip.is_family_slip && slip.family_id) ? `fam_${slip.family_id}` : `stu_${slip.student_id}`;
+            const key = slip.family_id ? `fam_${slip.family_id}` : `stu_${slip.student_id}`;
             if (!map.has(key)) {
                 map.set(key, {
                     key, student_id: slip.student_id,
                     first_name: slip.first_name, last_name: slip.last_name,
                     admission_no: slip.admission_no, father_name: slip.father_name,
                     father_phone: slip.father_phone, class_name: slip.class_name, section_name: slip.section_name,
-                    family_id: slip.family_id, is_family_slip: slip.is_family_slip,
+                    family_id: slip.family_id, is_family_slip: Boolean(slip.is_family_slip || slip.family_id),
                     family_members: slip.family_members,
                     latest_slip: slip, latest_unpaid: slip,
                     latest_paid: null, has_payments: false,
@@ -1035,6 +1035,12 @@ export default function CollectFeePage() {
                 });
             }
             const g = map.get(key)!;
+            if (slip.family_members && slip.family_members.length > 0) {
+                g.family_members = slip.family_members;
+            }
+            if (slip.is_family_slip || slip.family_id) {
+                g.is_family_slip = true;
+            }
             g.advance_balance = Math.max(g.advance_balance || 0, parseFloat((slip as any).advance_balance || 0));
             // Track latest slip (highest year, then highest month)
             const isNewer = slip.year > g.latest_slip.year ||

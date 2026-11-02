@@ -35,7 +35,7 @@ async function attachClassExamCollections(slips, clientPool) {
     if (!slips || slips.length === 0) return slips;
 
     const slipIds = slips.map(s => s.slip_id).filter(Boolean);
-    const familyIds = [...new Set(slips.filter(s => s.is_family_slip && s.family_id).map(s => s.family_id))];
+    const familyIds = [...new Set(slips.filter(s => s.family_id).map(s => s.family_id))];
     const studentIds = [...new Set(slips.map(s => s.student_id).filter(Boolean))];
 
     if (slipIds.length === 0) return slips;
@@ -83,7 +83,7 @@ async function attachClassExamCollections(slips, clientPool) {
             const matchedEfc = efcRows.filter(efc => {
                 if (efc.fee_slip_id && efc.fee_slip_id === slip.slip_id) return true;
 
-                const targetMatch = slip.is_family_slip && slip.family_id
+                const targetMatch = slip.family_id
                     ? efc.family_id === slip.family_id
                     : efc.student_id === slip.student_id;
 
@@ -892,6 +892,13 @@ const syncFamilyLeadSlips = async () => {
                 );
             }
         }
+
+        // Ensure all slips with a family_id have is_family_slip = TRUE
+        await pool.query(`
+            UPDATE monthly_fee_slips 
+            SET is_family_slip = TRUE 
+            WHERE family_id IS NOT NULL AND (is_family_slip IS NULL OR is_family_slip = FALSE)
+        `);
     } catch (e) {
         console.error("syncFamilyLeadSlips error:", e.message);
     }
@@ -1048,7 +1055,7 @@ router.get('/', async (req, res) => {
 
         // For family slips, attach all active students in this class that share the family_id
         const familySlipIds = result.rows
-            .filter(r => r.is_family_slip && r.family_id)
+            .filter(r => r.family_id)
             .map(r => r.family_id);
         const membersMap = {};
         if (familySlipIds.length > 0) {
@@ -1094,7 +1101,7 @@ router.get('/', async (req, res) => {
 
         // Evaluate trusted category and all-trusted families
         result.rows.forEach(r => {
-            if (r.is_family_slip && r.family_id) {
+            if (r.family_id) {
                 r.family_members = membersMap[r.family_id] || [];
                 // If the student on the slip is inactive, dynamically project the senior active member
                 const activeLead = r.family_members.find(m => (m.status || 'Active').toLowerCase() === 'active') || r.family_members[0];
@@ -1161,7 +1168,7 @@ router.get('/', async (req, res) => {
             // Multi-month / Whole year query: Group by account to prevent double-counting of Previous Balance
             const accountMap = new Map();
             result.rows.forEach(r => {
-                const key = (r.is_family_slip && r.family_id) ? `fam_${r.family_id}` : `stu_${r.student_id}`;
+                const key = r.family_id ? `fam_${r.family_id}` : `stu_${r.student_id}`;
                 if (!accountMap.has(key)) {
                     accountMap.set(key, []);
                 }
@@ -1406,8 +1413,8 @@ router.post('/admission-fees/:ledger_id/pay', async (req, res) => {
                 // Create a standalone tuition slip
                 const newSlip = await client.query(
                     `INSERT INTO monthly_fee_slips 
-                    (student_id, family_id, class_id, month, year, total_amount, paid_amount, status, months_list, academic_year_id)
-                    VALUES ($1, (SELECT family_id FROM students WHERE student_id=$1), (SELECT class_id FROM students WHERE student_id=$1), $2, $3, $4, $5, $6, ARRAY[$2]::int[], $7)
+                    (student_id, family_id, class_id, month, year, total_amount, paid_amount, status, is_family_slip, months_list, academic_year_id)
+                    VALUES ($1, (SELECT family_id FROM students WHERE student_id=$1), (SELECT class_id FROM students WHERE student_id=$1), $2, $3, $4, $5, $6, CASE WHEN (SELECT family_id FROM students WHERE student_id=$1) IS NOT NULL THEN TRUE ELSE FALSE END, ARRAY[$2]::int[], $7)
                     RETURNING slip_id`,
                     [
                         current.student_id,
