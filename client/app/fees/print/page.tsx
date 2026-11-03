@@ -62,13 +62,7 @@ function OldVoucherSlip({ v, serial, month, year, school, filterClassId }: { v: 
     let membersSource = v.family_members && v.family_members.length > 0
         ? [...v.family_members]
         : allStudents.map(s => ({ ...s, class_id: s.c_class_id }));
-    if (filterClassId && v.voucher_type === 'family') {
-        membersSource.sort((a, b) => {
-            const aMatch = (a as any).class_id?.toString() === filterClassId ? 0 : 1;
-            const bMatch = (b as any).class_id?.toString() === filterClassId ? 0 : 1;
-            return aMatch - bMatch;
-        });
-    }
+    // Seniority order strictly preserved on voucher (Lead student always in Row 1)
     const baseStudents: StudentRow[] = membersSource.map(m => ({
         first_name: m.first_name,
         last_name: m.last_name,
@@ -192,13 +186,7 @@ function VoucherSlip({ v, serial, month, year, school, filterClassId }: { v: Vou
             class_id: s.c_class_id
         }));
 
-    if (filterClassId && v.voucher_type === 'family') {
-        membersSource.sort((a, b) => {
-            const aMatch = (a as any).class_id?.toString() === filterClassId ? 0 : 1;
-            const bMatch = (b as any).class_id?.toString() === filterClassId ? 0 : 1;
-            return aMatch - bMatch;
-        });
-    }
+    // Seniority order strictly preserved on voucher (Lead student always in Row 1)
 
     const rawStudentRows = membersSource.map(m => ({
         name: `${m.first_name || ''} ${m.last_name || ''}`.trim(),
@@ -408,9 +396,7 @@ function VoucherCard({ v, idx, selected, onToggle, filterClassId }: { v: Voucher
         ? v.family_members
         : [v.primary, ...v.siblings];
 
-    const displayPrimary = (filterClassId && isFam && v.family_members && v.family_members.length > 0)
-        ? (v.family_members.find(m => m.class_id?.toString() === filterClassId) || v.primary)
-        : v.primary;
+    const displayPrimary = v.primary;
 
     return (
         <div className={`card border-0 shadow-sm mb-2${selected ? ' border border-primary' : ''}`}
@@ -572,7 +558,7 @@ export default function PrintSlipsPage() {
                 if (numMatch) return parseInt(numMatch[1], 10);
                 if (name.includes('prep') || name.includes('kg') || name.includes('kindergarten')) return 0;
                 if (name.includes('nursery')) return -1;
-                if (name.includes('play') || name.includes('pg') || name.includes('daycare') || name.includes('montessori')) return -2;
+                if (name.includes('reception') || name.includes('play') || name.includes('pg') || name.includes('daycare') || name.includes('montessori')) return -2;
                 return typeof classId === 'number' ? classId : 0;
             };
 

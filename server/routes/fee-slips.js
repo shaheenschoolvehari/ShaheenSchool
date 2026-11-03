@@ -1608,7 +1608,7 @@ router.get('/print-queue', async (req, res) => {
             }
             if (name.includes('prep') || name.includes('kg') || name.includes('kindergarten')) return 0;
             if (name.includes('nursery')) return -1;
-            if (name.includes('play') || name.includes('pg') || name.includes('daycare') || name.includes('montessori')) return -2;
+            if (name.includes('reception') || name.includes('play') || name.includes('pg') || name.includes('daycare') || name.includes('montessori')) return -2;
             return typeof classId === 'number' ? classId : 0;
         };
 
@@ -1657,7 +1657,7 @@ router.get('/print-queue', async (req, res) => {
             });
 
             const activeLeadMember = sortedMembers.find(m => (m.status || 'Active').toLowerCase() === 'active') || sortedMembers[0];
-            if (activeLeadMember && (primary.student_status || '').toLowerCase() !== 'active') {
+            if (activeLeadMember && (primary.student_id !== activeLeadMember.student_id || (primary.student_status || '').toLowerCase() !== 'active')) {
                 primary = {
                     ...primary,
                     student_id: activeLeadMember.student_id,
