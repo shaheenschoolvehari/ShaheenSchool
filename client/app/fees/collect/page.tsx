@@ -226,6 +226,18 @@ export default function CollectFeePage() {
     // Slip Breakdown Modal (when a student has single or multiple months)
     const [slipPickerGroup, setSlipPickerGroup] = useState<{ first_name: string; last_name: string; admission_no?: string; class_name?: string; slips: SlipRow[] } | null>(null);
 
+    // Adjust Tuition Fee Modal
+    const [adjustFeeModal, setAdjustFeeModal] = useState<{
+        isOpen: boolean;
+        slip: SlipRow;
+        currentTuition: number;
+        newTuition: string;
+        updatePermanently: boolean;
+        reason: string;
+        saving: boolean;
+        error: string | null;
+    } | null>(null);
+
     const [headPayVals, setHeadPayVals] = useState<Record<string, string>>({});
     const [waivedItemIds, setWaivedItemIds] = useState<number[]>([]);
     const [payMethod, setPayMethod] = useState('cash');
@@ -376,58 +388,174 @@ export default function CollectFeePage() {
         } catch { }
     };
 
+    // Helper to calculate initial head pay values
+    const calculateInitialHeads = (targetSlip: SlipRow, currentPayDate: string) => {
+        const initialHeads: Record<string, string> = {};
+        const isTrusted = Boolean(
+            (targetSlip as any).is_trusted ||
+            (targetSlip.category && targetSlip.category.trim().toLowerCase() === 'trusted') ||
+            (targetSlip.family_members && targetSlip.family_members.length > 0 && targetSlip.family_members.every((m: any) => (m.category || '').toLowerCase() === 'trusted'))
+        );
+
+        if (targetSlip.line_items && targetSlip.line_items.length > 0) {
+            targetSlip.line_items.forEach((item: any) => {
+                const headId = item.item_id ? item.item_id.toString() : item.head_name;
+                const isTuitionOrPb = (item.head_name || '').toLowerCase().includes('tuition') || 
+                    (item.head_name || '').toLowerCase().includes('family monthly fee') || 
+                    (item.head_name || '').toLowerCase().includes('monthly fee') || 
+                    (item.head_name || '').toLowerCase().includes('previous balance');
+
+                if (isTrusted && isTuitionOrPb) {
+                    initialHeads[headId] = '';
+                    return;
+                }
+
+                const rem = Math.max(0, parseFloat(item.amount as any || 0) - parseFloat(item.paid_amount as any || 0));
+                const isLateFine = (item.head_name || '').toLowerCase().includes('late') || (item.head_name || '').toLowerCase().includes('fine');
+                
+                if (isLateFine && targetSlip.due_date) {
+                    let cutoff = new Date(targetSlip.due_date);
+                    if (item.fine_after_day && parseInt(item.fine_after_day) > 0) {
+                        cutoff.setDate(parseInt(item.fine_after_day));
+                    }
+                    const payD = new Date(currentPayDate);
+                    if (payD <= cutoff) {
+                        initialHeads[headId] = '';
+                        return;
+                    }
+                }
+
+                initialHeads[headId] = rem > 0 ? rem.toString() : '';
+            });
+        } else {
+            const balance = Math.max(0, parseFloat(targetSlip.total_amount as any) - parseFloat(targetSlip.paid_amount as any));
+            initialHeads['fallback'] = balance > 0 ? balance.toString() : '';
+        }
+        return initialHeads;
+    };
+
+    // Open Adjust Fee Modal
+    const openAdjustFeeModal = async (slip: SlipRow, lineItem?: any) => {
+        let targetSlip = slip;
+        let items = slip.line_items;
+        if (!items || items.length === 0) {
+            try {
+                const res = await fetch(`${API}/fee-slips/${slip.slip_id}`);
+                const data = await res.json();
+                if (data.slip) {
+                    targetSlip = data.slip;
+                    items = data.slip.line_items;
+                }
+            } catch (e) {
+                console.error('Failed to fetch slip details', e);
+            }
+        }
+
+        let tItem = lineItem;
+        if (!tItem && items && items.length > 0) {
+            tItem = items.find((li: any) => {
+                const n = (li.head_name || '').toLowerCase();
+                return n.includes('tuition') || n.includes('family monthly fee') || n.includes('monthly fee');
+            });
+        }
+
+        const currentAmt = tItem ? parseFloat(tItem.amount as any || 0) : parseFloat(targetSlip.total_amount as any || 0);
+        setAdjustFeeModal({
+            isOpen: true,
+            slip: targetSlip,
+            currentTuition: currentAmt,
+            newTuition: currentAmt > 0 ? currentAmt.toString() : '',
+            updatePermanently: true,
+            reason: '',
+            saving: false,
+            error: null
+        });
+    };
+
+    // Save Fee Adjustment
+    const handleSaveAdjustFee = async () => {
+        if (!adjustFeeModal) return;
+        const newAmt = parseFloat(adjustFeeModal.newTuition);
+        if (isNaN(newAmt) || newAmt < 0) {
+            setAdjustFeeModal(prev => prev ? { ...prev, error: 'Please enter a valid fee amount (>= 0).' } : null);
+            return;
+        }
+
+        setAdjustFeeModal(prev => prev ? { ...prev, saving: true, error: null } : null);
+
+        try {
+            const res = await fetch(`${API}/fee-slips/${adjustFeeModal.slip.slip_id}/adjust-tuition`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    new_amount: newAmt,
+                    update_family_permanently: adjustFeeModal.updatePermanently,
+                    reason: adjustFeeModal.reason.trim() || undefined
+                })
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.error || 'Failed to adjust fee');
+            }
+
+            notify.success(
+                adjustFeeModal.updatePermanently
+                    ? `Fee adjusted to PKR ${newAmt.toLocaleString('en-PK')} (Slip & Master Family Profile updated).`
+                    : `Fee adjusted to PKR ${newAmt.toLocaleString('en-PK')} for this slip.`
+            );
+
+            // Update activeSlip if open in Pay Modal
+            if (activeSlip && activeSlip.slip_id === adjustFeeModal.slip.slip_id) {
+                const updatedActiveSlip: SlipRow = {
+                    ...activeSlip,
+                    total_amount: data.new_total,
+                    status: data.slip.status,
+                    line_items: data.line_items
+                };
+                setActiveSlip(updatedActiveSlip);
+
+                const pDate = payDate || getTodayDateStr();
+                setHeadPayVals(calculateInitialHeads(updatedActiveSlip, pDate));
+            }
+
+            // Update slip in Breakdown Modal if open
+            if (slipPickerGroup) {
+                setSlipPickerGroup({
+                    ...slipPickerGroup,
+                    slips: slipPickerGroup.slips.map(s => {
+                        if (s.slip_id === adjustFeeModal.slip.slip_id) {
+                            return {
+                                ...s,
+                                total_amount: data.new_total,
+                                status: data.slip.status,
+                                line_items: data.line_items
+                            };
+                        }
+                        return s;
+                    })
+                });
+            }
+
+            // Close modal
+            setAdjustFeeModal(null);
+
+            // Silently reload table
+            silentReload();
+        } catch (err: any) {
+            setAdjustFeeModal(prev => prev ? { ...prev, saving: false, error: err.message || 'Error updating fee' } : null);
+        }
+    };
+
     const openPayModal = async (slip: SlipRow) => {
         setActiveSlip(slip);
         setWaivedItemIds([]);
         const pDate = getTodayDateStr();
         setPayDate(pDate);
 
-        const buildInitialHeads = (targetSlip: SlipRow, currentPayDate: string) => {
-            const initialHeads: Record<string, string> = {};
-            const isTrusted = Boolean(
-                (targetSlip as any).is_trusted ||
-                (targetSlip.category && targetSlip.category.trim().toLowerCase() === 'trusted') ||
-                (targetSlip.family_members && targetSlip.family_members.length > 0 && targetSlip.family_members.every((m: any) => (m.category || '').toLowerCase() === 'trusted'))
-            );
+        // (calculateInitialHeads moved to component scope)
 
-            if (targetSlip.line_items && targetSlip.line_items.length > 0) {
-                targetSlip.line_items.forEach((item: any) => {
-                    const headId = item.item_id ? item.item_id.toString() : item.head_name;
-                    const isTuitionOrPb = (item.head_name || '').toLowerCase().includes('tuition') || 
-                        (item.head_name || '').toLowerCase().includes('family monthly fee') || 
-                        (item.head_name || '').toLowerCase().includes('monthly fee') || 
-                        (item.head_name || '').toLowerCase().includes('previous balance');
-
-                    if (isTrusted && isTuitionOrPb) {
-                        initialHeads[headId] = '';
-                        return;
-                    }
-
-                    const rem = Math.max(0, parseFloat(item.amount as any || 0) - parseFloat(item.paid_amount as any || 0));
-                    const isLateFine = (item.head_name || '').toLowerCase().includes('late') || (item.head_name || '').toLowerCase().includes('fine');
-                    
-                    if (isLateFine && targetSlip.due_date) {
-                        let cutoff = new Date(targetSlip.due_date);
-                        if (item.fine_after_day && parseInt(item.fine_after_day) > 0) {
-                            cutoff.setDate(parseInt(item.fine_after_day));
-                        }
-                        const payD = new Date(currentPayDate);
-                        if (payD <= cutoff) {
-                            initialHeads[headId] = '';
-                            return;
-                        }
-                    }
-
-                    initialHeads[headId] = rem > 0 ? rem.toString() : '';
-                });
-            } else {
-                const balance = Math.max(0, parseFloat(targetSlip.total_amount as any) - parseFloat(targetSlip.paid_amount as any));
-                initialHeads['fallback'] = balance > 0 ? balance.toString() : '';
-            }
-            return initialHeads;
-        };
-
-        setHeadPayVals(buildInitialHeads(slip, pDate));
+        setHeadPayVals(calculateInitialHeads(slip, pDate));
         setPayMethod('cash');
         setReceivedBy(''); setRefNo(''); setNotes('');
         setPayModal(true);
@@ -439,7 +567,7 @@ export default function CollectFeePage() {
             if (d.slip) {
                 setActiveSlip(d.slip);
                 if (d.slip.line_items && d.slip.line_items.length > 0) {
-                    setHeadPayVals(buildInitialHeads(d.slip, pDate));
+                    setHeadPayVals(calculateInitialHeads(d.slip, pDate));
                 }
             }
         } catch { setSlipPayments([]); }
@@ -1691,7 +1819,19 @@ export default function CollectFeePage() {
                                                         )}
                                                     </td>
                                                     <td className="px-2 text-end" style={{ color: 'var(--primary-dark)' }}>
-                                                        <div className="fw-bold">{fmt(parseFloat(g.latest_unpaid.total_amount as any))}</div>
+                                                        <div className="fw-bold d-flex align-items-center justify-content-end gap-1">
+                                                            <span>{fmt(parseFloat(g.latest_unpaid.total_amount as any))}</span>
+                                                            {hasPermission('fees', 'write') && g.latest_unpaid.is_active_year !== false && g.latest_unpaid.status !== 'paid' && (
+                                                                <button
+                                                                    type="button"
+                                                                    className="btn btn-sm btn-link p-0 text-muted"
+                                                                    title="Edit / Adjust Tuition Fee"
+                                                                    onClick={() => openAdjustFeeModal(g.latest_unpaid)}
+                                                                    style={{ textDecoration: 'none', lineHeight: 1 }}>
+                                                                    <i className="bi bi-pencil" style={{ fontSize: '0.75rem' }}></i>
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                         <div style={{ fontSize: '0.68rem', color: isTrustedGroup ? '#0891b2' : '#888' }}>
                                                             {isTrustedGroup && parseFloat(g.latest_unpaid.total_amount as any) <= 0 ? 'Free Tuition • ' : ''}
                                                             {MONTHS[(g.latest_unpaid.month ?? 1) - 1]?.slice(0, 3)} {g.latest_unpaid.year} Slip
@@ -1898,11 +2038,22 @@ export default function CollectFeePage() {
                                                                             return (
                                                                                 <tr key={itemIdx} className="border-bottom border-light">
                                                                                     <td className="py-1 text-dark">
-                                                                                        <div className="fw-semibold">
+                                                                                        <div className="fw-semibold d-flex align-items-center flex-wrap gap-1">
                                                                                             {isTuition && <i className="bi bi-mortarboard me-1 text-primary"></i>}
                                                                                             {isPB && <i className="bi bi-clock-history me-1 text-warning"></i>}
                                                                                             {!isTuition && !isPB && <i className="bi bi-tag me-1 text-secondary"></i>}
-                                                                                            {item.head_name}
+                                                                                            <span>{item.head_name}</span>
+                                                                                            {isTuition && hasPermission('fees', 'write') && slip.is_active_year !== false && slip.status !== 'paid' && (
+                                                                                                <button
+                                                                                                    type="button"
+                                                                                                    className="btn btn-sm btn-link p-0 text-primary d-inline-flex align-items-center ms-1"
+                                                                                                    title="Edit / Adjust Fee (Billed amount change karein)"
+                                                                                                    onClick={() => openAdjustFeeModal(slip, item)}
+                                                                                                    style={{ textDecoration: 'none', lineHeight: 1 }}>
+                                                                                                    <i className="bi bi-pencil-square" style={{ fontSize: '0.85rem' }}></i>
+                                                                                                    <span className="ms-0.5 text-decoration-underline" style={{ fontSize: '0.72rem', fontWeight: 600 }}>Edit</span>
+                                                                                                </button>
+                                                                                            )}
                                                                                         </div>
                                                                                         {item.note && <div className="text-muted" style={{ fontSize: '0.72rem' }}>{item.note}</div>}
                                                                                         {item.class_collected_amount && item.class_collected_amount > 0 ? (
@@ -2261,9 +2412,22 @@ export default function CollectFeePage() {
                                                                         elements.push(
                                                                             <div key={'comb-' + (keyIdx++)} className="d-flex flex-wrap justify-content-between align-items-center bg-white p-2.5 rounded-3 border shadow-sm gap-2">
                                                                                 <div className="d-flex flex-column flex-grow-1 min-w-0 me-2" style={{ maxWidth: '100%' }}>
-                                                                                    <span className="text-dark fw-bold text-truncate" style={{ fontSize: '0.88rem' }}>
-                                                                                        {(tItem && pbItem) ? 'Tuition Fee + Prev. Balance' : (tItem ? (tItem.head_name || 'Tuition Fee') : (pbItem?.head_name || 'Previous Balance'))}
-                                                                                    </span>
+                                                                                    <div className="d-flex align-items-center flex-wrap gap-1">
+                                                                                        <span className="text-dark fw-bold text-truncate" style={{ fontSize: '0.88rem' }}>
+                                                                                            {(tItem && pbItem) ? 'Tuition Fee + Prev. Balance' : (tItem ? (tItem.head_name || 'Tuition Fee') : (pbItem?.head_name || 'Previous Balance'))}
+                                                                                        </span>
+                                                                                        {tItem && hasPermission('fees', 'write') && (
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                className="btn btn-sm btn-link p-0 text-primary d-inline-flex align-items-center ms-1"
+                                                                                                title="Edit / Adjust Tuition Fee (Fee kam ya zyada karein)"
+                                                                                                onClick={() => openAdjustFeeModal(activeSlip, tItem)}
+                                                                                                style={{ textDecoration: 'none', lineHeight: 1 }}>
+                                                                                                <i className="bi bi-pencil-square" style={{ fontSize: '0.85rem' }}></i>
+                                                                                                <span className="ms-0.5 text-decoration-underline" style={{ fontSize: '0.72rem', fontWeight: 600 }}>Edit</span>
+                                                                                            </button>
+                                                                                        )}
+                                                                                    </div>
                                                                                     <span className="text-muted" style={{ fontSize: '0.72rem' }}>Billed: {combAmtB.toLocaleString('en-PK')} {combPaid > 0 ? ' • Paid: ' + combPaid.toLocaleString('en-PK') : ''}</span>
                                                                                     {(tItem && pbItem) && (
                                                                                         <span className="text-muted fw-semibold" style={{ fontSize: '0.68rem' }}>
@@ -2685,6 +2849,133 @@ export default function CollectFeePage() {
                             -moz-appearance: textfield !important;
                         }
                     `}</style>
+                </>
+                        )}
+
+            {/* ── Adjust Tuition Fee Modal ── */}
+            {adjustFeeModal && adjustFeeModal.isOpen && (
+                <>
+                    <div className="modal-backdrop fade show" style={{ zIndex: 1060 }} onClick={() => !adjustFeeModal.saving && setAdjustFeeModal(null)} />
+                    <div className="modal fade show d-block" style={{ zIndex: 1065 }} tabIndex={-1}>
+                        <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: 460 }}>
+                            <div className="modal-content border-0 shadow-lg" style={{ borderRadius: 16 }}>
+                                <div className="modal-header border-0 px-4 pt-4 pb-2" style={{ background: '#f8fafc', borderRadius: '16px 16px 0 0' }}>
+                                    <div className="d-flex align-items-center gap-2">
+                                        <div style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#e0f2fe', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0369a1', fontSize: 18 }}>
+                                            <i className="bi bi-pencil-square"></i>
+                                        </div>
+                                        <div>
+                                            <h6 className="mb-0 fw-bold text-dark" style={{ fontSize: '1rem' }}>Adjust Monthly / Tuition Fee</h6>
+                                            <div className="text-muted" style={{ fontSize: '0.75rem' }}>
+                                                {adjustFeeModal.slip.family_id ? `Family: ${adjustFeeModal.slip.family_id}` : `Student: ${adjustFeeModal.slip.first_name} ${adjustFeeModal.slip.last_name}`}
+                                                {adjustFeeModal.slip.month && ` • ${MONTHS[(adjustFeeModal.slip.month ?? 1) - 1]} ${adjustFeeModal.slip.year}`}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button type="button" className="btn-close" disabled={adjustFeeModal.saving} onClick={() => setAdjustFeeModal(null)} />
+                                </div>
+
+                                <div className="modal-body px-4 py-3">
+                                    {adjustFeeModal.error && (
+                                        <div className="alert alert-danger py-2 px-3 small d-flex align-items-center gap-2 mb-3" style={{ borderRadius: 8 }}>
+                                            <i className="bi bi-exclamation-triangle-fill"></i>
+                                            <span>{adjustFeeModal.error}</span>
+                                        </div>
+                                    )}
+
+                                    {/* Current Fee Info */}
+                                    <div className="p-2.5 rounded-3 mb-3 d-flex justify-content-between align-items-center" style={{ backgroundColor: '#f1f5f9', border: '1px solid #e2e8f0' }}>
+                                        <span className="small text-muted fw-semibold">Current Billed Fee:</span>
+                                        <span className="fw-bold fs-6 text-dark">PKR {adjustFeeModal.currentTuition.toLocaleString('en-PK')}</span>
+                                    </div>
+
+                                    {/* New Fee Input */}
+                                    <div className="mb-3">
+                                        <label className="form-label small fw-bold text-dark mb-1">
+                                            New Monthly Fee (PKR) <span className="text-danger">*</span>
+                                        </label>
+                                        <div className="input-group">
+                                            <span className="input-group-text bg-light text-muted small fw-bold">PKR</span>
+                                            <input
+                                                type="number"
+                                                className="form-control fw-bold"
+                                                placeholder="Enter new fee amount, e.g. 2500"
+                                                value={adjustFeeModal.newTuition}
+                                                onChange={(e) => setAdjustFeeModal({ ...adjustFeeModal, newTuition: e.target.value })}
+                                                onKeyDown={(e) => e.key === 'Enter' && handleSaveAdjustFee()}
+                                                autoFocus
+                                                min="0"
+                                                disabled={adjustFeeModal.saving}
+                                                style={{ fontSize: '1rem' }}
+                                            />
+                                        </div>
+                                        <div className="form-text text-muted" style={{ fontSize: '0.73rem' }}>
+                                            Billed voucher amount will update immediately. Difference will NOT go to pending/arrears.
+                                        </div>
+                                    </div>
+
+                                    {/* Permanent Update Checkbox */}
+                                    <div className="p-3 rounded-3 mb-3 border" style={{ backgroundColor: adjustFeeModal.updatePermanently ? '#f0fdf4' : '#fff', borderColor: adjustFeeModal.updatePermanently ? '#bbf7d0' : '#e2e8f0' }}>
+                                        <div className="form-check">
+                                            <input
+                                                className="form-check-input"
+                                                type="checkbox"
+                                                id="updatePermCheck"
+                                                checked={adjustFeeModal.updatePermanently}
+                                                onChange={(e) => setAdjustFeeModal({ ...adjustFeeModal, updatePermanently: e.target.checked })}
+                                                disabled={adjustFeeModal.saving}
+                                            />
+                                            <label className="form-check-label fw-bold text-dark small" htmlFor="updatePermCheck" style={{ cursor: 'pointer' }}>
+                                                Also update Family Monthly Fee permanently
+                                            </label>
+                                        </div>
+                                        <div className="text-muted ms-4 mt-1" style={{ fontSize: '0.72rem' }}>
+                                            (Aglay maheenon maslan Dec, Jan waghera ke liye bhi yeh naya fee master profile mein set ho jaye ga)
+                                        </div>
+                                    </div>
+
+                                    {/* Optional Reason */}
+                                    <div className="mb-2">
+                                        <label className="form-label small fw-semibold text-muted mb-1">
+                                            Reason / Note <span className="text-muted" style={{ fontSize: '0.7rem' }}>(Optional)</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            className="form-control form-control-sm"
+                                            placeholder="e.g. Principal concession / Fee revised"
+                                            value={adjustFeeModal.reason}
+                                            onChange={(e) => setAdjustFeeModal({ ...adjustFeeModal, reason: e.target.value })}
+                                            disabled={adjustFeeModal.saving}
+                                            style={{ fontSize: '0.82rem' }}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="modal-footer border-0 px-4 pb-4 pt-1 d-flex justify-content-end gap-2" style={{ background: '#f8fafc', borderRadius: '0 0 16px 16px' }}>
+                                    <button
+                                        type="button"
+                                        className="btn btn-sm btn-outline-secondary px-3"
+                                        disabled={adjustFeeModal.saving}
+                                        onClick={() => setAdjustFeeModal(null)}
+                                        style={{ borderRadius: 8 }}>
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="btn btn-sm px-4 fw-bold text-white"
+                                        disabled={adjustFeeModal.saving}
+                                        onClick={handleSaveAdjustFee}
+                                        style={{ backgroundColor: 'var(--primary-teal)', borderRadius: 8 }}>
+                                        {adjustFeeModal.saving ? (
+                                            <><span className="spinner-border spinner-border-sm me-1" />Saving...</>
+                                        ) : (
+                                            <><i className="bi bi-check-circle me-1"></i>Save & Update Fee</>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </>
             )}
         </div>

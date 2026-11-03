@@ -2647,6 +2647,162 @@ router.put('/:id', async (req, res) => {
     finally { client.release(); }
 });
 
+// PATCH /fee-slips/:id/adjust-tuition
+// Adjusts the tuition/monthly fee on a slip, recalculates totals, and optionally updates the master family fee
+router.patch('/:id/adjust-tuition', async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const { id } = req.params;
+        const { new_amount, update_family_permanently, reason } = req.body;
+
+        if (new_amount === undefined || new_amount === null || isNaN(parseFloat(new_amount))) {
+            return res.status(400).json({ error: 'new_amount is required and must be a valid number' });
+        }
+        const parsedNewAmount = Math.max(0, parseFloat(new_amount));
+
+        await client.query('BEGIN');
+
+        const slipRes = await client.query(`
+            SELECT mfs.*, ay.is_active AS is_year_active, ay.year_name, s.family_id AS student_family_id
+            FROM monthly_fee_slips mfs 
+            LEFT JOIN students s ON s.student_id = mfs.student_id
+            LEFT JOIN academic_years ay ON ay.id = mfs.academic_year_id
+            WHERE mfs.slip_id = $1
+        `, [id]);
+
+        if (slipRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Slip not found' });
+        }
+
+        const slip = slipRes.rows[0];
+
+        if (slip.academic_year_id && slip.is_year_active === false) {
+            await client.query('ROLLBACK');
+            return res.status(403).json({ error: `Fiscal/Academic Year (${slip.year_name || 'Closed'}) is closed. Slips from closed years cannot be edited.` });
+        }
+
+        // Fetch current line items
+        const lineItemsRes = await client.query(`
+            SELECT * FROM slip_line_items WHERE slip_id = $1 ORDER BY item_id ASC
+        `, [id]);
+        const lineItems = lineItemsRes.rows;
+
+        // Find tuition or monthly fee line item
+        let tuitionItem = lineItems.find(li => {
+            const name = (li.head_name || '').toLowerCase();
+            return name.includes('tuition') || name.includes('family monthly fee') || name.includes('monthly fee');
+        });
+
+        if (tuitionItem) {
+            const currentPaid = parseFloat(tuitionItem.paid_amount || 0);
+            if (parsedNewAmount < currentPaid) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({
+                    error: `Cannot reduce fee to PKR ${parsedNewAmount.toLocaleString('en-PK')} because PKR ${currentPaid.toLocaleString('en-PK')} has already been paid for this head. Please reverse or adjust payment first.`
+                });
+            }
+
+            const noteUpdate = reason && reason.trim()
+                ? (tuitionItem.note ? `${tuitionItem.note}; Adjusted: ${reason.trim()}` : `Adjusted: ${reason.trim()}`)
+                : tuitionItem.note;
+
+            await client.query(`
+                UPDATE slip_line_items
+                SET amount = $1, note = $2
+                WHERE item_id = $3
+            `, [parsedNewAmount, noteUpdate || null, tuitionItem.item_id]);
+        } else {
+            // If slip didn't have a tuition line item yet, create one
+            const headName = slip.is_family_slip ? 'Family Monthly Fee' : 'Tuition Fee';
+            const noteInsert = reason && reason.trim() ? `Adjusted: ${reason.trim()}` : null;
+            await client.query(`
+                INSERT INTO slip_line_items (slip_id, head_name, amount, paid_amount, note)
+                VALUES ($1, $2, $3, 0, $4)
+            `, [id, headName, parsedNewAmount, noteInsert]);
+        }
+
+        // Recalculate slip total amount & status
+        const sumRes = await client.query(`
+            SELECT COALESCE(SUM(amount), 0) AS total_amount, COALESCE(SUM(paid_amount), 0) AS total_paid
+            FROM slip_line_items WHERE slip_id = $1
+        `, [id]);
+
+        const newTotalAmount = parseFloat(sumRes.rows[0].total_amount);
+        const totalPaid = parseFloat(slip.paid_amount || 0);
+
+        let newStatus = 'unpaid';
+        if (newTotalAmount <= 0) {
+            newStatus = 'satteled';
+        } else if (totalPaid >= newTotalAmount) {
+            newStatus = 'paid';
+        } else if (totalPaid > 0) {
+            newStatus = 'partial';
+        }
+
+        const updatedSlipRes = await client.query(`
+            UPDATE monthly_fee_slips
+            SET total_amount = $1, status = $2
+            WHERE slip_id = $3
+            RETURNING *
+        `, [newTotalAmount, newStatus, id]);
+
+        // If update_family_permanently is requested:
+        const effectiveFamilyId = slip.family_id || slip.student_family_id;
+        const monthsCount = (slip.months_list && slip.months_list.length > 0) ? slip.months_list.length : 1;
+        const perMonthFee = monthsCount > 1
+            ? Math.round((parsedNewAmount / monthsCount) * 100) / 100
+            : parsedNewAmount;
+
+        if (Boolean(update_family_permanently)) {
+            if (effectiveFamilyId) {
+                // Update families table
+                await client.query(`
+                    INSERT INTO families (family_id, family_fee)
+                    VALUES ($1::varchar, $2::numeric)
+                    ON CONFLICT (family_id) DO UPDATE SET family_fee = EXCLUDED.family_fee
+                `, [effectiveFamilyId, perMonthFee]);
+
+                // Update active students of this family
+                await client.query(`
+                    UPDATE students
+                    SET monthly_fee = $2::numeric
+                    WHERE family_id = $1::varchar AND LOWER(COALESCE(status, 'Active')) = 'active'
+                `, [effectiveFamilyId, perMonthFee]);
+            } else if (slip.student_id) {
+                // Single student without family
+                await client.query(`
+                    UPDATE students
+                    SET monthly_fee = $1::numeric
+                    WHERE student_id = $2::int
+                `, [perMonthFee, slip.student_id]);
+            }
+        }
+
+        // Return updated line items
+        const updatedLineItemsRes = await client.query(`
+            SELECT * FROM slip_line_items WHERE slip_id = $1 ORDER BY item_id ASC
+        `, [id]);
+
+        await client.query('COMMIT');
+
+        res.json({
+            message: 'Fee adjusted successfully',
+            slip: updatedSlipRes.rows[0],
+            line_items: updatedLineItemsRes.rows,
+            updated_family_permanently: Boolean(update_family_permanently),
+            per_month_fee: perMonthFee,
+            new_total: newTotalAmount
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Error adjusting tuition fee:', err);
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
 // GET /fee-slips/family-summary/:student_id
 router.get('/family-summary/:student_id', async (req, res) => {
     try {
