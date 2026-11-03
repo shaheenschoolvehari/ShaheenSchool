@@ -7,7 +7,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 import {
-  API, MONTHS, fmt, fmtPKR, C, MaskedAmount, DailyFeeReceipts,
+  API, MONTHS, fmt, fmtPKR, C, MaskedAmount, DailyFeeReceipts, CollectionVelocityCurve,
   StatCard, Panel, DonutRing, DashShell, DashLoading, DashError, EmptyChart, RecentPaymentsTable,
 } from './shared';
 
@@ -220,6 +220,7 @@ export default function AdminDashboard({ userName }: { userName: string }) {
       {hasPermission('dash.admin_charts', 'read') && (
         <>
           <DailyFeeReceipts />
+          <CollectionVelocityCurve />
           {/* Fee Area Chart */}
           <div style={{ marginBottom: 20 }}>
             <Panel title="Daily Fee Collection    Last 14 Days" icon="bi-graph-up-arrow"

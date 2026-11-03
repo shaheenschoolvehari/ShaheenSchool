@@ -8,7 +8,7 @@ import {
 } from 'recharts';
 import {
   API, MONTHS, fmt, fmtPKR, C,
-  StatCard, Panel, DashShell, DashLoading, DashError, EmptyChart, RecentPaymentsTable, MaskedAmount, DailyFeeReceipts
+  StatCard, Panel, DashShell, DashLoading, DashError, EmptyChart, RecentPaymentsTable, MaskedAmount, DailyFeeReceipts, CollectionVelocityCurve
 } from './shared';
 
 type AccountantData = {
@@ -161,7 +161,10 @@ export default function AccountantDashboard({ userName }: { userName: string }) 
 
       {/* Daily Fee Collection & Receipts */}
       {hasPermission('dash.acc_charts', 'read') && (
-        <DailyFeeReceipts />
+        <>
+          <DailyFeeReceipts />
+          <CollectionVelocityCurve />
+        </>
       )}
 
       {/* Daily chart + Recent Payments */}
