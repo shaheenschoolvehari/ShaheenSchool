@@ -19,6 +19,7 @@ type TestPaper = {
 
 type StudentMarkRow = {
     student_id: number; first_name: string; last_name: string;
+    father_name?: string | null;
     admission_no?: string | null; roll_no?: string | null;
     test_mark_id?: number | null; obtained_marks?: number | null; remarks?: string | null;
 };
@@ -323,7 +324,7 @@ export default function TestMarkingPage() {
         return sheet.students.filter(s =>
             `${s.first_name} ${s.last_name}`.toLowerCase().includes(q) ||
             (s.roll_no || '').toLowerCase().includes(q) ||
-            (s.admission_no || '').toLowerCase().includes(q)
+            (s.father_name || '').toLowerCase().includes(q)
         );
     }, [sheet, searchKeyword]);
 
@@ -510,6 +511,7 @@ export default function TestMarkingPage() {
                                                     <tr>
                                                         <th className="ps-3" style={{ width: 40 }}>#</th>
                                                         <th>Student Name</th>
+                                                        <th>Father Name</th>
                                                         <th style={{ width: 90 }}>Roll No</th>
                                                         <th className="text-end pe-3" style={{ width: 140 }}>Obtained</th>
                                                         <th style={{ width: 180 }}>Remarks</th>
@@ -520,6 +522,7 @@ export default function TestMarkingPage() {
                                                         <tr key={s.student_id}>
                                                             <td className="ps-3 text-muted small fw-semibold">{idx + 1}</td>
                                                             <td className="fw-bold text-dark">{s.first_name} {s.last_name}</td>
+                                                            <td className="text-secondary">{s.father_name || '—'}</td>
                                                             <td>
                                                                 <span className="badge bg-light text-dark border fw-semibold" style={{ fontSize: 10.5 }}>
                                                                     {s.roll_no || '—'}

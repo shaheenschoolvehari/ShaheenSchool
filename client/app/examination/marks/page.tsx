@@ -20,6 +20,7 @@ type StudentMarkRow = {
     student_id: number;
     first_name: string;
     last_name: string;
+    father_name?: string | null;
     admission_no?: string | null;
     roll_no?: string | null;
     mark_id?: number | null;
@@ -316,7 +317,7 @@ export default function ExaminationMarksPage() {
         return students.filter(s =>
             `${s.first_name} ${s.last_name}`.toLowerCase().includes(q) ||
             (s.roll_no || '').toLowerCase().includes(q) ||
-            (s.admission_no || '').toLowerCase().includes(q)
+            (s.father_name || '').toLowerCase().includes(q)
         );
     }, [students, searchKeyword]);
 
@@ -504,9 +505,9 @@ export default function ExaminationMarksPage() {
                                 <table className="table table-hover align-middle mb-0">
                                     <thead style={{ background: 'var(--primary-dark)', color: '#fff' }}>
                                         <tr>
-                                            <th className="ps-4">Roll No</th>
-                                            <th>Admission No</th>
+                                            <th className="ps-4" style={{ width: 100 }}>Roll No</th>
                                             <th>Student Name</th>
+                                            <th>Father Name</th>
                                             <th className="text-end pe-4" style={{ width: 180 }}>Obtained Marks</th>
                                         </tr>
                                     </thead>
@@ -514,8 +515,8 @@ export default function ExaminationMarksPage() {
                                         {filteredStudents.map((s) => (
                                             <tr key={s.student_id}>
                                                 <td className="ps-4 fw-semibold">{s.roll_no || '—'}</td>
-                                                <td>{s.admission_no || '—'}</td>
                                                 <td className="fw-semibold">{s.first_name} {s.last_name}</td>
+                                                <td className="text-secondary">{s.father_name || '—'}</td>
                                                 <td className="text-end pe-4">
                                                     <div className="input-group input-group-sm ms-auto" style={{ width: 140 }}>
                                                         <input

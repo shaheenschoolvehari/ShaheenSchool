@@ -482,7 +482,7 @@ router.get('/marking-sheet', async (req, res) => {
         }
 
         const studentsRes = await client.query(
-            `SELECT s.student_id, s.first_name, s.last_name, s.admission_no, s.roll_no,
+            `SELECT s.student_id, s.first_name, s.last_name, s.father_name, s.admission_no, s.roll_no,
                     em.mark_id, em.total_marks, em.obtained_marks, em.updated_at
              FROM students s
              LEFT JOIN exam_marks em
@@ -1106,7 +1106,7 @@ router.get('/class-marks-sheet', async (req, res) => {
 
         // Active students ordered by roll_no
         const studentsRes = await client.query(
-            `SELECT student_id, first_name, last_name, admission_no, roll_no
+            `SELECT student_id, first_name, last_name, father_name, admission_no, roll_no
              FROM students
              WHERE class_id = $1
                AND section_id = $2
@@ -1702,7 +1702,7 @@ router.get('/tests/:test_id/sheet', async (req, res) => {
         }
 
         const studentsRes = await client.query(
-            `SELECT s.student_id, s.first_name, s.last_name, s.admission_no, s.roll_no,
+            `SELECT s.student_id, s.first_name, s.last_name, s.father_name, s.admission_no, s.roll_no,
                     tm.test_mark_id, tm.obtained_marks, tm.remarks
              FROM students s
              LEFT JOIN test_marks tm ON tm.student_id = s.student_id AND tm.test_id = $1
@@ -1995,7 +1995,7 @@ router.get('/approvals/sheet-details', async (req, res) => {
             );
 
             const studentsRes = await client.query(
-                `SELECT s.student_id, s.admission_no, s.roll_no,
+                `SELECT s.student_id, s.father_name, s.admission_no, s.roll_no,
                         CONCAT(s.first_name, ' ', s.last_name) AS student_name,
                         COALESCE(em.obtained_marks, 0) AS obtained_marks,
                         COALESCE(em.total_marks, 100) AS total_marks,
@@ -2035,7 +2035,7 @@ router.get('/approvals/sheet-details', async (req, res) => {
 
             const test = metaRes.rows[0];
             const studentsRes = await client.query(
-                `SELECT s.student_id, s.admission_no, s.roll_no,
+                `SELECT s.student_id, s.father_name, s.admission_no, s.roll_no,
                         CONCAT(s.first_name, ' ', s.last_name) AS student_name,
                         COALESCE(tm.obtained_marks, 0) AS obtained_marks,
                         $2::numeric AS total_marks, tm.remarks

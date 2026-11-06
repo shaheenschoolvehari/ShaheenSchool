@@ -16,6 +16,7 @@ type StudentRow = {
     student_id: number;
     first_name: string;
     last_name: string;
+    father_name?: string | null;
     admission_no?: string | null;
     roll_no?: string | null;
     subject_marks?: { subject_id: number; obtained_marks: number | null; total_marks: number | null }[];
@@ -168,6 +169,7 @@ function buildPrintHtml(payload: SheetPayload): string {
             const st = pageStudents[i];
             const rollNo = st ? (st.roll_no || String(startIdx + i + 1)) : String(startIdx + i + 1);
             const studentName = st ? `${st.first_name || ''} ${st.last_name || ''}`.trim() : '';
+            const fatherName = st ? (st.father_name || '') : '';
             const markCells = subjects.map(s => {
                 if (!st) return '<td></td>';
                 const smList = st.subject_marks || st.subject_rows || [];
@@ -189,6 +191,7 @@ function buildPrintHtml(payload: SheetPayload): string {
               <tr>
                 <td class="roll-col">${esc(rollNo)}</td>
                 <td class="name-col">${esc(studentName)}</td>
+                <td class="father-col">${esc(fatherName)}</td>
                 ${markCells}
                 <td>${obtainedVal}</td>
                 <td>${posVal}</td>
@@ -204,6 +207,7 @@ function buildPrintHtml(payload: SheetPayload): string {
           <tr>
             <th class="roll-col">Roll<br>No</th>
             <th class="name-col">Student Name</th>
+            <th class="father-col">Father Name</th>
             ${subjectThs}
             <th>Total<br>Marks</th>
             <th>Position</th>
@@ -344,10 +348,13 @@ function buildPrintHtml(payload: SheetPayload): string {
     margin-top: 2px;
     text-transform: none;
   }
-  table.marks td.name-col { text-align: left; padding-left: 10px; }
+  table.marks td.name-col { text-align: left; padding-left: 8px; }
   table.marks th.name-col { text-align: center; }
+  table.marks td.father-col { text-align: left; padding-left: 8px; }
+  table.marks th.father-col { text-align: center; }
   table.marks th.roll-col, table.marks td.roll-col { width: 34px; }
-  table.marks th.name-col, table.marks td.name-col { width: 190px; }
+  table.marks th.name-col, table.marks td.name-col { width: 130px; }
+  table.marks th.father-col, table.marks td.father-col { width: 130px; }
   table.marks tr { height: 30px; }
   table.marks tbody tr:nth-child(even) { background: #f2f2f2; }
   table.marks td.roll-col { font-weight: bold; color: #000; }
@@ -506,7 +513,8 @@ export default function ClassMarksSheetPage() {
         const q = searchKeyword.toLowerCase().trim();
         return sorted.filter(s =>
             `${s.first_name} ${s.last_name}`.toLowerCase().includes(q) ||
-            (s.roll_no || '').toLowerCase().includes(q)
+            (s.roll_no || '').toLowerCase().includes(q) ||
+            (s.father_name || '').toLowerCase().includes(q)
         );
     }, [sheet, searchKeyword]);
 
@@ -622,6 +630,7 @@ export default function ClassMarksSheetPage() {
                                             <th className="ps-3 text-center" style={{ width: 80 }}>Position</th>
                                             <th style={{ width: 60 }}>Roll</th>
                                             <th style={{ minWidth: 160 }}>Student Name</th>
+                                            <th style={{ minWidth: 140 }}>Father Name</th>
                                             {sheet.subjects.map(s => (
                                                 <th key={s.subject_id} className="text-center">{s.subject_name}</th>
                                             ))}
@@ -646,6 +655,7 @@ export default function ClassMarksSheetPage() {
                                                     </td>
                                                     <td className="fw-semibold">{st.roll_no || '—'}</td>
                                                     <td className="fw-semibold">{st.first_name} {st.last_name}</td>
+                                                    <td className="text-secondary">{st.father_name || '—'}</td>
                                                     {sheet.subjects.map(sub => {
                                                         const sm = smList.find((m: any) => m.subject_id === sub.subject_id);
                                                         return (

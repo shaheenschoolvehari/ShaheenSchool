@@ -31,9 +31,10 @@ interface SheetItem {
 
 interface StudentMarkRow {
     student_id: number;
-    admission_no: string;
+    admission_no?: string;
     roll_no: string;
     student_name: string;
+    father_name?: string;
     obtained_marks: number;
     total_marks: number;
     remarks?: string;
@@ -720,10 +721,10 @@ export default function MarksApprovalPage() {
                                                 <thead className="table-dark">
                                                     <tr>
                                                         <th className="text-center" style={{ width: '5%' }}>Roll</th>
-                                                        <th style={{ width: '35%' }}>Student Name</th>
-                                                        <th className="text-center" style={{ width: '15%' }}>Admission No</th>
+                                                        <th style={{ width: '30%' }}>Student Name</th>
+                                                        <th style={{ width: '25%' }}>Father Name</th>
                                                         <th className="text-center" style={{ width: '20%' }}>Total Marks</th>
-                                                        <th className="text-center" style={{ width: '25%' }}>Obtained Marks</th>
+                                                        <th className="text-center" style={{ width: '20%' }}>Obtained Marks</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
@@ -746,8 +747,8 @@ export default function MarksApprovalPage() {
                                                                         <span className="fw-semibold text-dark">{std.student_name}</span>
                                                                     </div>
                                                                 </td>
-                                                                <td className="text-center">
-                                                                    <span className="badge bg-light text-muted border">{std.admission_no}</span>
+                                                                <td>
+                                                                    <span className="text-secondary">{std.father_name || '—'}</span>
                                                                 </td>
                                                                 <td className="text-center fw-bold text-secondary">
                                                                     {std.total_marks}
@@ -791,7 +792,7 @@ export default function MarksApprovalPage() {
                                                                 <div>
                                                                     <div className="fw-bold text-dark" style={{ fontSize: '0.85rem' }}>{std.student_name}</div>
                                                                     <small className="text-muted" style={{ fontSize: '0.72rem' }}>
-                                                                        Roll: <strong>{std.roll_no || '—'}</strong> &bull; Adm: <strong>{std.admission_no}</strong>
+                                                                        Roll: <strong>{std.roll_no || '—'}</strong>{std.father_name ? <> &bull; Father: <strong>{std.father_name}</strong></> : null}
                                                                     </small>
                                                                 </div>
                                                             </div>
