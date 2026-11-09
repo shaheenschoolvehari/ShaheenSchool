@@ -102,7 +102,7 @@ export default function FamilyListPage() {
     const [classes, setClasses] = useState<ClassItem[]>([]);
     const [sections, setSections] = useState<SectionItem[]>([]);
     const [activeYear, setActiveYear] = useState<ActiveAcademicYear | null>(null);
-    const [stats, setStats] = useState<{ total_families: number; total_students: number; average_family_size: number | string } | null>(null);
+    const [stats, setStats] = useState<{ total_families: number; total_students: number; average_family_size: number | string; total_billed?: number; total_paid?: number; total_balance?: number; paid_count?: number; partial_count?: number; unpaid_count?: number; settled_count?: number } | null>(null);
     const [school, setSchool] = useState<SchoolInfo>({
         school_name: '', school_address: '', phone_number: '', school_phone2: '', school_phone3: '', school_logo_url: ''
     });
@@ -348,6 +348,35 @@ export default function FamilyListPage() {
     // Total displayed student count across all filtered families
     const displayedStudentsCount = useMemo(() => {
         return filteredFamilies.reduce((acc, f) => acc + f.activeMembers.length, 0);
+    }, [filteredFamilies]);
+
+    // Financial totals calculated across currently filtered families
+    const filteredFeeTotals = useMemo(() => {
+        let billed = 0;
+        let paid = 0;
+        let balance = 0;
+        let paidCount = 0;
+        let partialCount = 0;
+        let unpaidCount = 0;
+        let settledCount = 0;
+
+        filteredFamilies.forEach(f => {
+            const isSettled = (f.is_trusted_family && (f.total_balance || 0) <= 0 && (f.total_billed || 0) <= 0) || ['settled', 'satteled'].includes((f.fee_status || '').toLowerCase());
+            const b = isSettled ? 0 : (f.total_billed || 0);
+            const p = isSettled ? 0 : (f.total_paid || 0);
+            const bal = isSettled ? 0 : (f.total_balance || 0);
+
+            billed += b;
+            paid += p;
+            balance += bal;
+
+            if (isSettled) settledCount++;
+            else if (bal <= 0) paidCount++;
+            else if (p > 0) partialCount++;
+            else unpaidCount++;
+        });
+
+        return { billed, paid, balance, paidCount, partialCount, unpaidCount, settledCount };
     }, [filteredFamilies]);
 
     // Format phone for WhatsApp URL (e.g. 03001234567 -> 923001234567)
@@ -815,6 +844,46 @@ export default function FamilyListPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Financial Summary Banner when Slips Summary is toggled */}
+            {showFeeColumns && (
+                <div className="card border-0 shadow-sm mb-3 mb-md-4" style={{ borderRadius: '16px', background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)', borderLeft: '4px solid var(--primary-teal)' }}>
+                    <div className="card-body p-3">
+                        <div className="row text-center g-2 align-items-center">
+                            <div className="col-6 col-md-3 border-end">
+                                <div className="text-muted text-uppercase fw-bold" style={{ fontSize: '0.68rem' }}>Session Total Billed</div>
+                                <div className="fw-bold fs-5 mt-1" style={{ color: 'var(--primary-dark)' }}>
+                                    PKR {filteredFeeTotals.billed.toLocaleString('en-PK')}
+                                </div>
+                                <div style={{ fontSize: '0.68rem', color: '#64748b' }}>Session Net Dues</div>
+                            </div>
+                            <div className="col-6 col-md-3 border-end">
+                                <div className="text-muted text-uppercase fw-bold" style={{ fontSize: '0.68rem' }}>Total Collected</div>
+                                <div className="fw-bold fs-5 mt-1 text-success">
+                                    PKR {filteredFeeTotals.paid.toLocaleString('en-PK')}
+                                </div>
+                                <div style={{ fontSize: '0.68rem', color: '#64748b' }}>All Months Paid</div>
+                            </div>
+                            <div className="col-6 col-md-3 border-end">
+                                <div className="text-muted text-uppercase fw-bold" style={{ fontSize: '0.68rem' }}>Pending Balance</div>
+                                <div className="fw-bold fs-5 mt-1 text-danger">
+                                    PKR {filteredFeeTotals.balance.toLocaleString('en-PK')}
+                                </div>
+                                <div style={{ fontSize: '0.68rem', color: '#64748b' }}>Outstanding Dues</div>
+                            </div>
+                            <div className="col-6 col-md-3">
+                                <div className="text-muted text-uppercase fw-bold" style={{ fontSize: '0.68rem' }}>Collection Rate</div>
+                                <div className="fw-bold fs-5 mt-1" style={{ color: 'var(--primary-teal)' }}>
+                                    {filteredFeeTotals.billed > 0 ? Math.round((filteredFeeTotals.paid / filteredFeeTotals.billed) * 100) : 0}%
+                                </div>
+                                <div style={{ fontSize: '0.68rem', color: '#64748b' }}>
+                                    {filteredFeeTotals.paidCount} Paid · {filteredFeeTotals.partialCount} Partial · {filteredFeeTotals.unpaidCount} Unpaid
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Main Interactive Container */}
             <div className="card border-0 shadow-sm" style={{ borderRadius: '16px' }}>

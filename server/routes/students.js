@@ -762,37 +762,79 @@ router.get('/families-directory', async (req, res) => {
             });
         }
 
-        // Query overall fee statistics per family across all generated monthly fee slips
-        const feeStatsRes = await pool.query(`
+        // Query canonical fee statistics per family across generated monthly fee slips for the active session
+        // NOTE: In a waterfall billing system, slips embed previous balances, so we NEVER sum total_amount across months.
+        const activeYearRes = await pool.query("SELECT id, year_name FROM academic_years WHERE is_active = true LIMIT 1");
+        const activeYear = activeYearRes.rows[0];
+        const activeYearId = activeYear ? activeYear.id : null;
+
+        const feeSlipsRes = await pool.query(`
             SELECT 
-                f.family_id,
-                COALESCE(SUM(ms.total_amount), 0) + COALESCE(f.opening_balance, 0) AS total_billed,
-                COALESCE(SUM(ms.paid_amount), 0) AS total_paid,
-                GREATEST(0, (COALESCE(SUM(ms.total_amount), 0) + COALESCE(f.opening_balance, 0)) - COALESCE(SUM(ms.paid_amount), 0)) AS total_balance
-            FROM families f
-            LEFT JOIN monthly_fee_slips ms ON (ms.family_id = f.family_id OR ms.student_id IN (SELECT student_id FROM students WHERE family_id = f.family_id))
-            GROUP BY f.family_id, f.opening_balance
-        `);
+                ms.slip_id, ms.family_id, ms.student_id, ms.month, ms.year,
+                ms.total_amount, ms.paid_amount, ms.status,
+                s.family_id as stu_fam_id, s.category as stu_category
+            FROM monthly_fee_slips ms
+            LEFT JOIN students s ON ms.student_id = s.student_id
+            WHERE ($1::int IS NULL OR ms.academic_year_id = $1 OR ms.academic_year_id IS NULL)
+            ORDER BY ms.year ASC, ms.month ASC
+        `, [activeYearId]);
+
+        const familySlipsMap = new Map();
+        feeSlipsRes.rows.forEach(slip => {
+            const famId = (slip.family_id || slip.stu_fam_id || '').trim();
+            if (!famId) return;
+            if (!familySlipsMap.has(famId)) familySlipsMap.set(famId, []);
+            familySlipsMap.get(famId).push(slip);
+        });
 
         const feeStatsMap = {};
-        for (const r of feeStatsRes.rows) {
-            const fid = (r.family_id || '').trim();
-            const billed = parseFloat(r.total_billed || 0);
-            const paid = parseFloat(r.total_paid || 0);
-            const balance = parseFloat(r.total_balance || 0);
-            let status = 'paid';
-            if (balance > 0 && paid > 0) {
-                status = 'partial';
-            } else if (balance > 0) {
-                status = 'unpaid';
+        let totalAggBilled = 0;
+        let totalAggPaid = 0;
+        let totalAggBalance = 0;
+        let aggPaidCount = 0;
+        let aggPartialCount = 0;
+        let aggUnpaidCount = 0;
+        let aggSettledCount = 0;
+
+        familySlipsMap.forEach((slips, fid) => {
+            slips.sort((a, b) => (a.year - b.year) || (a.month - b.month));
+            const latestSlip = slips[slips.length - 1];
+
+            const isTrusted = Boolean(
+                latestSlip.stu_category && latestSlip.stu_category.toLowerCase().includes('trust')
+            );
+            const isSettled = ['satteled', 'settled'].includes((latestSlip.status || '').toLowerCase()) || isTrusted;
+
+            const totalPaid = slips.reduce((sum, s) => sum + parseFloat(s.paid_amount || 0), 0);
+            const totalBalance = isSettled ? 0 : Math.max(0, parseFloat(latestSlip.total_amount || 0) - parseFloat(latestSlip.paid_amount || 0));
+            const totalBilled = totalPaid + totalBalance;
+
+            let feeStatus = 'paid';
+            if (isSettled) {
+                feeStatus = 'settled';
+                aggSettledCount++;
+            } else if (totalBalance <= 0) {
+                feeStatus = 'paid';
+                aggPaidCount++;
+            } else if (totalPaid > 0) {
+                feeStatus = 'partial';
+                aggPartialCount++;
+            } else {
+                feeStatus = 'unpaid';
+                aggUnpaidCount++;
             }
+
+            totalAggBilled += totalBilled;
+            totalAggPaid += totalPaid;
+            totalAggBalance += totalBalance;
+
             feeStatsMap[fid] = {
-                total_billed: billed,
-                total_paid: paid,
-                total_balance: balance,
-                fee_status: status
+                total_billed: totalBilled,
+                total_paid: totalPaid,
+                total_balance: totalBalance,
+                fee_status: feeStatus
             };
-        }
+        });
 
         const familiesList = Object.values(familiesMap)
             .filter(fam => fam.members && fam.members.length > 0)
@@ -960,7 +1002,14 @@ router.get('/families-directory', async (req, res) => {
             stats: {
                 total_families: totalFamilies,
                 total_students: totalStudents,
-                average_family_size: totalFamilies > 0 ? (totalStudents / totalFamilies).toFixed(1) : 0
+                average_family_size: totalFamilies > 0 ? (totalStudents / totalFamilies).toFixed(1) : 0,
+                total_billed: parseFloat(totalAggBilled.toFixed(2)),
+                total_paid: parseFloat(totalAggPaid.toFixed(2)),
+                total_balance: parseFloat(totalAggBalance.toFixed(2)),
+                paid_count: aggPaidCount,
+                partial_count: aggPartialCount,
+                unpaid_count: aggUnpaidCount,
+                settled_count: aggSettledCount
             }
         });
     } catch (err) {

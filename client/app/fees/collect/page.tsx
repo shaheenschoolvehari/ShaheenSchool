@@ -224,7 +224,7 @@ export default function CollectFeePage() {
     const [deletingPaymentId, setDeletingPaymentId] = useState<number | null>(null);
 
     // Slip Breakdown Modal (when a student has single or multiple months)
-    const [slipPickerGroup, setSlipPickerGroup] = useState<{ first_name: string; last_name: string; admission_no?: string; class_name?: string; slips: SlipRow[] } | null>(null);
+    const [slipPickerGroup, setSlipPickerGroup] = useState<{ first_name: string; last_name: string; admission_no?: string; class_name?: string; is_trusted?: boolean; slips: SlipRow[] } | null>(null);
 
     // Adjust Tuition Fee Modal
     const [adjustFeeModal, setAdjustFeeModal] = useState<{
@@ -1324,10 +1324,10 @@ export default function CollectFeePage() {
         let totalPending = 0;
 
         const tableRowsHtml = groupedFiltered.map((g, idx) => {
-            const bill = parseFloat(g.latest_unpaid?.total_amount as any || 0);
-            const paid = g.slips.reduce((sum, s) => sum + parseFloat(s.paid_amount as any || 0), 0);
-            const isSettled = ['satteled', 'settled'].includes((g.status || '').toLowerCase());
+            const isSettled = ['satteled', 'settled'].includes((g.status || '').toLowerCase()) || g.is_trusted;
             const pending = isSettled ? 0 : (g.balance || 0);
+            const paid = g.slips.reduce((sum, s) => sum + parseFloat(s.paid_amount as any || 0), 0);
+            const bill = isSettled ? paid : (paid + pending);
 
             totalBill += bill;
             totalPaid += paid;
@@ -1740,7 +1740,7 @@ export default function CollectFeePage() {
                                             <th className="py-3 px-2" style={{ fontWeight: 600 }}>Student / Family</th>
                                             <th className="py-3 px-2" style={{ fontWeight: 600 }}>Class</th>
                                             <th className="py-3 px-2 text-center" style={{ fontWeight: 600 }}>Slips</th>
-                                            <th className="py-3 px-2 text-end" style={{ fontWeight: 600 }}>Voucher Bill</th>
+                                            <th className="py-3 px-2 text-end" style={{ fontWeight: 600 }}>Total Bill</th>
                                             <th className="py-3 px-2 text-end" style={{ fontWeight: 600 }}>Paid</th>
                                             <th className="py-3 px-2 text-end" style={{ fontWeight: 600 }}>Pending</th>
                                             <th className="py-3 px-2 text-center" style={{ fontWeight: 600 }}>Status</th>
@@ -1753,6 +1753,8 @@ export default function CollectFeePage() {
                                             const isTrustedGroup = g.is_trusted;
                                             const members = g.family_members || [];
                                             const groupTotalPaid = g.slips.reduce((sum, s) => sum + parseFloat(s.paid_amount as any || 0), 0);
+                                            const isSettledAccount = ['satteled', 'settled'].includes((g.status || '').toLowerCase()) || isTrustedGroup;
+                                            const groupNetBilled = isSettledAccount ? groupTotalPaid : (groupTotalPaid + g.balance);
                                             return (
                                                 <tr key={g.key} style={{ borderBottom: '1px solid #f0f0f0' }}>
                                                     <td className="px-3 text-muted" style={{ fontSize: '0.78rem' }}>{idx + 1}</td>
@@ -1807,20 +1809,20 @@ export default function CollectFeePage() {
                                                         {g.slips.length === 1 ? (
                                                             <button className="btn btn-sm py-1 px-2 fw-semibold" title="Click to view full fee breakdown"
                                                                 style={{ backgroundColor: '#e8f5f5', color: 'var(--primary-teal)', border: '1px solid #c5e8e8', fontSize: '0.72rem', borderRadius: 6 }}
-                                                                onClick={() => setSlipPickerGroup({ first_name: g.first_name, last_name: g.last_name, admission_no: g.admission_no, class_name: g.class_name, slips: g.slips })}>
+                                                                onClick={() => setSlipPickerGroup({ first_name: g.first_name, last_name: g.last_name, admission_no: g.admission_no, class_name: g.class_name, is_trusted: g.is_trusted, slips: g.slips })}>
                                                                 {MONTHS[(g.slips[0].month ?? 1) - 1]?.slice(0, 3)} {g.slips[0].year}
                                                             </button>
                                                         ) : (
                                                             <button className="btn btn-sm fw-bold" title="Click to view all months breakdown"
                                                                 style={{ fontSize: '0.72rem', backgroundColor: '#e8f5f5', color: 'var(--primary-teal)', border: '1.5px solid #215E61', borderRadius: 6 }}
-                                                                onClick={() => setSlipPickerGroup({ first_name: g.first_name, last_name: g.last_name, admission_no: g.admission_no, class_name: g.class_name, slips: g.slips })}>
+                                                                onClick={() => setSlipPickerGroup({ first_name: g.first_name, last_name: g.last_name, admission_no: g.admission_no, class_name: g.class_name, is_trusted: g.is_trusted, slips: g.slips })}>
                                                                 <i className="bi bi-calendar3 me-1"></i>{g.slips.length} months
                                                             </button>
                                                         )}
                                                     </td>
                                                     <td className="px-2 text-end" style={{ color: 'var(--primary-dark)' }}>
                                                         <div className="fw-bold d-flex align-items-center justify-content-end gap-1">
-                                                            <span>{fmt(parseFloat(g.latest_unpaid.total_amount as any))}</span>
+                                                            <span>{fmt(groupNetBilled)}</span>
                                                             {hasPermission('fees', 'write') && g.latest_unpaid.is_active_year !== false && g.latest_unpaid.status !== 'paid' && (
                                                                 <button
                                                                     type="button"
@@ -1834,7 +1836,7 @@ export default function CollectFeePage() {
                                                         </div>
                                                         <div style={{ fontSize: '0.68rem', color: isTrustedGroup ? '#0891b2' : '#888' }}>
                                                             {isTrustedGroup && parseFloat(g.latest_unpaid.total_amount as any) <= 0 ? 'Free Tuition • ' : ''}
-                                                            {MONTHS[(g.latest_unpaid.month ?? 1) - 1]?.slice(0, 3)} {g.latest_unpaid.year} Slip
+                                                            {g.slips.length > 1 ? `Latest: ${fmt(parseFloat(g.latest_unpaid.total_amount as any))} (${MONTHS[(g.latest_unpaid.month ?? 1) - 1]?.slice(0, 3)})` : `${MONTHS[(g.latest_unpaid.month ?? 1) - 1]?.slice(0, 3)} ${g.latest_unpaid.year} Slip`}
                                                         </div>
                                                         {g.latest_unpaid.class_collected_amount && g.latest_unpaid.class_collected_amount > 0 ? (
                                                             <div className="mt-0.5">
@@ -1936,8 +1938,7 @@ export default function CollectFeePage() {
                                     {slipPickerGroup.slips.length > 1 && (() => {
                                         const sortedSlips = [...slipPickerGroup.slips].sort((a, b) => (a.year - b.year) || (a.month - b.month));
                                         const latestSlip = sortedSlips[sortedSlips.length - 1];
-                                        const isSettled = sortedSlips.some(s => ['satteled', 'settled'].includes((s.status || '').toLowerCase())) ||
-                                            ['satteled', 'settled'].includes((latestSlip.status || '').toLowerCase());
+                                        const isSettled = ['satteled', 'settled'].includes((latestSlip?.status || '').toLowerCase()) || Boolean(slipPickerGroup.is_trusted);
 
                                         const totalPaid = slipPickerGroup.slips.reduce((s, sl) => s + parseFloat(sl.paid_amount as any || 0), 0);
                                         const totalPending = isSettled ? 0 : Math.max(0, parseFloat(latestSlip.total_amount as any || 0) - parseFloat(latestSlip.paid_amount as any || 0));

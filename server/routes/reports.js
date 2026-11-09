@@ -452,9 +452,36 @@ router.get('/family-fee', async (req, res) => {
             headMap[li.head_name].students_count += 1;
         });
 
-        const total_billed = processedSlips.reduce((sum, s) => sum + s.total_amount, 0);
-        const total_collected = processedSlips.reduce((sum, s) => sum + s.paid_amount, 0);
-        const total_pending = Math.max(0, total_billed - total_collected);
+        let total_billed = 0;
+        let total_collected = 0;
+        let total_pending = 0;
+
+        if (monthArr.length === 1 || selectedHeadIdNum) {
+            total_billed = processedSlips.reduce((sum, s) => sum + s.total_amount, 0);
+            total_collected = processedSlips.reduce((sum, s) => sum + s.paid_amount, 0);
+            total_pending = Math.max(0, total_billed - total_collected);
+        } else {
+            // Multi-month / Full Session Query: Group by account to prevent double-counting Previous Balance
+            const acctMap = new Map();
+            processedSlips.forEach(s => {
+                const key = s.family_id ? `fam_${s.family_id}` : `stu_${s.student_id}`;
+                if (!acctMap.has(key)) acctMap.set(key, []);
+                acctMap.get(key).push(s);
+            });
+
+            acctMap.forEach(slips => {
+                slips.sort((a, b) => (a.year - b.year) || (a.month - b.month));
+                const latestSlip = slips[slips.length - 1];
+                const isSettled = ['satteled', 'settled'].includes((latestSlip.status || '').toLowerCase());
+                const acctPaid = slips.reduce((sum, s) => sum + parseFloat(s.paid_amount || 0), 0);
+                const acctDue = isSettled ? 0 : Math.max(0, parseFloat(latestSlip.total_amount || 0) - parseFloat(latestSlip.paid_amount || 0));
+                const acctBilled = acctPaid + acctDue;
+
+                total_collected += acctPaid;
+                total_pending += acctDue;
+                total_billed += acctBilled;
+            });
+        }
 
         const headSummary = Object.values(headMap).map(h => {
             h.pending = Math.max(0, h.total - h.collected);
