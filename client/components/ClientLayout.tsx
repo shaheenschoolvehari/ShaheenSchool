@@ -19,6 +19,9 @@ function GlobalNotificationRunner({ user }: { user: any }) {
   useEffect(() => {
     if (!user) return;
 
+    notifiedIdsRef.current.clear();
+    isInitialPollRef.current = true;
+
     // 1. Request permissions & setup native Android channel
     requestMobileNotificationPermissions();
 

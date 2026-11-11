@@ -54,7 +54,7 @@ function parseUserId(input) {
 
 async function getUserContext(client, userId) {
     const userRes = await client.query(
-        `SELECT u.id, u.is_active, r.role_name, r.role_level
+        `SELECT u.id, u.full_name, u.username, u.is_active, r.role_name, r.role_level
          FROM app_users u
          LEFT JOIN app_roles r ON r.id = u.role_id
          WHERE u.id = $1`,
@@ -75,7 +75,7 @@ async function getUserContext(client, userId) {
     const isSupervisor = (user.role_level || 0) >= 65;
 
     const empRes = await client.query(
-        `SELECT employee_id
+        `SELECT employee_id, TRIM(CONCAT(first_name, ' ', COALESCE(last_name, ''))) AS full_name
          FROM employees
          WHERE app_user_id = $1
          ORDER BY employee_id ASC
@@ -83,10 +83,13 @@ async function getUserContext(client, userId) {
         [userId]
     );
 
+    const displayName = (empRes.rows[0]?.full_name || user.full_name || user.username || 'Teacher').trim();
+
     return {
         user,
         isAdmin,
         isSupervisor,
+        displayName,
         employeeId: empRes.rows[0]?.employee_id || null
     };
 }
@@ -650,40 +653,65 @@ router.post('/marks/save', async (req, res) => {
                 [termId, classId, sectionId, subjectId, userId]
             );
             locked = true;
+
+            // Record submitter in exam_sheet_approvals so Admin knows who submitted & approval alerts reach this exact teacher
+            const existingApproval = await client.query(
+                `SELECT id FROM exam_sheet_approvals
+                 WHERE sheet_type = 'term_exam' AND term_id = $1 AND class_id = $2 AND section_id = $3 AND subject_id = $4
+                 LIMIT 1`,
+                [termId, classId, sectionId, subjectId]
+            );
+            if (existingApproval.rows.length === 0) {
+                await client.query(
+                    `INSERT INTO exam_sheet_approvals (
+                        sheet_type, term_id, class_id, section_id, subject_id, status,
+                        submitted_by, submitted_at, updated_at
+                     ) VALUES ('term_exam', $1, $2, $3, $4, 'pending', $5, NOW(), NOW())`,
+                    [termId, classId, sectionId, subjectId, userId]
+                );
+            } else {
+                await client.query(
+                    `UPDATE exam_sheet_approvals
+                     SET submitted_by = $1, submitted_at = NOW(), status = 'pending', updated_at = NOW()
+                     WHERE id = $2`,
+                    [userId, existingApproval.rows[0].id]
+                );
+            }
         }
 
         await client.query('COMMIT');
 
-        // Dispatch Exam Approval & Published Result Notifications
-        try {
-            const { createNotification } = require('../utils/notify');
-            const classInfo = await pool.query(`SELECT class_name FROM classes WHERE class_id = $1`, [classId]);
-            const subInfo = await pool.query(`SELECT subject_name FROM subjects WHERE subject_id = $1`, [subjectId]);
-            const className = classInfo.rows[0]?.class_name || `Class #${classId}`;
-            const subName = subInfo.rows[0]?.subject_name || `Subject #${subjectId}`;
+        // Dispatch notifications ONLY to Admin (for approval) and ONLY to the submitting Teacher (as confirmation)
+        if (!ctx.isAdmin) {
+            try {
+                const { notifyPermission, notifyUser } = require('../utils/notify');
+                const classInfo = await pool.query(`SELECT class_name FROM classes WHERE class_id = $1`, [classId]);
+                const secInfo = await pool.query(`SELECT section_name FROM sections WHERE section_id = $1`, [sectionId]);
+                const subInfo = await pool.query(`SELECT subject_name FROM subjects WHERE subject_id = $1`, [subjectId]);
+                const className = classInfo.rows[0]?.class_name || `Class #${classId}`;
+                const sectionName = secInfo.rows[0]?.section_name || '';
+                const subName = subInfo.rows[0]?.subject_name || `Subject #${subjectId}`;
+                const sheetLabel = `${className}${sectionName ? ' (' + sectionName + ')' : ''} - ${subName}`;
 
-            // 1. Notify Higher Roles (Admin, Principal, Vice Principal, Coordinator)
-            const rolesToNotify = ['admin', 'principal', 'vice_principal', 'coordinator'];
-            for (const rName of rolesToNotify) {
-                await createNotification({
-                    role: rName,
+                // 1. Personal 1-to-1 confirmation ONLY to the teacher who submitted
+                await notifyUser(userId, {
                     type: 'exam_approval',
-                    title: 'Exam Marks Submitted for Approval 📝',
-                    message: `Exam/Test marks for ${className} (${subName}) have been recorded & locked by staff. Click to review and approve.`,
+                    title: 'Marks Request Submitted ✅',
+                    message: `Your marks request for ${sheetLabel} has been submitted to Admin for approval.`,
                     link: '/examination/marks'
                 });
-            }
 
-            // Operational notice to Coordinators/Principals with academic.examination.approvals (Students are only notified once marks are officially published)
-            const { notifyPermission } = require('../utils/notify');
-            await notifyPermission('academic.examination.approvals', {
-                type: 'exam_approval',
-                title: 'Marks Sheet Submitted 📝',
-                message: `Marks sheet submitted for ${className} (${subName}) by ${ctx.user?.full_name || 'Teacher'}. Pending review & approval.`,
-                link: '/examination/approvals'
-            });
-        } catch (notifErr) {
-            console.error("Exam notification error:", notifErr.message);
+                // 2. Operational alert ONLY to Admin / Approval-authorized staff (never teachers!)
+                await notifyPermission('academic.examination.approvals', {
+                    fallbackRole: 'admin',
+                    type: 'exam_approval',
+                    title: 'Marks Sheet Submitted for Approval 📝',
+                    message: `${ctx.displayName} submitted exam marks for ${sheetLabel}. Pending Admin review & approval.`,
+                    link: '/examination/approvals'
+                });
+            } catch (notifErr) {
+                console.error("Exam notification error:", notifErr.message);
+            }
         }
 
         res.json({
@@ -1806,9 +1834,70 @@ router.post('/tests/:test_id/save', async (req, res) => {
                 `INSERT INTO test_paper_locks (test_id, locked_by_user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
                 [testId, userId]
             );
+
+            // Track class test submitter in exam_sheet_approvals
+            const existingApproval = await client.query(
+                `SELECT id FROM exam_sheet_approvals WHERE sheet_type = 'class_test' AND test_id = $1 LIMIT 1`,
+                [testId]
+            );
+            if (existingApproval.rows.length === 0) {
+                await client.query(
+                    `INSERT INTO exam_sheet_approvals (
+                        sheet_type, test_id, class_id, section_id, subject_id, status,
+                        submitted_by, submitted_at, updated_at
+                     ) VALUES ('class_test', $1, $2, $3, $4, 'pending', $5, NOW(), NOW())`,
+                    [testId, test.class_id, test.section_id, test.subject_id, userId]
+                );
+            } else {
+                await client.query(
+                    `UPDATE exam_sheet_approvals
+                     SET submitted_by = $1, submitted_at = NOW(), status = 'pending', updated_at = NOW()
+                     WHERE id = $2`,
+                    [userId, existingApproval.rows[0].id]
+                );
+            }
         }
 
         await client.query('COMMIT');
+
+        // Dispatch notifications ONLY to Admin (for approval) and ONLY to the submitting Teacher (as confirmation)
+        if (!ctx.isAdmin) {
+            try {
+                const { notifyPermission, notifyUser } = require('../utils/notify');
+                const metaRes = await pool.query(
+                    `SELECT c.class_name, sec.section_name, sub.subject_name
+                     FROM classes c
+                     LEFT JOIN sections sec ON sec.section_id = $2
+                     LEFT JOIN subjects sub ON sub.subject_id = $3
+                     WHERE c.class_id = $1`,
+                    [test.class_id, test.section_id, test.subject_id]
+                );
+                const m = metaRes.rows[0] || {};
+                const className = m.class_name || `Class #${test.class_id}`;
+                const sectionName = m.section_name || '';
+                const subName = m.subject_name || `Subject #${test.subject_id}`;
+                const label = `"${test.test_name}" (${className}${sectionName ? ' ' + sectionName : ''} - ${subName})`;
+
+                // 1. Personal 1-to-1 confirmation ONLY to the teacher who submitted
+                await notifyUser(userId, {
+                    type: 'exam_approval',
+                    title: 'Class Test Request Submitted ✅',
+                    message: `Your class test marks request for ${label} has been submitted to Admin for approval.`,
+                    link: '/examination/test-marking'
+                });
+
+                // 2. Operational alert ONLY to Admin / Approval-authorized staff
+                await notifyPermission('academic.examination.approvals', {
+                    fallbackRole: 'admin',
+                    type: 'exam_approval',
+                    title: 'Class Test Submitted for Approval 📝',
+                    message: `${ctx.displayName} submitted class test ${label}. Pending Admin review & approval.`,
+                    link: '/examination/approvals'
+                });
+            } catch (notifErr) {
+                console.error("Test notification error:", notifErr.message);
+            }
+        }
 
         res.json({
             message: ctx.isAdmin
@@ -2201,13 +2290,21 @@ router.post('/approvals/change-status', async (req, res) => {
             const now = new Date();
 
             if (checkRes.rows.length === 0) {
+                const subRes = await client.query(
+                    `SELECT entered_by_user_id FROM exam_marks
+                     WHERE term_id = $1 AND class_id = $2 AND section_id = $3 AND subject_id = $4
+                       AND entered_by_user_id IS NOT NULL
+                     LIMIT 1`,
+                    [termId, classId, sectionId, subjectId]
+                );
+                const actualSubmitterId = subRes.rows[0]?.entered_by_user_id || userId;
                 await client.query(
                     `INSERT INTO exam_sheet_approvals (
                         sheet_type, term_id, class_id, section_id, subject_id, status,
                         submitted_by, approved_by, approved_at, published_by, published_at, updated_at
                      ) VALUES ('term_exam', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())`,
                     [
-                        termId, classId, sectionId, subjectId, targetStatus, userId,
+                        termId, classId, sectionId, subjectId, targetStatus, actualSubmitterId,
                         isApprovedOrPublished ? userId : null,
                         isApprovedOrPublished ? now : null,
                         isPublished ? userId : null,
@@ -2288,11 +2385,12 @@ router.post('/approvals/change-status', async (req, res) => {
                 );
             }
 
-            const testRowRes = await client.query(`SELECT class_id, section_id, subject_id FROM test_papers WHERE test_id = $1`, [testId]);
+            const testRowRes = await client.query(`SELECT class_id, section_id, subject_id, created_by_user_id FROM test_papers WHERE test_id = $1`, [testId]);
             const testRow = testRowRes.rows[0] || {};
             const testClassId = Number(testRow.class_id || class_id || 0);
             const testSectionId = Number(testRow.section_id || section_id || 0);
             const testSubjectId = testRow.subject_id ? Number(testRow.subject_id) : (subject_id ? Number(subject_id) : null);
+            const actualTestSubmitterId = testRow.created_by_user_id || userId;
 
             const checkRes = await client.query(
                 `SELECT id FROM exam_sheet_approvals WHERE sheet_type = 'class_test' AND test_id = $1`,
@@ -2306,7 +2404,7 @@ router.post('/approvals/change-status', async (req, res) => {
                         submitted_by, approved_by, approved_at, published_by, published_at, updated_at
                      ) VALUES ('class_test', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())`,
                     [
-                        testId, testClassId, testSectionId, testSubjectId, targetStatus, userId,
+                        testId, testClassId, testSectionId, testSubjectId, targetStatus, actualTestSubmitterId,
                         isApprovedOrPublished ? userId : null,
                         isApprovedOrPublished ? now : null,
                         isPublished ? userId : null,
@@ -2390,12 +2488,13 @@ router.post('/approvals/change-status', async (req, res) => {
                 }
             }
 
-            // 2. If published to students, notify the academic team + notify families of each individual student
+            // 2. If published to students, notify Admin/approval team + notify families of each individual student
             if (targetStatus === 'published') {
                 await notifyPermission('academic.examination.approvals', {
+                    fallbackRole: 'admin',
                     type: 'exam_published',
                     title: 'Exam Marks Published 🏆',
-                    message: `Official marks published to student portal by ${ctx.user?.full_name || 'Administration'}.`,
+                    message: `Official marks published to student portal by ${ctx.displayName || 'Administration'}.`,
                     link: '/examination/result-card'
                 });
 
@@ -2430,7 +2529,7 @@ router.post('/approvals/change-status', async (req, res) => {
                         }
                     } else if (sheet_type === 'class_test') {
                         const marksRes = await pool.query(`
-                            SELECT tm.student_id, tm.obtained_marks, tp.total_marks, tp.test_title,
+                            SELECT tm.student_id, tm.obtained_marks, tp.total_marks, tp.test_name AS test_title,
                                    CONCAT(s.first_name, ' ', s.last_name) AS student_name,
                                    s.family_id, c.class_name, COALESCE(sub.subject_name, 'Test') AS subject_name
                             FROM test_marks tm

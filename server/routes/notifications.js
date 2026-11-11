@@ -62,64 +62,56 @@ async function buildNotificationFilter(query) {
         conditions.push(`(n.type NOT IN ('exam_approval', 'staff_attendance', 'admission', 'expense', 'fee_generation', 'student_status', 'general'))`);
     } else {
         // ── Staff / Administration / PBAC View ──
+        // SECURITY GUARD: Never leak staff or admin notifications if no valid user_id is present
+        if (!parsedUserId) {
+            conditions.push('1 = 0');
+            return { whereClause: `WHERE ${conditions.join(' AND ')}`, params, paramIdx };
+        }
+
         // Deliver alerts based on:
-        // 1. Direct user notices (user_id match)
-        // 2. Staff public broadcasts (required_permission IS NULL, role is staff/all)
-        // 3. Permission-gated operational notices (matching user's active permissions from role_permissions + user_direct_permissions)
+        // 1. Direct user notices (n.user_id = parsedUserId)
+        // 2. General staff broadcasts (n.user_id IS NULL, n.required_permission IS NULL, safe role match)
+        // 3. Permission-gated operational notices (n.user_id IS NULL, exact or root-module permission match)
         let staffSubConditions = [];
 
-        const parsedUserId = user_id && !isNaN(parseInt(user_id, 10)) ? parseInt(user_id, 10) : null;
         let roleId = null;
         let roleLevel = 0;
+        let dbRoleName = '';
         let userModules = new Set();
         let isSuperAdmin = false;
+        let isActiveUser = false;
 
-        if (parsedUserId) {
-            // 1. Direct 1-to-1 alert to this specific user
-            staffSubConditions.push(`n.user_id = $${paramIdx++}`);
-            params.push(parsedUserId);
+        // Fetch user's role, active status, and role level
+        try {
+            const userRes = await pool.query(`
+                SELECT u.id, u.is_active, u.role_id, r.role_name, COALESCE(r.role_level, 50) AS role_level
+                FROM app_users u
+                LEFT JOIN app_roles r ON u.role_id = r.id
+                WHERE u.id = $1
+            `, [parsedUserId]);
 
-            // Fetch user's role and role level
-            try {
-                const userRes = await pool.query(`
-                    SELECT u.id, u.role_id, r.role_name, COALESCE(r.role_level, 50) AS role_level
-                    FROM app_users u
-                    LEFT JOIN app_roles r ON u.role_id = r.id
-                    WHERE u.id = $1
-                `, [parsedUserId]);
-
-                if (userRes.rows.length > 0) {
-                    const uRow = userRes.rows[0];
-                    roleId = uRow.role_id;
-                    roleLevel = parseInt(uRow.role_level, 10) || 50;
-                    const rName = (uRow.role_name || '').toLowerCase();
-                    if (roleLevel >= 90 || ['admin', 'administrator', 'superadmin', 'root'].includes(rName)) {
-                        isSuperAdmin = true;
-                    }
+            if (userRes.rows.length > 0 && userRes.rows[0].is_active) {
+                const uRow = userRes.rows[0];
+                isActiveUser = true;
+                roleId = uRow.role_id;
+                roleLevel = parseInt(uRow.role_level, 10) || 50;
+                dbRoleName = (uRow.role_name || '').trim().toLowerCase();
+                if (roleLevel >= 90 || ['admin', 'administrator', 'superadmin', 'root'].includes(dbRoleName)) {
+                    isSuperAdmin = true;
                 }
-            } catch (e) {
-                console.error("Error checking user role in buildNotificationFilter:", e.message);
             }
-        } else if (normalizedRole) {
-            try {
-                const roleRes = await pool.query(`
-                    SELECT id, role_name, COALESCE(role_level, 50) AS role_level
-                    FROM app_roles
-                    WHERE LOWER(role_name) = $1 OR LOWER(role_name) LIKE $2
-                    LIMIT 1
-                `, [normalizedRole, `%${normalizedRole}%`]);
-                if (roleRes.rows.length > 0) {
-                    roleId = roleRes.rows[0].id;
-                    roleLevel = parseInt(roleRes.rows[0].role_level, 10) || 50;
-                    const rName = (roleRes.rows[0].role_name || '').toLowerCase();
-                    if (roleLevel >= 90 || ['admin', 'administrator', 'superadmin', 'root'].includes(rName)) {
-                        isSuperAdmin = true;
-                    }
-                }
-            } catch (e) {
-                console.error("Error checking role in buildNotificationFilter:", e.message);
-            }
+        } catch (e) {
+            console.error("Error checking user role in buildNotificationFilter:", e.message);
         }
+
+        if (!isActiveUser) {
+            conditions.push('1 = 0');
+            return { whereClause: `WHERE ${conditions.join(' AND ')}`, params, paramIdx };
+        }
+
+        // 1. Direct 1-to-1 alert to this specific user
+        staffSubConditions.push(`n.user_id = $${paramIdx++}`);
+        params.push(parsedUserId);
 
         // Fetch active permissions for this role/user if not superadmin
         if (!isSuperAdmin && (roleId || parsedUserId)) {
@@ -140,26 +132,61 @@ async function buildNotificationFilter(query) {
             }
         }
 
-        // 2. Public staff broadcasts (no required permission, role is staff/all/admin)
-        staffSubConditions.push(`(n.required_permission IS NULL AND n.family_id IS NULL AND n.student_id IS NULL AND (LOWER(COALESCE(n.role, 'all')) IN ('all', 'staff', 'teacher', 'admin')) AND n.user_id IS NULL)`);
-
-        // 3. Permission-gated operational notifications
+        // 2. Public/Role broadcasts (only when user_id IS NULL and required_permission IS NULL)
+        // Strictly restrict 'admin', 'principal', 'vice_principal', 'coordinator' broadcasts from leaking to teachers!
         if (isSuperAdmin) {
-            // Superadmin has wildcard access to all operational staff notifications
-            staffSubConditions.push(`(n.family_id IS NULL AND n.student_id IS NULL AND n.required_permission IS NOT NULL)`);
+            staffSubConditions.push(`(
+                n.required_permission IS NULL
+                AND n.family_id IS NULL
+                AND n.student_id IS NULL
+                AND n.user_id IS NULL
+                AND LOWER(COALESCE(n.role, 'all')) IN ('all', 'staff', 'admin', 'administrator', 'superadmin', 'principal', 'vice_principal', 'vice principal', 'coordinator')
+            )`);
+        } else {
+            const allowedBroadcastRoles = ['all', 'staff'];
+            const normalizedRoleKey = dbRoleName.replace(/\s+/g, '_');
+            if (dbRoleName && !['admin', 'administrator', 'superadmin', 'root', 'principal', 'vice_principal', 'vice principal'].includes(dbRoleName)) {
+                allowedBroadcastRoles.push(dbRoleName);
+                if (normalizedRoleKey !== dbRoleName) allowedBroadcastRoles.push(normalizedRoleKey);
+            }
+            const broadcastRolesIdx = paramIdx++;
+            params.push(allowedBroadcastRoles);
+
+            staffSubConditions.push(`(
+                n.required_permission IS NULL
+                AND n.family_id IS NULL
+                AND n.student_id IS NULL
+                AND n.user_id IS NULL
+                AND LOWER(COALESCE(n.role, 'all')) = ANY($${broadcastRolesIdx}::text[])
+                AND n.type NOT IN ('exam_approval', 'exam_published', 'test_marks')
+            )`);
+        }
+
+        // 3. Permission-gated operational notifications (strictly when user_id IS NULL)
+        if (isSuperAdmin) {
+            // Superadmin has wildcard access to all operational staff notifications (never private 1-to-1 user_id alerts)
+            staffSubConditions.push(`(
+                n.family_id IS NULL
+                AND n.student_id IS NULL
+                AND n.user_id IS NULL
+                AND n.required_permission IS NOT NULL
+            )`);
         } else if (userModules.size > 0) {
             const modulesArray = Array.from(userModules);
             const permParamIdx = paramIdx++;
             params.push(modulesArray);
 
+            // STRICT PBAC CHECK:
+            // Match exact permission key OR top-level root module (e.g. 'fees' -> 'fees.collect').
+            // Do NOT use `LIKE (user_perm || '.%')` so leaf permission 'academic.examination' never unlocks 'academic.examination.approvals'!
             staffSubConditions.push(`(
-                n.family_id IS NULL AND n.student_id IS NULL AND n.required_permission IS NOT NULL AND (
+                n.family_id IS NULL
+                AND n.student_id IS NULL
+                AND n.user_id IS NULL
+                AND n.required_permission IS NOT NULL
+                AND (
                     LOWER(n.required_permission) = ANY($${permParamIdx})
                     OR split_part(LOWER(n.required_permission), '.', 1) = ANY($${permParamIdx})
-                    OR EXISTS (
-                        SELECT 1 FROM unnest($${permParamIdx}::text[]) user_perm
-                        WHERE LOWER(n.required_permission) LIKE (user_perm || '.%')
-                    )
                 )
             )`);
         }

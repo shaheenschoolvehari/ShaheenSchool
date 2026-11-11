@@ -32,6 +32,7 @@ export function NotificationBell({ role = 'all', familyId = '', userId = '', stu
 
     // Fetch School Logo & Request Mobile Notification Permissions
     const notifiedSetRef = useRef<Set<number>>(new Set());
+    const isInitialPollRef = useRef<boolean>(true);
 
     useEffect(() => {
         requestMobileNotificationPermissions();
@@ -53,10 +54,19 @@ export function NotificationBell({ role = 'all', familyId = '', userId = '', stu
         try {
             const activeRole = (role && role !== 'all') ? role : (user?.role_name || user?.dashboard_access || 'all');
             const activeUserId = userId || user?.id || '';
+            const activeFamilyId = familyId || user?.family_id || '';
+            const activeStudentId = studentId || user?.student_id || '';
+
+            if (!activeUserId && !activeFamilyId && !activeStudentId) {
+                setNotifications([]);
+                setUnreadCount(0);
+                return;
+            }
 
             const params = new URLSearchParams();
             if (activeRole) params.append('role', activeRole);
-            if (familyId) params.append('family_id', familyId);
+            if (activeFamilyId) params.append('family_id', String(activeFamilyId));
+            if (activeStudentId) params.append('student_id', String(activeStudentId));
             if (activeUserId) params.append('user_id', String(activeUserId));
 
             const res = await fetch(`${API}/notifications?${params.toString()}`);
@@ -66,25 +76,32 @@ export function NotificationBell({ role = 'all', familyId = '', userId = '', stu
                 setNotifications(list);
                 setUnreadCount(data.unread_count || 0);
 
-                // Trigger Mobile OS Native Notification for newly arrived unread alerts
-                list.forEach(n => {
-                    if (!n.is_read && !notifiedSetRef.current.has(n.id)) {
-                        notifiedSetRef.current.add(n.id);
-                        triggerNativeDeviceNotification(n.id, n.title, n.message, n.link);
-                    }
-                });
+                if (isInitialPollRef.current) {
+                    list.forEach(n => notifiedSetRef.current.add(n.id));
+                    isInitialPollRef.current = false;
+                } else {
+                    // Trigger Mobile OS Native Notification only for newly arrived unread alerts
+                    list.forEach(n => {
+                        if (!n.is_read && !notifiedSetRef.current.has(n.id)) {
+                            notifiedSetRef.current.add(n.id);
+                            triggerNativeDeviceNotification(n.id, n.title, n.message, n.link);
+                        }
+                    });
+                }
             }
         } catch (err) {
             console.error("Error loading notifications:", err);
         }
     };
 
-    // Initial load & 12s polling interval
+    // Initial load & 12s polling interval (re-sync cleanly when auth user/identity changes)
     useEffect(() => {
+        notifiedSetRef.current.clear();
+        isInitialPollRef.current = true;
         fetchNotifications();
         const interval = setInterval(fetchNotifications, 12000);
         return () => clearInterval(interval);
-    }, [role, familyId, userId]);
+    }, [role, familyId, userId, studentId, user?.id, user?.role_name, user?.dashboard_access, user?.family_id, user?.student_id]);
 
     // Handle Click Outside Dropdown
     useEffect(() => {
@@ -122,10 +139,13 @@ export function NotificationBell({ role = 'all', familyId = '', userId = '', stu
         try {
             const activeRole = (role && role !== 'all') ? role : (user?.role_name || user?.dashboard_access || 'all');
             const activeUserId = userId || user?.id || '';
+            const activeFamilyId = familyId || user?.family_id || '';
+            const activeStudentId = studentId || user?.student_id || '';
+            if (!activeUserId && !activeFamilyId && !activeStudentId) return;
             await fetch(`${API}/notifications/mark-all-read`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ role: activeRole, family_id: familyId, user_id: activeUserId, student_id: studentId })
+                body: JSON.stringify({ role: activeRole, family_id: activeFamilyId, user_id: activeUserId, student_id: activeStudentId })
             });
             setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
             setUnreadCount(0);
