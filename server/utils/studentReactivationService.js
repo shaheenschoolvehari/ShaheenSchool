@@ -299,13 +299,119 @@ async function getReactivationPreview(clientOrPool, studentId, opts = {}) {
         beforeYear: targetYear
     });
 
-    // All non-prev_balance fee heads for extra head dropdown (plus custom option like Re-Admission Fee)
+    // All non-prev_balance, non-tuition saved fee heads + detect extra heads applied in target billing month
     const feeHeadsRes = await clientOrPool.query(
         `SELECT head_id, head_name, head_type, frequency, track_arrears
          FROM fee_heads
          WHERE is_active = TRUE AND head_type != 'prev_balance'
          ORDER BY head_name ASC`
     );
+
+    const monthAppliedRes = await clientOrPool.query(
+        `SELECT sli.head_id,
+                TRIM(sli.head_name) AS head_name,
+                COUNT(DISTINCT CASE WHEN mfs.class_id = $3 THEN mfs.slip_id END)::int AS lead_class_slip_count,
+                COUNT(DISTINCT mfs.slip_id)::int AS month_slip_count,
+                ARRAY_AGG(sli.amount::float8) FILTER (WHERE mfs.class_id = $3 AND sli.amount > 0) AS lead_class_amounts,
+                ARRAY_AGG(sli.amount::float8) FILTER (WHERE sli.amount > 0) AS school_amounts
+         FROM slip_line_items sli
+         JOIN monthly_fee_slips mfs ON mfs.slip_id = sli.slip_id
+         WHERE (mfs.month = $1 OR $1 = ANY(COALESCE(mfs.months_list, ARRAY[]::int[])))
+           AND (mfs.year = $2 OR ($4::int IS NOT NULL AND mfs.academic_year_id = $4))
+           AND COALESCE(sli.is_carried_forward, FALSE) = FALSE
+           AND COALESCE(sli.is_waived, FALSE) = FALSE
+           AND sli.amount > 0
+           AND LOWER(sli.head_name) NOT LIKE '%tuition%'
+           AND LOWER(sli.head_name) NOT LIKE '%family monthly%'
+           AND LOWER(sli.head_name) NOT LIKE '%previous balance%'
+           AND LOWER(sli.head_name) NOT LIKE '%opening balance%'
+           AND LOWER(sli.head_name) NOT LIKE '%advance%'
+           AND LOWER(sli.head_name) NOT LIKE '%re-admission%'
+           AND LOWER(sli.head_name) NOT LIKE '%readmission%'
+         GROUP BY sli.head_id, TRIM(sli.head_name)`,
+        [targetMonth, targetYear, simulatedLead?.class_id || null, activeYearId]
+    );
+
+    const pickModeAmount = (arr) => {
+        if (!Array.isArray(arr) || arr.length === 0) return 0;
+        const freq = new Map();
+        let bestAmt = arr[0];
+        let bestCount = 0;
+        for (const raw of arr) {
+            const val = parseFloat(raw);
+            if (!isFinite(val) || val <= 0) continue;
+            const key = val.toFixed(2);
+            const c = (freq.get(key) || 0) + 1;
+            freq.set(key, c);
+            if (c > bestCount) {
+                bestCount = c;
+                bestAmt = val;
+            }
+        }
+        return parseFloat((bestAmt || 0).toFixed(2));
+    };
+
+    const appliedByHeadId = new Map();
+    const appliedByName = new Map();
+    const monthAppliedExtrasList = [];
+
+    for (const row of monthAppliedRes.rows) {
+        const entry = {
+            head_id: row.head_id || null,
+            head_name: row.head_name,
+            lead_class_slip_count: row.lead_class_slip_count || 0,
+            month_slip_count: row.month_slip_count || 0,
+            applied_in_month: (row.month_slip_count || 0) > 0,
+            applied_in_lead_class: (row.lead_class_slip_count || 0) > 0,
+            suggested_amount: pickModeAmount(
+                (row.lead_class_amounts && row.lead_class_amounts.length > 0)
+                    ? row.lead_class_amounts
+                    : row.school_amounts
+            ),
+            already_on_existing_slip: existingLineItems.some(
+                li => (row.head_id && li.head_id === row.head_id) ||
+                      (li.head_name || '').trim().toLowerCase() === (row.head_name || '').trim().toLowerCase()
+            )
+        };
+        if (entry.head_id && !appliedByHeadId.has(entry.head_id)) {
+            appliedByHeadId.set(entry.head_id, entry);
+        }
+        const nKey = (entry.head_name || '').trim().toLowerCase();
+        if (nKey && !appliedByName.has(nKey)) {
+            appliedByName.set(nKey, entry);
+        }
+        monthAppliedExtrasList.push(entry);
+    }
+
+    const enrichedAvailableHeads = feeHeadsRes.rows
+        .filter(fh => !isTuitionHeadName(fh.head_name))
+        .map(fh => {
+            const m = appliedByHeadId.get(fh.head_id) || appliedByName.get((fh.head_name || '').trim().toLowerCase()) || null;
+            const existingOnSlip = existingLineItems.some(
+                li => (li.head_id && li.head_id === fh.head_id) ||
+                      (li.head_name || '').trim().toLowerCase() === (fh.head_name || '').trim().toLowerCase()
+            );
+            return {
+                ...fh,
+                applied_in_month: Boolean(m),
+                applied_in_lead_class: Boolean(m && m.applied_in_lead_class),
+                lead_class_slip_count: m ? m.lead_class_slip_count : 0,
+                month_slip_count: m ? m.month_slip_count : 0,
+                suggested_amount: m ? m.suggested_amount : 0,
+                already_on_existing_slip: existingOnSlip
+            };
+        })
+        .sort((a, b) => {
+            if (a.applied_in_lead_class !== b.applied_in_lead_class) return a.applied_in_lead_class ? -1 : 1;
+            if (a.applied_in_month !== b.applied_in_month) return a.applied_in_month ? -1 : 1;
+            return (a.head_name || '').localeCompare(b.head_name || '');
+        });
+
+    monthAppliedExtrasList.sort((a, b) => {
+        if (a.applied_in_lead_class !== b.applied_in_lead_class) return a.applied_in_lead_class ? -1 : 1;
+        if (b.month_slip_count !== a.month_slip_count) return b.month_slip_count - a.month_slip_count;
+        return (a.head_name || '').localeCompare(b.head_name || '');
+    });
 
     const pendingAdjRes = await clientOrPool.query(
         `SELECT * FROM pending_family_adjustments
@@ -380,7 +486,8 @@ async function getReactivationPreview(clientOrPool, studentId, opts = {}) {
         },
         arrears,
         pending_adjustments: pendingAdjRes.rows,
-        available_fee_heads: feeHeadsRes.rows,
+        available_fee_heads: enrichedAvailableHeads,
+        month_applied_extra_heads: monthAppliedExtrasList,
         classes: classesRes.rows,
         sections: sectionsRes.rows
     };

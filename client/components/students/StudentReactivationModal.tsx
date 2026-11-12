@@ -8,6 +8,7 @@ const API = process.env.NEXT_PUBLIC_API_URL || 'https://shaheenschool.onrender.c
 interface ExtraHeadDraft {
     head_id: number | null;
     head_name: string;
+    is_custom?: boolean;
     amount: string;
     note: string;
 }
@@ -199,8 +200,37 @@ export default function StudentReactivationModal({ isOpen, studentId, onClose, o
         loadPreview({ classId: newClassId, preserveUserEdits: true });
     };
 
-    const addExtraHeadPreset = (name: string, amt: string, headId: number | null = null) => {
-        setExtraHeads(prev => [...prev, { head_id: headId, head_name: name, amount: amt, note: '' }]);
+    const addExtraHeadPreset = (name: string, amt: string, headId: number | null = null, isCustom = true, note = '') => {
+        setExtraHeads(prev => [...prev, { head_id: headId, head_name: name, is_custom: isCustom, amount: amt, note }]);
+    };
+
+    const isHeadAdded = (headId: number | null, headName: string) =>
+        extraHeads.some(eh =>
+            (headId !== null && eh.head_id === headId) ||
+            eh.head_name.trim().toLowerCase() === headName.trim().toLowerCase()
+        );
+
+    const toggleQuickExtraHead = (fh: {
+        head_id: number | null;
+        head_name: string;
+        suggested_amount?: number;
+        applied_in_month?: boolean;
+    }) => {
+        const already = isHeadAdded(fh.head_id, fh.head_name);
+        if (already) {
+            setExtraHeads(prev =>
+                prev.filter(eh =>
+                    !((fh.head_id !== null && eh.head_id === fh.head_id) ||
+                      eh.head_name.trim().toLowerCase() === fh.head_name.trim().toLowerCase())
+                )
+            );
+            return;
+        }
+        const defaultAmt = fh.suggested_amount && fh.suggested_amount > 0 ? String(fh.suggested_amount) : '';
+        const monthTag = fh.applied_in_month && preview?.billing_period?.label
+            ? `Applied in ${preview.billing_period.label}`
+            : '';
+        addExtraHeadPreset(fh.head_name, defaultAmt, fh.head_id ?? null, fh.head_id == null, monthTag);
     };
 
     const liveCalculations = useMemo(() => {
@@ -1026,87 +1056,237 @@ export default function StudentReactivationModal({ isOpen, studentId, onClose, o
                                         <div className="card border-0 shadow-sm rounded-4 mb-3">
                                             <div className="card-header bg-white border-bottom py-2 px-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
                                                 <span className="fw-bold small text-uppercase text-secondary">
-                                                    <i className="bi bi-5-circle-fill me-2 text-primary"></i>Additional Heads (Re-Admission Fee, Exam, Transport, etc.)
+                                                    <i className="bi bi-5-circle-fill me-2 text-primary"></i>Additional / Saved System Heads (Exam, Annual Fund, Re-Admission, etc.)
                                                 </span>
                                                 <div className="d-flex gap-1">
                                                     <button
                                                         type="button"
                                                         className="btn btn-sm btn-outline-primary py-0 px-2"
-                                                        onClick={() => addExtraHeadPreset('Re-Admission Fee', '500', null)}
+                                                        onClick={() => addExtraHeadPreset('Re-Admission Fee', '500', null, true)}
                                                     >
                                                         + Re-Admission Fee
                                                     </button>
                                                     <button
                                                         type="button"
                                                         className="btn btn-sm btn-outline-secondary py-0 px-2"
-                                                        onClick={() => addExtraHeadPreset('', '', null)}
+                                                        onClick={() => addExtraHeadPreset('', '', null, false)}
                                                     >
                                                         + Other Head
                                                     </button>
                                                 </div>
                                             </div>
                                             <div className="card-body p-3">
-                                                {extraHeads.length === 0 ? (
-                                                    <p className="text-muted small mb-0">No extra charges added. Click &quot;+ Re-Admission Fee&quot; or &quot;+ Other Head&quot; if needed (never overwrites original admission history).</p>
-                                                ) : (
-                                                    <div className="d-flex flex-column gap-2">
-                                                        {extraHeads.map((eh, idx) => (
-                                                            <div className="row g-2 align-items-center" key={idx}>
-                                                                <div className="col-md-4">
-                                                                    <input
-                                                                        type="text"
-                                                                        list="feeHeadsSuggestList"
-                                                                        className="form-control form-control-sm"
-                                                                        placeholder="Head Name (e.g. Re-Admission Fee)"
-                                                                        value={eh.head_name}
-                                                                        onChange={e => {
-                                                                            const val = e.target.value;
-                                                                            const matched = (preview.available_fee_heads || []).find((f: any) => f.head_name.toLowerCase() === val.trim().toLowerCase());
-                                                                            setExtraHeads(prev => prev.map((x, i) => i === idx ? { ...x, head_name: val, head_id: matched ? matched.head_id : null } : x));
-                                                                        }}
-                                                                    />
-                                                                </div>
-                                                                <div className="col-md-3">
-                                                                    <div className="input-group input-group-sm">
-                                                                        <span className="input-group-text">PKR</span>
-                                                                        <input
-                                                                            type="number"
-                                                                            min={0}
-                                                                            className="form-control"
-                                                                            placeholder="Amount"
-                                                                            value={eh.amount}
-                                                                            onChange={e => setExtraHeads(prev => prev.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))}
-                                                                        />
-                                                                    </div>
-                                                                </div>
-                                                                <div className="col-md-4">
-                                                                    <input
-                                                                        type="text"
-                                                                        className="form-control form-control-sm"
-                                                                        placeholder="Optional note"
-                                                                        value={eh.note}
-                                                                        onChange={e => setExtraHeads(prev => prev.map((x, i) => i === idx ? { ...x, note: e.target.value } : x))}
-                                                                    />
-                                                                </div>
-                                                                <div className="col-md-1 text-end">
+                                                {/* Highlighted Extra Heads Applied in Selected Billing Month */}
+                                                {(preview.month_applied_extra_heads || []).length > 0 ? (
+                                                    <div className="rounded-3 p-2 mb-3 border border-warning bg-warning bg-opacity-10">
+                                                        <div className="d-flex flex-wrap justify-content-between align-items-center gap-1 mb-2">
+                                                            <span className="small fw-bold text-dark">
+                                                                <i className="bi bi-star-fill text-warning me-1"></i>
+                                                                Extra Head(s) Applied in {preview.billing_period?.label} Vouchers
+                                                            </span>
+                                                            <span className="badge bg-warning text-dark" style={{ fontSize: '0.68rem' }}>
+                                                                Click to Add / Remove
+                                                            </span>
+                                                        </div>
+                                                        <div className="d-flex flex-wrap gap-2">
+                                                            {(preview.month_applied_extra_heads || []).map((mh: any, mIdx: number) => {
+                                                                const added = isHeadAdded(mh.head_id ?? null, mh.head_name);
+                                                                return (
                                                                     <button
+                                                                        key={`${mh.head_id || 'custom'}-${mh.head_name}-${mIdx}`}
                                                                         type="button"
-                                                                        className="btn btn-sm btn-outline-danger"
-                                                                        onClick={() => setExtraHeads(prev => prev.filter((_, i) => i !== idx))}
+                                                                        className={`btn btn-sm d-inline-flex align-items-center gap-1 ${
+                                                                            added
+                                                                                ? 'btn-success fw-semibold'
+                                                                                : 'btn-warning text-dark fw-semibold border-warning'
+                                                                        }`}
+                                                                        onClick={() => toggleQuickExtraHead(mh)}
                                                                     >
-                                                                        <i className="bi bi-trash"></i>
+                                                                        <i className={`bi ${added ? 'bi-check-circle-fill' : 'bi-star-fill'}`}></i>
+                                                                        <span>{mh.head_name}</span>
+                                                                        {mh.suggested_amount > 0 && (
+                                                                            <span className={`badge ${added ? 'bg-light text-dark' : 'bg-dark text-white'}`}>
+                                                                                PKR {Number(mh.suggested_amount).toLocaleString()}
+                                                                            </span>
+                                                                        )}
+                                                                        <span className="opacity-75" style={{ fontSize: '0.7rem' }}>
+                                                                            ({mh.applied_in_lead_class
+                                                                                ? `${mh.lead_class_slip_count} in ${preview.cohort?.simulated_lead?.class_name || 'Class'}`
+                                                                                : `${mh.month_slip_count} slips`})
+                                                                        </span>
+                                                                        {mh.already_on_existing_slip && (
+                                                                            <span className="badge bg-info text-dark" style={{ fontSize: '0.65rem' }}>
+                                                                                Already on Slip
+                                                                            </span>
+                                                                        )}
                                                                     </button>
-                                                                </div>
-                                                            </div>
-                                                        ))}
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="small text-muted mb-2">
+                                                        <i className="bi bi-info-circle me-1"></i>
+                                                        No extra heads billed yet on other <strong>{preview.billing_period?.label}</strong> vouchers — select any saved system head below if needed.
                                                     </div>
                                                 )}
-                                                <datalist id="feeHeadsSuggestList">
-                                                    <option value="Re-Admission Fee" />
-                                                    {(preview.available_fee_heads || []).map((fh: any) => (
-                                                        <option key={fh.head_id} value={fh.head_name} />
-                                                    ))}
-                                                </datalist>
+
+                                                {/* All Saved System Heads Quick Picker */}
+                                                {(preview.available_fee_heads || []).length > 0 && (
+                                                    <div className="mb-3">
+                                                        <div className="small fw-semibold text-muted mb-1">
+                                                            Saved System Heads ({preview.available_fee_heads.length}):
+                                                        </div>
+                                                        <div className="d-flex flex-wrap gap-1">
+                                                            {(preview.available_fee_heads || []).map((fh: any) => {
+                                                                const added = isHeadAdded(fh.head_id, fh.head_name);
+                                                                const isMonthHit = Boolean(fh.applied_in_month);
+                                                                return (
+                                                                    <button
+                                                                        key={fh.head_id}
+                                                                        type="button"
+                                                                        className={`btn btn-sm py-1 px-2 d-inline-flex align-items-center gap-1 ${
+                                                                            added
+                                                                                ? 'btn-primary fw-semibold'
+                                                                                : isMonthHit
+                                                                                    ? 'btn-outline-warning text-dark fw-semibold bg-warning bg-opacity-25'
+                                                                                    : 'btn-outline-secondary'
+                                                                        }`}
+                                                                        onClick={() => toggleQuickExtraHead(fh)}
+                                                                        title={isMonthHit ? `Applied in ${preview.billing_period?.label} (${fh.month_slip_count} slips)` : `Saved head (${fh.frequency || 'once'})`}
+                                                                    >
+                                                                        <i className={`bi ${added ? 'bi-check2' : isMonthHit ? 'bi-star-fill text-warning' : 'bi-plus-lg'}`}></i>
+                                                                        <span>{fh.head_name}</span>
+                                                                        {isMonthHit && (
+                                                                            <span className="badge bg-warning text-dark" style={{ fontSize: '0.62rem' }}>
+                                                                                {preview.billing_period?.month_name}
+                                                                                {fh.suggested_amount > 0 ? ` • ${Number(fh.suggested_amount).toLocaleString()}` : ''}
+                                                                            </span>
+                                                                        )}
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* Selected Extra Head Line Items */}
+                                                {extraHeads.length === 0 ? (
+                                                    <p className="text-muted small mb-0">No extra charges added yet. Click any saved head above, &quot;+ Re-Admission Fee&quot;, or &quot;+ Other Head&quot; (never overwrites original admission history).</p>
+                                                ) : (
+                                                    <div className="d-flex flex-column gap-2">
+                                                        {extraHeads.map((eh, idx) => {
+                                                            const matchedMonthHead = (preview.month_applied_extra_heads || []).find(
+                                                                (m: any) =>
+                                                                    (eh.head_id !== null && m.head_id === eh.head_id) ||
+                                                                    (eh.head_name && m.head_name.toLowerCase() === eh.head_name.trim().toLowerCase())
+                                                            );
+                                                            const selectValue = eh.is_custom
+                                                                ? (eh.head_name === 'Re-Admission Fee' ? '__readmission__' : '__custom__')
+                                                                : (eh.head_id ? String(eh.head_id) : '');
+
+                                                            return (
+                                                                <div
+                                                                    className={`p-2 rounded-3 border ${
+                                                                        matchedMonthHead ? 'border-warning bg-warning bg-opacity-10' : 'bg-light'
+                                                                    }`}
+                                                                    key={idx}
+                                                                >
+                                                                    <div className="row g-2 align-items-center">
+                                                                        <div className="col-md-4">
+                                                                            <select
+                                                                                className="form-select form-select-sm"
+                                                                                value={selectValue}
+                                                                                onChange={e => {
+                                                                                    const val = e.target.value;
+                                                                                    if (val === '__custom__') {
+                                                                                        setExtraHeads(prev => prev.map((x, i) => i === idx ? { ...x, is_custom: true, head_id: null, head_name: x.head_id ? '' : x.head_name } : x));
+                                                                                        return;
+                                                                                    }
+                                                                                    if (val === '__readmission__') {
+                                                                                        setExtraHeads(prev => prev.map((x, i) => i === idx ? { ...x, is_custom: true, head_id: null, head_name: 'Re-Admission Fee', amount: x.amount || '500' } : x));
+                                                                                        return;
+                                                                                    }
+                                                                                    const fh = (preview.available_fee_heads || []).find((f: any) => String(f.head_id) === val);
+                                                                                    if (fh) {
+                                                                                        setExtraHeads(prev => prev.map((x, i) => i === idx ? {
+                                                                                            ...x,
+                                                                                            is_custom: false,
+                                                                                            head_id: fh.head_id,
+                                                                                            head_name: fh.head_name,
+                                                                                            amount: x.amount || (fh.suggested_amount > 0 ? String(fh.suggested_amount) : ''),
+                                                                                            note: x.note || (fh.applied_in_month && preview.billing_period?.label ? `Applied in ${preview.billing_period.label}` : '')
+                                                                                        } : x));
+                                                                                    } else {
+                                                                                        setExtraHeads(prev => prev.map((x, i) => i === idx ? { ...x, is_custom: false, head_id: null, head_name: '' } : x));
+                                                                                    }
+                                                                                }}
+                                                                            >
+                                                                                <option value="">-- Select Saved Head --</option>
+                                                                                {(preview.available_fee_heads || []).map((fh: any) => (
+                                                                                    <option key={fh.head_id} value={fh.head_id}>
+                                                                                        {fh.applied_in_month
+                                                                                            ? `★ ${fh.head_name} (Applied in ${preview.billing_period?.month_name}${fh.suggested_amount > 0 ? ` • PKR ${fh.suggested_amount}` : ''})`
+                                                                                            : `${fh.head_name} (${fh.frequency || 'once'})`}
+                                                                                    </option>
+                                                                                ))}
+                                                                                <option value="__readmission__">Re-Admission Fee (One-Time)</option>
+                                                                                <option value="__custom__">+ Custom Head Name (Type below)</option>
+                                                                            </select>
+                                                                            {eh.is_custom && (
+                                                                                <input
+                                                                                    type="text"
+                                                                                    className="form-control form-control-sm mt-1"
+                                                                                    placeholder="Type custom head name"
+                                                                                    value={eh.head_name}
+                                                                                    onChange={e => setExtraHeads(prev => prev.map((x, i) => i === idx ? { ...x, head_name: e.target.value, head_id: null } : x))}
+                                                                                />
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="col-md-3">
+                                                                            <div className="input-group input-group-sm">
+                                                                                <span className="input-group-text">PKR</span>
+                                                                                <input
+                                                                                    type="number"
+                                                                                    min={0}
+                                                                                    className="form-control"
+                                                                                    placeholder="Amount"
+                                                                                    value={eh.amount}
+                                                                                    onChange={e => setExtraHeads(prev => prev.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))}
+                                                                                />
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="col-md-4">
+                                                                            <div className="d-flex align-items-center gap-1">
+                                                                                <input
+                                                                                    type="text"
+                                                                                    className="form-control form-control-sm"
+                                                                                    placeholder="Optional note"
+                                                                                    value={eh.note}
+                                                                                    onChange={e => setExtraHeads(prev => prev.map((x, i) => i === idx ? { ...x, note: e.target.value } : x))}
+                                                                                />
+                                                                                {matchedMonthHead && (
+                                                                                    <span className="badge bg-warning text-dark text-nowrap" title="This head is active in the selected billing month">
+                                                                                        ★ {preview.billing_period?.month_name}
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="col-md-1 text-end">
+                                                                            <button
+                                                                                type="button"
+                                                                                className="btn btn-sm btn-outline-danger"
+                                                                                onClick={() => setExtraHeads(prev => prev.filter((_, i) => i !== idx))}
+                                                                            >
+                                                                                <i className="bi bi-trash"></i>
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
 
                                                 <div className="mt-3">
                                                     <input
