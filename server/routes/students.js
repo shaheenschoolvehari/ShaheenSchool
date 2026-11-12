@@ -813,7 +813,8 @@ router.get('/families-directory', async (req, res) => {
             const isTrusted = famMembers.length > 0
                 ? evaluateMembersTrusted(famMembers, latestSlip.stu_category)
                 : Boolean(latestSlip.stu_category && latestSlip.stu_category.toLowerCase().includes('trust'));
-            const isSettled = ['satteled', 'settled'].includes((latestSlip.status || '').toLowerCase()) || isTrusted;
+            const isSettled = ['satteled', 'settled'].includes((latestSlip.status || '').toLowerCase())
+                || (isTrusted && parseFloat(latestSlip.total_amount || 0) <= 0);
 
             const totalPaid = slips.reduce((sum, s) => sum + parseFloat(s.paid_amount || 0), 0);
             const totalBalance = isSettled ? 0 : Math.max(0, parseFloat(latestSlip.total_amount || 0) - parseFloat(latestSlip.paid_amount || 0));

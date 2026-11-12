@@ -379,10 +379,10 @@ router.get('/family-fee', async (req, res) => {
             const advBal = parseFloat(s.advance_balance || 0);
 
             if (selectedHeadIdNum) {
-                // Individual Head Mode: Only count and display this selected head
-                const matchingItem = items.find(li => li.head_id === selectedHeadIdNum);
-                const billed = matchingItem ? matchingItem.amount : 0;
-                const paid = matchingItem ? matchingItem.paid_amount : 0;
+                // Individual Head Mode: Sum all matching line items for this selected head (supports multi-child family slips)
+                const matchingItems = items.filter(li => li.head_id === selectedHeadIdNum);
+                const billed = matchingItems.reduce((sum, li) => sum + (parseFloat(li.amount) || 0), 0);
+                const paid = matchingItems.reduce((sum, li) => sum + (parseFloat(li.paid_amount) || 0), 0);
                 const balance = Math.max(0, billed - paid);
                 let st = 'unpaid';
                 if (advSurplus > 0 || (paid >= billed && billed > 0 && advBal > 0)) st = 'advanced';
@@ -398,7 +398,7 @@ router.get('/family-fee', async (req, res) => {
                     advance_adjusted: advAdjusted,
                     advance_balance: advBal,
                     status: st,
-                    line_items: matchingItem ? [matchingItem] : []
+                    line_items: matchingItems
                 };
             } else {
                 // All Heads Mode

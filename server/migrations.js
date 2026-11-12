@@ -490,8 +490,12 @@ async function runEssentialMigrations() {
                 status VARCHAR(30) DEFAULT 'pending',
                 applied_slip_id INTEGER,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                applied_at TIMESTAMP
+                applied_at TIMESTAMP,
+                is_carried_forward BOOLEAN NOT NULL DEFAULT FALSE
             );
+
+            ALTER TABLE pending_family_adjustments
+                ADD COLUMN IF NOT EXISTS is_carried_forward BOOLEAN NOT NULL DEFAULT FALSE;
 
             CREATE INDEX IF NOT EXISTS idx_pending_fam_adj_lookup
             ON pending_family_adjustments (status, family_id, student_id);

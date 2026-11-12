@@ -798,8 +798,8 @@ async function executeStudentReactivation(client, studentId, payload = {}) {
                 head_id: adj.head_id || null,
                 head_name: adj.head_name,
                 amount: parseFloat(adj.amount),
-                is_carried_forward: true,
-                note: adj.reason || 'Deferred mid-month adjustment'
+                is_carried_forward: Boolean(adj.is_carried_forward),
+                note: adj.reason || (adj.is_carried_forward ? 'Deferred mid-month adjustment' : null)
             });
         }
 
@@ -1075,6 +1075,7 @@ async function executeStudentReactivation(client, studentId, payload = {}) {
                         head_id: tuitionItem?.head_id || null,
                         head_name: `Sibling Tuition Addition (${activatedNames})`,
                         amount: supTuition,
+                        is_carried_forward: true,
                         reason: payload.notes || `Mid-month return (${MONTH_NAMES[month - 1]} ${year}) deferred from paid Slip #${existingSlip.slip_id}`
                     });
                 }
@@ -1084,6 +1085,7 @@ async function executeStudentReactivation(client, studentId, payload = {}) {
                         head_id: ph.head_id || null,
                         head_name: `${ph.head_name} (${activatedNames})`,
                         amount: parseFloat(ph.amount),
+                        is_carried_forward: true,
                         reason: ph.note || `Deferred head from ${MONTH_NAMES[month - 1]} ${year} reactivation`
                     });
                 }
@@ -1092,16 +1094,17 @@ async function executeStudentReactivation(client, studentId, payload = {}) {
                         head_id: eh.head_id ? parseInt(eh.head_id, 10) : null,
                         head_name: String(eh.head_name).trim(),
                         amount: parseFloat(eh.amount),
-                        reason: eh.note ? String(eh.note).trim() : `Deferred charge (${activatedNames})`
+                        is_carried_forward: false,
+                        reason: eh.note ? String(eh.note).trim() : `For: ${activatedNames}`
                     });
                 }
 
                 for (const d of deferredItems) {
                     await client.query(
                         `INSERT INTO pending_family_adjustments
-                            (family_id, student_id, academic_year_id, target_month, target_year, head_id, head_name, amount, reason, source_slip_id, status)
-                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending')`,
-                        [familyId, targetId, activeYearId, deferMonth, deferYear, d.head_id, d.head_name, d.amount, d.reason, existingSlip.slip_id]
+                            (family_id, student_id, academic_year_id, target_month, target_year, head_id, head_name, amount, reason, source_slip_id, status, is_carried_forward)
+                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', $11)`,
+                        [familyId, targetId, activeYearId, deferMonth, deferYear, d.head_id, d.head_name, d.amount, d.reason, existingSlip.slip_id, Boolean(d.is_carried_forward)]
                     );
                     createdAdjustmentsCount++;
                 }

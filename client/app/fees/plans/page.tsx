@@ -143,7 +143,17 @@ export default function FeePlansPage() {
 
     const isTuitionHead = (name: string) => name.toLowerCase().includes('tuition');
     const isOpbHead = (type: string) => type === 'prev_balance';
-    const isLateFineHead = (name: string) => name.toLowerCase().includes('late') || name.toLowerCase().includes('fine');
+    const isLateFineHead = (name: string) => {
+        const hn = (name || '').trim().toLowerCase();
+        return (
+            hn === 'fine' ||
+            hn === 'late' ||
+            hn.includes('late fee') ||
+            hn.includes('late fine') ||
+            hn.includes('late payment') ||
+            hn.includes('after due')
+        );
+    };
     // Tuition (per-student) and Previous Balance (per-family) amounts are auto exclude from plan fixed total
     const totalAmount = form.heads
         .filter(h => !isTuitionHead(h.head_name) && !isOpbHead(h.head_type))

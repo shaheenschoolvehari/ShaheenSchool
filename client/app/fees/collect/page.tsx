@@ -61,6 +61,22 @@ interface SlipRow {
             collection_date?: string;
         }[];
         original_amount?: number;
+        head_id?: number | null;
+        is_carried_forward?: boolean;
+        is_waived?: boolean;
+        fine_after_day?: number | null;
+        head_type?: string | null;
+    }[];
+    pending_adjustments?: {
+        adjustment_id: number;
+        head_id?: number | null;
+        head_name: string;
+        amount: number;
+        reason?: string | null;
+        target_month?: number | null;
+        target_year?: number | null;
+        target_first_name?: string | null;
+        target_last_name?: string | null;
     }[];
     family_members?: { student_id: number; first_name: string; last_name: string; class_name: string; admission_no: string; section_name?: string; father_name?: string; }[];
     academic_year_id?: number;
@@ -182,10 +198,10 @@ function normalizeSlips(rawSlips: any[]): SlipRow[] {
             }
 
             const paid = parseFloat(s.paid_amount as any || 0);
-            const status: 'paid' | 'partial' | 'unpaid' | 'satteled' = 
-                (nonTuitionTotal <= 0 || paid >= nonTuitionTotal) 
-                    ? 'satteled' 
-                    : (paid > 0 ? 'partial' : 'unpaid');
+            const status: 'paid' | 'partial' | 'unpaid' | 'satteled' =
+                nonTuitionTotal <= 0
+                    ? 'satteled'
+                    : (paid >= nonTuitionTotal ? 'paid' : (paid > 0 ? 'partial' : 'unpaid'));
 
             return {
                 ...s,
@@ -238,6 +254,24 @@ export default function CollectFeePage() {
         error: string | null;
     } | null>(null);
 
+    // Extra Charge Modal (Same Month Cases A/B + Next Month Scheduling)
+    const [feeHeads, setFeeHeads] = useState<{ head_id: number; head_name: string; head_type?: string; default_amount?: number }[]>([]);
+    const [extraChargeModal, setExtraChargeModal] = useState<{
+        isOpen: boolean;
+        slip: SlipRow;
+        mode: 'same_month' | 'next_month';
+        headId: string;
+        customHeadName: string;
+        amount: string;
+        targetStudentId: string;
+        targetMonth: number;
+        targetYear: number;
+        note: string;
+        openCollectAfterSave: boolean;
+        saving: boolean;
+        error: string | null;
+    } | null>(null);
+
     const [headPayVals, setHeadPayVals] = useState<Record<string, string>>({});
     const [waivedItemIds, setWaivedItemIds] = useState<number[]>([]);
     const [payMethod, setPayMethod] = useState('cash');
@@ -253,12 +287,17 @@ export default function CollectFeePage() {
     useEffect(() => {
         const init = async () => {
             try {
-                const [acadRes, yearsRes, activeYearRes, settingsRes] = await Promise.allSettled([
+                const [acadRes, yearsRes, activeYearRes, settingsRes, headsRes] = await Promise.allSettled([
                     fetch(`${API}/academic`).then(r => r.json()),
                     fetch(`${API}/academic/years`).then(r => r.json()),
                     fetch(`${API}/academic/active-year`).then(r => r.json()),
-                    fetch(`${API}/settings`).then(r => r.json())
+                    fetch(`${API}/settings`).then(r => r.json()),
+                    fetch(`${API}/fee-heads/active`).then(r => r.json())
                 ]);
+
+                if (headsRes.status === 'fulfilled' && Array.isArray(headsRes.value)) {
+                    setFeeHeads(headsRes.value);
+                }
 
                 if (acadRes.status === 'fulfilled' && Array.isArray(acadRes.value)) {
                     setClasses(acadRes.value);
@@ -388,6 +427,20 @@ export default function CollectFeePage() {
         } catch { }
     };
 
+    // Strict due-date late payment fine check so custom fines (e.g. Lab Breakage Fine) are not locked as late fines
+    const isLateFineHead = (headName?: string | null, fineAfterDay?: any) => {
+        if (fineAfterDay && parseInt(fineAfterDay, 10) > 0) return true;
+        const hn = (headName || '').trim().toLowerCase();
+        return (
+            hn === 'fine' ||
+            hn === 'late' ||
+            hn.includes('late fee') ||
+            hn.includes('late fine') ||
+            hn.includes('late payment') ||
+            hn.includes('after due')
+        );
+    };
+
     // Helper to calculate initial head pay values
     const calculateInitialHeads = (targetSlip: SlipRow, currentPayDate: string) => {
         const initialHeads: Record<string, string> = {};
@@ -411,7 +464,7 @@ export default function CollectFeePage() {
                 }
 
                 const rem = Math.max(0, parseFloat(item.amount as any || 0) - parseFloat(item.paid_amount as any || 0));
-                const isLateFine = (item.head_name || '').toLowerCase().includes('late') || (item.head_name || '').toLowerCase().includes('fine');
+                const isLateFine = isLateFineHead(item.head_name, item.fine_after_day);
                 
                 if (isLateFine && targetSlip.due_date) {
                     let cutoff = new Date(targetSlip.due_date);
@@ -547,6 +600,172 @@ export default function CollectFeePage() {
         }
     };
 
+    // Open Extra Charge Modal (Same Month Cases A/B + Next Month Scheduling)
+    const openExtraChargeModal = async (slip: SlipRow, defaultMode: 'same_month' | 'next_month' = 'same_month') => {
+        let hydratedSlip = slip;
+        if (slip.is_family_slip && (!slip.family_members || slip.family_members.length === 0)) {
+            try {
+                const r = await fetch(`${API}/fee-slips/${slip.slip_id}`);
+                const d = await r.json();
+                if (d.slip) hydratedSlip = d.slip;
+            } catch { }
+        }
+        const selectableHeads = feeHeads.filter(h => {
+            const ht = (h.head_type || '').toLowerCase();
+            const hn = (h.head_name || '').trim().toLowerCase();
+            return ht !== 'prev_balance' && hn !== 'tuition fee' && hn !== 'family monthly fee' && hn !== 'monthly fee';
+        });
+        const firstHead = selectableHeads[0];
+        const nextM = hydratedSlip.month === 12 ? 1 : (hydratedSlip.month + 1);
+        const nextY = hydratedSlip.month === 12 ? (hydratedSlip.year + 1) : hydratedSlip.year;
+
+        setExtraChargeModal({
+            isOpen: true,
+            slip: hydratedSlip,
+            mode: defaultMode,
+            headId: firstHead ? firstHead.head_id.toString() : 'custom',
+            customHeadName: '',
+            amount: firstHead && Number(firstHead.default_amount) > 0 ? String(firstHead.default_amount) : '',
+            targetStudentId: '',
+            targetMonth: nextM,
+            targetYear: nextY,
+            note: '',
+            openCollectAfterSave: defaultMode === 'same_month' && !payModal,
+            saving: false,
+            error: null
+        });
+    };
+
+    const handleSaveExtraCharge = async () => {
+        if (!extraChargeModal) return;
+        const { slip, mode, headId, customHeadName, amount, targetStudentId, targetMonth, targetYear, note, openCollectAfterSave } = extraChargeModal;
+        const parsedAmt = parseFloat(amount);
+        if (isNaN(parsedAmt) || parsedAmt <= 0) {
+            setExtraChargeModal(prev => prev ? { ...prev, error: 'Please enter a valid positive amount.' } : null);
+            return;
+        }
+
+        const isCustom = headId === 'custom';
+        const chosenHead = !isCustom ? feeHeads.find(h => h.head_id.toString() === headId) : null;
+        const finalHeadName = isCustom ? customHeadName.trim() : (chosenHead?.head_name || '').trim();
+        if (!finalHeadName) {
+            setExtraChargeModal(prev => prev ? { ...prev, error: 'Please select or enter a fee head name.' } : null);
+            return;
+        }
+
+        setExtraChargeModal(prev => prev ? { ...prev, saving: true, error: null } : null);
+        try {
+            const res = await fetch(`${API}/fee-slips/${slip.slip_id}/extra-charge`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    mode,
+                    head_id: isCustom ? null : parseInt(headId, 10),
+                    head_name: finalHeadName,
+                    amount: parsedAmt,
+                    target_student_id: targetStudentId ? parseInt(targetStudentId, 10) : null,
+                    target_month: mode === 'next_month' ? targetMonth : null,
+                    target_year: mode === 'next_month' ? targetYear : null,
+                    note: note.trim() || null
+                })
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.error || 'Failed to add extra charge');
+            }
+
+            notify.success(
+                mode === 'next_month'
+                    ? `${finalHeadName} (PKR ${parsedAmt.toLocaleString('en-PK')}) scheduled for ${MONTHS[(targetMonth - 1) % 12]} ${targetYear}.`
+                    : `${finalHeadName} (PKR ${parsedAmt.toLocaleString('en-PK')}) added to current voucher.`
+            );
+
+            // Re-fetch slip details cleanly to sync line_items & pending_adjustments
+            let refreshedSlip: SlipRow = {
+                ...slip,
+                total_amount: data.new_total !== undefined ? data.new_total : slip.total_amount,
+                status: data.new_status || slip.status,
+                line_items: data.line_items || slip.line_items
+            };
+            try {
+                const detailRes = await fetch(`${API}/fee-slips/${slip.slip_id}`);
+                const detailData = await detailRes.json();
+                if (detailData.slip) {
+                    refreshedSlip = detailData.slip;
+                    if (payModal && activeSlip?.slip_id === slip.slip_id) {
+                        setSlipPayments(detailData.payments || []);
+                    }
+                }
+            } catch { }
+
+            if (payModal && activeSlip?.slip_id === slip.slip_id) {
+                setActiveSlip(refreshedSlip);
+                setHeadPayVals(calculateInitialHeads(refreshedSlip, payDate || getTodayDateStr()));
+            }
+            if (slipPickerGroup) {
+                setSlipPickerGroup({
+                    ...slipPickerGroup,
+                    slips: slipPickerGroup.slips.map(s => s.slip_id === slip.slip_id ? refreshedSlip : s)
+                });
+            }
+
+            setExtraChargeModal(null);
+            silentReload();
+
+            if (mode === 'same_month' && openCollectAfterSave && !payModal) {
+                openPayModal(refreshedSlip);
+            }
+        } catch (err: any) {
+            setExtraChargeModal(prev => prev ? { ...prev, saving: false, error: err.message || 'Error adding extra charge' } : null);
+        }
+    };
+
+    const handleRemoveLineItem = async (slipId: number, itemId: number, headName: string) => {
+        if (!window.confirm(`Remove unpaid "${headName}" from this voucher?`)) return;
+        try {
+            const res = await fetch(`${API}/fee-slips/${slipId}/line-items/${itemId}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to remove line item');
+            notify.success(`Removed "${headName}" from voucher.`);
+
+            const detailRes = await fetch(`${API}/fee-slips/${slipId}`);
+            const detailData = await detailRes.json();
+            if (detailData.slip) {
+                if (activeSlip && activeSlip.slip_id === slipId) {
+                    setActiveSlip(detailData.slip);
+                    setHeadPayVals(calculateInitialHeads(detailData.slip, payDate || getTodayDateStr()));
+                }
+                if (slipPickerGroup) {
+                    setSlipPickerGroup({
+                        ...slipPickerGroup,
+                        slips: slipPickerGroup.slips.map(s => s.slip_id === slipId ? detailData.slip : s)
+                    });
+                }
+            }
+            silentReload();
+        } catch (err: any) {
+            notify.error(err.message || 'Could not remove item');
+        }
+    };
+
+    const handleCancelPendingAdjustment = async (adjustmentId: number, headName: string) => {
+        if (!window.confirm(`Cancel scheduled next-month charge "${headName}"?`)) return;
+        try {
+            const res = await fetch(`${API}/fee-slips/pending-adjustments/${adjustmentId}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to cancel scheduled charge');
+            notify.success(`Cancelled scheduled charge "${headName}".`);
+            if (activeSlip) {
+                setActiveSlip({
+                    ...activeSlip,
+                    pending_adjustments: (activeSlip.pending_adjustments || []).filter(a => a.adjustment_id !== adjustmentId)
+                });
+            }
+        } catch (err: any) {
+            notify.error(err.message || 'Could not cancel scheduled charge');
+        }
+    };
+
     const openPayModal = async (slip: SlipRow) => {
         setActiveSlip(slip);
         setWaivedItemIds([]);
@@ -574,6 +793,23 @@ export default function CollectFeePage() {
         finally { setLoadingHistory(false); }
     };
 
+    const getPrevPaidBeforePayment = (targetSlip: SlipRow, targetPayment: Payment, paymentsList: Payment[]) => {
+        if (paymentsList && paymentsList.length > 0) {
+            const idx = paymentsList.findIndex(x => x.payment_id === targetPayment.payment_id);
+            if (idx >= 0) {
+                const targetTime = new Date(targetPayment.payment_date || 0).getTime();
+                const priorPayments = paymentsList.filter((x, i) => {
+                    if (x.payment_id === targetPayment.payment_id) return false;
+                    const xTime = new Date(x.payment_date || 0).getTime();
+                    if (xTime !== targetTime) return xTime < targetTime;
+                    return i > idx;
+                });
+                return priorPayments.reduce((sum, x) => sum + (parseFloat(x.amount_paid as any) || 0), 0);
+            }
+        }
+        return Math.max(0, parseFloat(targetSlip.paid_amount as any || 0) - parseFloat(targetPayment.amount_paid as any || 0));
+    };
+
     // Helper to print latest receiving invoice / receipt
     const printLatestReceipt = (customSlip?: SlipRow, customPayment?: Payment) => {
         const targetSlip = customSlip || activeSlip;
@@ -581,7 +817,7 @@ export default function CollectFeePage() {
 
         if (customPayment) {
             const p = customPayment;
-            const prevPaid = Math.max(0, parseFloat(targetSlip.paid_amount as any || 0) - parseFloat(p.amount_paid as any || 0));
+            const prevPaid = getPrevPaidBeforePayment(targetSlip, p, slipPayments);
             openReceiptWindow(targetSlip, parseFloat(p.amount_paid as any || 0), p.payment_date, prevPaid);
             if (!p.is_printed) {
                 fetch(`${API}/fee-slips/payments/${p.payment_id}/print`, { method: 'PUT' })
@@ -594,7 +830,7 @@ export default function CollectFeePage() {
 
         if (slipPayments && slipPayments.length > 0) {
             const lastP = slipPayments[0];
-            const prevPaid = Math.max(0, parseFloat(targetSlip.paid_amount as any || 0) - parseFloat(lastP.amount_paid as any || 0));
+            const prevPaid = getPrevPaidBeforePayment(targetSlip, lastP, slipPayments);
             openReceiptWindow(targetSlip, parseFloat(lastP.amount_paid as any || 0), lastP.payment_date, prevPaid);
             if (!lastP.is_printed) {
                 fetch(`${API}/fee-slips/payments/${lastP.payment_id}/print`, { method: 'PUT' })
@@ -816,10 +1052,17 @@ export default function CollectFeePage() {
             <td>${fmtMoney(totalPayable)}</td>
         </tr>`;
 
-        // Receiving Amount & Remaining Balance
+        // Previously Paid + Receiving Amount & Remaining Balance
         const surplusAdvance = Math.max(0, totalReceivedNow - totalPayable);
-        feeRows += `
+        if (totalReceivedBefore > 0) {
+            feeRows += `
             <tr class="divider-row">
+                <td colspan="2">Previously Paid</td>
+                <td>- ${fmtMoney(totalReceivedBefore)}</td>
+            </tr>`;
+        }
+        feeRows += `
+            <tr class="${totalReceivedBefore > 0 ? '' : 'divider-row'}">
                 <td colspan="2">Receiving Amount</td>
                 <td>${fmtMoney(receivingAmt)}</td>
             </tr>
@@ -1235,9 +1478,10 @@ export default function CollectFeePage() {
 
             const isSettledStatus = ['satteled', 'settled'].includes((g.latest_slip?.status || '').toLowerCase()) ||
                 ['satteled', 'settled'].includes((g.latest_unpaid?.status || '').toLowerCase());
+            const isTrustedSettled = isTrustedGroup && g.balance <= 0 && parseFloat(g.latest_slip?.total_amount as any || 0) <= 0;
 
             // Primary status categorization
-            if (isTrustedGroup || isSettledStatus) {
+            if (isTrustedSettled || isSettledStatus) {
                 g.status = 'satteled';
             } else if (hasAdvance && g.balance <= 0) {
                 g.status = 'advanced';
@@ -1255,10 +1499,10 @@ export default function CollectFeePage() {
     // Stats breakdown calculated from all loaded accounts
     const statsBreakdown = useMemo(() => {
         const total = allGroups.length;
-        const settled = allGroups.filter(g => ['satteled', 'settled'].includes((g.status || '').toLowerCase()) || g.is_trusted).length;
-        const paid = allGroups.filter(g => g.status === 'paid' && !g.is_trusted && !['satteled', 'settled'].includes((g.status || '').toLowerCase())).length;
-        const partial = allGroups.filter(g => g.status === 'partial' && !g.is_trusted && !['satteled', 'settled'].includes((g.status || '').toLowerCase())).length;
-        const unpaid = allGroups.filter(g => g.status === 'unpaid' && !g.is_trusted && !['satteled', 'settled'].includes((g.status || '').toLowerCase())).length;
+        const settled = allGroups.filter(g => ['satteled', 'settled'].includes((g.status || '').toLowerCase())).length;
+        const paid = allGroups.filter(g => g.status === 'paid').length;
+        const partial = allGroups.filter(g => g.status === 'partial').length;
+        const unpaid = allGroups.filter(g => g.status === 'unpaid').length;
         const advanced = allGroups.filter(g => g.status === 'advanced' || g.advance_balance > 0).length;
         return { total, settled, paid, partial, unpaid, advanced };
     }, [allGroups]);
@@ -1753,7 +1997,7 @@ export default function CollectFeePage() {
                                             const isTrustedGroup = g.is_trusted;
                                             const members = g.family_members || [];
                                             const groupTotalPaid = g.slips.reduce((sum, s) => sum + parseFloat(s.paid_amount as any || 0), 0);
-                                            const isSettledAccount = ['satteled', 'settled'].includes((g.status || '').toLowerCase()) || isTrustedGroup;
+                                            const isSettledAccount = ['satteled', 'settled'].includes((g.status || '').toLowerCase());
                                             const groupNetBilled = isSettledAccount ? groupTotalPaid : (groupTotalPaid + g.balance);
                                             return (
                                                 <tr key={g.key} style={{ borderBottom: '1px solid #f0f0f0' }}>
@@ -1879,16 +2123,32 @@ export default function CollectFeePage() {
                                                     </td>
                                                     <td className="px-2 text-center">
                                                         {g.balance <= 0 || g.latest_unpaid.is_active_year === false ? (
-                                                            <button className="btn btn-sm" style={{ fontSize: '0.72rem', backgroundColor: '#e8f5e9', color: '#198754', border: '1px solid #c3e6cb', borderRadius: 6 }}
-                                                                onClick={() => openPayModal(g.latest_paid || g.latest_slip)}>
-                                                                <i className="bi bi-eye me-1"></i>{g.latest_unpaid.is_active_year === false ? 'View Slip' : 'History'}
-                                                            </button>
+                                                            <div className="d-flex gap-1 justify-content-center">
+                                                                <button className="btn btn-sm" style={{ fontSize: '0.72rem', backgroundColor: '#e8f5e9', color: '#198754', border: '1px solid #c3e6cb', borderRadius: 6 }}
+                                                                    onClick={() => openPayModal(g.latest_paid || g.latest_slip)}>
+                                                                    <i className="bi bi-eye me-1"></i>{g.latest_unpaid.is_active_year === false ? 'View Slip' : 'History'}
+                                                                </button>
+                                                                {hasPermission('fees', 'write') && g.latest_slip.is_active_year !== false && (
+                                                                    <button className="btn btn-sm fw-semibold" title="Add Extra Charge (Same Month or Next Month)"
+                                                                        style={{ fontSize: '0.72rem', backgroundColor: '#eef2ff', color: '#4338ca', border: '1px solid #c7d2fe', borderRadius: 6 }}
+                                                                        onClick={() => openExtraChargeModal(g.latest_slip)}>
+                                                                        <i className="bi bi-plus-circle me-1"></i>Extra
+                                                                    </button>
+                                                                )}
+                                                            </div>
                                                         ) : (
                                                             <div className="d-flex gap-1 justify-content-center">
                                                                 <button className="btn btn-sm fw-bold" style={{ fontSize: '0.72rem', backgroundColor: 'var(--accent-orange)', color: '#fff', borderRadius: 6, border: 'none' }}
                                                                     onClick={() => openPayModal(g.latest_unpaid)}>
                                                                     <i className="bi bi-cash me-1"></i>Collect
                                                                 </button>
+                                                                {hasPermission('fees', 'write') && (
+                                                                    <button className="btn btn-sm fw-semibold" title="Add Extra Charge (Same Month or Next Month)"
+                                                                        style={{ fontSize: '0.72rem', backgroundColor: '#eef2ff', color: '#4338ca', border: '1px solid #c7d2fe', borderRadius: 6 }}
+                                                                        onClick={() => openExtraChargeModal(g.latest_unpaid)}>
+                                                                        <i className="bi bi-plus-circle me-1"></i>Extra
+                                                                    </button>
+                                                                )}
                                                                 {g.has_payments && (
                                                                     <button className="btn btn-sm" title="Reverse a payment" style={{ fontSize: '0.72rem', backgroundColor: '#fff0f0', color: '#dc3545', border: '1px solid #f5c2c7', borderRadius: 6 }}
                                                                         onClick={() => openPayModal(g.latest_paid || g.latest_slip)}>
@@ -2104,7 +2364,14 @@ export default function CollectFeePage() {
                                                                     </span>
                                                                 </div>
                                                             </div>
-                                                            <div>
+                                                            <div className="d-flex gap-2 align-items-center">
+                                                                {slip.is_active_year !== false && hasPermission('fees', 'write') && (
+                                                                    <button className="btn btn-sm fw-semibold"
+                                                                        style={{ fontSize: '0.74rem', backgroundColor: '#eef2ff', color: '#4338ca', border: '1px solid #c7d2fe', borderRadius: 6 }}
+                                                                        onClick={() => openExtraChargeModal(slip)}>
+                                                                        <i className="bi bi-plus-circle me-1"></i>Extra
+                                                                    </button>
+                                                                )}
                                                                 {slip.is_active_year === false ? (
                                                                     <button className="btn btn-sm btn-outline-secondary"
                                                                         onClick={() => { setSlipPickerGroup(null); openPayModal(slip); }}>
@@ -2171,6 +2438,18 @@ export default function CollectFeePage() {
                                         </div>
                                     </div>
                                     <div className="d-flex align-items-center gap-2">
+                                        {hasPermission('fees', 'write') && activeSlip.is_active_year !== false && (
+                                            <button
+                                                type="button"
+                                                className="btn btn-sm fw-bold d-flex align-items-center gap-1 shadow-sm"
+                                                style={{ fontSize: '0.78rem', borderRadius: 8, padding: '5px 12px', backgroundColor: '#eef2ff', color: '#3730a3', border: '1px solid #c7d2fe' }}
+                                                title="Add Extra Fee Head (Same Month or Next Month)"
+                                                onClick={() => openExtraChargeModal(activeSlip)}
+                                            >
+                                                <i className="bi bi-plus-circle-fill"></i>
+                                                <span>+ Extra Charge</span>
+                                            </button>
+                                        )}
                                         {(parseFloat(activeSlip.paid_amount as any || 0) > 0 || slipPayments.length > 0) && (
                                             <button
                                                 type="button"
@@ -2318,6 +2597,46 @@ export default function CollectFeePage() {
                                             </div>
                                         )}
                                     </div>
+
+                                    {/* Scheduled Next-Month Extra Charges */}
+                                    {activeSlip.pending_adjustments && activeSlip.pending_adjustments.length > 0 && (
+                                        <div className="mb-3 p-2.5 rounded-3" style={{ backgroundColor: '#eef2ff', border: '1px solid #c7d2fe' }}>
+                                            <div className="d-flex justify-content-between align-items-center mb-1.5">
+                                                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#3730a3' }}>
+                                                    <i className="bi bi-calendar-plus me-1"></i>Scheduled Next-Month Extra Charges ({activeSlip.pending_adjustments.length})
+                                                </span>
+                                            </div>
+                                            <div className="d-flex flex-column gap-1.5">
+                                                {activeSlip.pending_adjustments.map(adj => (
+                                                    <div key={adj.adjustment_id} className="d-flex justify-content-between align-items-center bg-white rounded px-2.5 py-1.5 border" style={{ fontSize: '0.76rem' }}>
+                                                        <div>
+                                                            <span className="fw-bold text-dark">{adj.head_name}</span>
+                                                            {adj.target_month && adj.target_year && (
+                                                                <span className="badge bg-indigo-subtle text-primary border ms-2" style={{ fontSize: '0.68rem' }}>
+                                                                    {MONTHS[(adj.target_month - 1) % 12]} {adj.target_year}
+                                                                </span>
+                                                            )}
+                                                            {adj.reason && <span className="text-muted ms-2">· {adj.reason}</span>}
+                                                        </div>
+                                                        <div className="d-flex align-items-center gap-2">
+                                                            <span className="fw-bold text-primary">{fmt(parseFloat(adj.amount as any || 0))}</span>
+                                                            {hasPermission('fees', 'write') && activeSlip.is_active_year !== false && (
+                                                                <button
+                                                                    type="button"
+                                                                    className="btn btn-sm btn-outline-danger py-0 px-1.5"
+                                                                    style={{ fontSize: '0.7rem', borderRadius: 5 }}
+                                                                    title="Cancel scheduled charge"
+                                                                    onClick={() => handleCancelPendingAdjustment(adj.adjustment_id, adj.head_name)}
+                                                                >
+                                                                    <i className="bi bi-x-lg"></i>
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {/* Payment Form */}
                                     {!isModalSlipSettled && activeSlip.status !== 'paid' && activeSlip.is_active_year !== false && (
@@ -2520,8 +2839,24 @@ export default function CollectFeePage() {
                                                                     const rem = (amtB - paid).toFixed(2);
                                                                     const remNum = Math.max(0, parseFloat(rem) || 0);
 
-                                                                    const isLateFine = (item.head_name || '').toLowerCase().includes('late') || (item.head_name || '').toLowerCase().includes('fine');
+                                                                    const isLateFine = isLateFineHead(item.head_name, item.fine_after_day);
                                                                     const isWaived = item.item_id ? waivedItemIds.includes(item.item_id) : false;
+                                                                    const hnLower = (item.head_name || '').trim().toLowerCase();
+                                                                    const isDeletableExtraItem = Boolean(
+                                                                        item.item_id &&
+                                                                        paid <= 0 &&
+                                                                        amtB > 0 &&
+                                                                        !item.class_collected_amount &&
+                                                                        item.head_type !== 'prev_balance' &&
+                                                                        !hnLower.includes('advance fee adjusted') &&
+                                                                        !hnLower.includes('previous balance') &&
+                                                                        !hnLower.includes('opening balance') &&
+                                                                        !hnLower.includes('tuition') &&
+                                                                        !hnLower.includes('family monthly fee') &&
+                                                                        !hnLower.includes('monthly fee') &&
+                                                                        activeSlip.is_active_year !== false &&
+                                                                        hasPermission('fees', 'write')
+                                                                    );
 
                                                                     let isFineDatePassed = true;
                                                                     if (isLateFine && activeSlip.due_date) {
@@ -2548,12 +2883,26 @@ export default function CollectFeePage() {
                                                                     elements.push(
                                                                         <div key={'other-' + (keyIdx++)} className="d-flex flex-wrap justify-content-between align-items-center bg-white p-2.5 rounded-3 border shadow-sm gap-2">
                                                                             <div className="d-flex flex-column flex-grow-1 min-w-0 me-2" style={{ maxWidth: '100%' }}>
-                                                                                <span className="text-dark fw-bold text-truncate" style={{ fontSize: '0.88rem' }}>
-                                                                                    {item.head_name || 'Previous Balance'}
-                                                                                </span>
+                                                                                <div className="d-flex align-items-center gap-1.5 flex-wrap">
+                                                                                    <span className="text-dark fw-bold text-truncate" style={{ fontSize: '0.88rem' }}>
+                                                                                        {item.head_name || 'Previous Balance'}
+                                                                                    </span>
+                                                                                    {isDeletableExtraItem && (
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            className="btn btn-sm btn-link text-danger p-0 ms-1"
+                                                                                            title="Remove unpaid extra charge"
+                                                                                            onClick={() => handleRemoveLineItem(activeSlip.slip_id, item.item_id, item.head_name)}
+                                                                                            style={{ lineHeight: 1 }}
+                                                                                        >
+                                                                                            <i className="bi bi-trash3" style={{ fontSize: '0.8rem' }}></i>
+                                                                                        </button>
+                                                                                    )}
+                                                                                </div>
                                                                                 <span className="text-muted" style={{ fontSize: '0.72rem' }}>
                                                                                     Billed: {amtB.toLocaleString('en-PK')} {paid > 0 ? ' • Paid: ' + paid.toLocaleString('en-PK') : ''}
                                                                                     {item.is_waived ? ' • Waived off' : ''}
+                                                                                    {item.note ? ` · ${item.note}` : ''}
                                                                                 </span>
                                                                                 {item.class_collected_amount && item.class_collected_amount > 0 ? (
                                                                                     <div className="mt-1.5 p-2 rounded-2 border border-warning-subtle bg-warning-subtle text-dark" style={{ fontSize: '0.74rem', maxWidth: '100%' }}>
@@ -2735,7 +3084,7 @@ export default function CollectFeePage() {
                                                                 const updatedHeads = { ...headPayVals };
                                                                 activeSlip.line_items.forEach((item: any) => {
                                                                     const headId = item.item_id ? item.item_id.toString() : item.head_name;
-                                                                    const isLateFine = (item.head_name || '').toLowerCase().includes('late') || (item.head_name || '').toLowerCase().includes('fine');
+                                                                    const isLateFine = isLateFineHead(item.head_name, item.fine_after_day);
                                                                     if (isLateFine && activeSlip.due_date) {
                                                                         let cutoff = new Date(activeSlip.due_date);
                                                                         if (item.fine_after_day && parseInt(item.fine_after_day) > 0) {
@@ -2971,6 +3320,245 @@ export default function CollectFeePage() {
                                             <><span className="spinner-border spinner-border-sm me-1" />Saving...</>
                                         ) : (
                                             <><i className="bi bi-check-circle me-1"></i>Save & Update Fee</>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </>
+            )}
+
+            {/* ── Extra Charge Modal (Same Month Cases A/B + Next Month Scheduling) ── */}
+            {extraChargeModal && extraChargeModal.isOpen && (
+                <>
+                    <div className="modal-backdrop fade show" style={{ zIndex: 1060 }} onClick={() => !extraChargeModal.saving && setExtraChargeModal(null)} />
+                    <div className="modal fade show d-block" style={{ zIndex: 1065 }} tabIndex={-1}>
+                        <div className="modal-dialog modal-dialog-centered">
+                            <div className="modal-content border-0 shadow-lg" style={{ borderRadius: 16 }}>
+                                <div className="modal-header border-0 pb-2 pt-3 px-4" style={{ background: 'linear-gradient(135deg, #312e81 0%, #4338ca 100%)', borderRadius: '16px 16px 0 0' }}>
+                                    <div className="text-white">
+                                        <h6 className="modal-title fw-bold mb-0">
+                                            <i className="bi bi-plus-circle-fill me-2"></i>Add Extra Fee Charge
+                                        </h6>
+                                        <div style={{ fontSize: '0.76rem', opacity: 0.85 }}>
+                                            {extraChargeModal.slip.first_name} {extraChargeModal.slip.last_name} · {MONTHS[(extraChargeModal.slip.month - 1) % 12]} {extraChargeModal.slip.year} (Slip #{extraChargeModal.slip.slip_id})
+                                        </div>
+                                    </div>
+                                    <button type="button" className="btn-close btn-close-white" disabled={extraChargeModal.saving} onClick={() => setExtraChargeModal(null)} />
+                                </div>
+
+                                <div className="modal-body px-4 py-3" style={{ background: '#f8fafc' }}>
+                                    {extraChargeModal.error && (
+                                        <div className="alert alert-danger py-2 px-3 small mb-3 border-0 shadow-sm">
+                                            <i className="bi bi-exclamation-triangle-fill me-1"></i>{extraChargeModal.error}
+                                        </div>
+                                    )}
+
+                                    {/* Mode selector */}
+                                    <div className="mb-3">
+                                        <label className="form-label small fw-bold text-muted mb-1.5">When to Apply Charge?</label>
+                                        <div className="row g-2">
+                                            <div className="col-6">
+                                                <button
+                                                    type="button"
+                                                    disabled={extraChargeModal.saving}
+                                                    onClick={() => setExtraChargeModal({ ...extraChargeModal, mode: 'same_month', error: null })}
+                                                    className={`btn btn-sm w-100 text-start p-2.5 border ${extraChargeModal.mode === 'same_month' ? 'border-primary bg-primary-subtle text-primary-emphasis fw-bold' : 'bg-white text-dark'}`}
+                                                    style={{ borderRadius: 10 }}
+                                                >
+                                                    <div style={{ fontSize: '0.8rem' }}><i className="bi bi-receipt me-1"></i>Same Month</div>
+                                                    <div className="text-muted fw-normal" style={{ fontSize: '0.7rem' }}>
+                                                        {MONTHS[(extraChargeModal.slip.month - 1) % 12]} {extraChargeModal.slip.year} Voucher
+                                                    </div>
+                                                </button>
+                                            </div>
+                                            <div className="col-6">
+                                                <button
+                                                    type="button"
+                                                    disabled={extraChargeModal.saving}
+                                                    onClick={() => setExtraChargeModal({ ...extraChargeModal, mode: 'next_month', openCollectAfterSave: false, error: null })}
+                                                    className={`btn btn-sm w-100 text-start p-2.5 border ${extraChargeModal.mode === 'next_month' ? 'border-primary bg-primary-subtle text-primary-emphasis fw-bold' : 'bg-white text-dark'}`}
+                                                    style={{ borderRadius: 10 }}
+                                                >
+                                                    <div style={{ fontSize: '0.8rem' }}><i className="bi bi-calendar-plus me-1"></i>Next Month</div>
+                                                    <div className="text-muted fw-normal" style={{ fontSize: '0.7rem' }}>
+                                                        Auto-add on future slip
+                                                    </div>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {extraChargeModal.mode === 'same_month' && extraChargeModal.slip.status === 'paid' && (
+                                        <div className="alert alert-info py-2 px-3 small mb-3 border-0" style={{ backgroundColor: '#e0f2fe', color: '#075985' }}>
+                                            <i className="bi bi-info-circle-fill me-1"></i>
+                                            This voucher is currently <strong>Paid</strong>. Adding this charge will reopen it as <strong>Partial</strong> with the new extra balance (previous payment history stays intact).
+                                        </div>
+                                    )}
+
+                                    {/* Next month target month/year */}
+                                    {extraChargeModal.mode === 'next_month' && (
+                                        <div className="row g-2 mb-3">
+                                            <div className="col-7">
+                                                <label className="form-label small fw-bold text-muted mb-1">Target Month</label>
+                                                <select
+                                                    className="form-select form-select-sm"
+                                                    disabled={extraChargeModal.saving}
+                                                    value={extraChargeModal.targetMonth}
+                                                    onChange={e => setExtraChargeModal({ ...extraChargeModal, targetMonth: parseInt(e.target.value, 10) })}
+                                                >
+                                                    {MONTHS.map((mName, idx) => (
+                                                        <option key={idx + 1} value={idx + 1}>{mName}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div className="col-5">
+                                                <label className="form-label small fw-bold text-muted mb-1">Target Year</label>
+                                                <input
+                                                    type="number"
+                                                    className="form-control form-control-sm"
+                                                    disabled={extraChargeModal.saving}
+                                                    value={extraChargeModal.targetYear}
+                                                    onChange={e => setExtraChargeModal({ ...extraChargeModal, targetYear: parseInt(e.target.value, 10) || extraChargeModal.slip.year })}
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Fee Head Selection */}
+                                    <div className="mb-3">
+                                        <label className="form-label small fw-bold text-muted mb-1">Fee Head <span className="text-danger">*</span></label>
+                                        <select
+                                            className="form-select form-select-sm"
+                                            disabled={extraChargeModal.saving}
+                                            value={extraChargeModal.headId}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                const matched = feeHeads.find(h => h.head_id.toString() === val);
+                                                setExtraChargeModal({
+                                                    ...extraChargeModal,
+                                                    headId: val,
+                                                    amount: matched && Number(matched.default_amount) > 0 ? String(matched.default_amount) : extraChargeModal.amount,
+                                                    error: null
+                                                });
+                                            }}
+                                        >
+                                            {feeHeads
+                                                .filter(h => {
+                                                    const ht = (h.head_type || '').toLowerCase();
+                                                    const hn = (h.head_name || '').trim().toLowerCase();
+                                                    return ht !== 'prev_balance' && hn !== 'tuition fee' && hn !== 'family monthly fee' && hn !== 'monthly fee';
+                                                })
+                                                .map(h => (
+                                                    <option key={h.head_id} value={h.head_id.toString()}>
+                                                        {h.head_name} {Number(h.default_amount) > 0 ? `(Default: PKR ${Number(h.default_amount).toLocaleString('en-PK')})` : ''}
+                                                    </option>
+                                                ))}
+                                            <option value="custom">+ Custom / Other Head Name...</option>
+                                        </select>
+                                    </div>
+
+                                    {extraChargeModal.headId === 'custom' && (
+                                        <div className="mb-3">
+                                            <label className="form-label small fw-bold text-muted mb-1">Custom Head Name <span className="text-danger">*</span></label>
+                                            <input
+                                                type="text"
+                                                className="form-control form-control-sm"
+                                                placeholder="e.g. Lab Breakage Fine, Tour Fee, Practical Fee"
+                                                disabled={extraChargeModal.saving}
+                                                value={extraChargeModal.customHeadName}
+                                                onChange={e => setExtraChargeModal({ ...extraChargeModal, customHeadName: e.target.value })}
+                                            />
+                                        </div>
+                                    )}
+
+                                    {/* Target child selector on multi-child family slips */}
+                                    {extraChargeModal.slip.is_family_slip && extraChargeModal.slip.family_members && extraChargeModal.slip.family_members.length > 1 && (
+                                        <div className="mb-3">
+                                            <label className="form-label small fw-bold text-muted mb-1">Specific Child? (Optional)</label>
+                                            <select
+                                                className="form-select form-select-sm"
+                                                disabled={extraChargeModal.saving}
+                                                value={extraChargeModal.targetStudentId}
+                                                onChange={e => setExtraChargeModal({ ...extraChargeModal, targetStudentId: e.target.value })}
+                                            >
+                                                <option value="">Whole Family / General</option>
+                                                {extraChargeModal.slip.family_members.map(m => (
+                                                    <option key={m.student_id} value={m.student_id.toString()}>
+                                                        {m.first_name} {m.last_name} ({m.class_name})
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
+
+                                    <div className="row g-2 mb-2">
+                                        <div className="col-5">
+                                            <label className="form-label small fw-bold text-muted mb-1">Amount (PKR) <span className="text-danger">*</span></label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                className="form-control form-control-sm fw-bold"
+                                                placeholder="e.g. 500"
+                                                disabled={extraChargeModal.saving}
+                                                value={extraChargeModal.amount}
+                                                onChange={e => setExtraChargeModal({ ...extraChargeModal, amount: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="col-7">
+                                            <label className="form-label small fw-bold text-muted mb-1">Note / Reason (Optional)</label>
+                                            <input
+                                                type="text"
+                                                className="form-control form-control-sm"
+                                                placeholder="e.g. Science lab glassware"
+                                                disabled={extraChargeModal.saving}
+                                                value={extraChargeModal.note}
+                                                onChange={e => setExtraChargeModal({ ...extraChargeModal, note: e.target.value })}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {extraChargeModal.mode === 'same_month' && !payModal && (
+                                        <div className="form-check mt-2">
+                                            <input
+                                                id="openCollectAfterSaveCheck"
+                                                type="checkbox"
+                                                className="form-check-input"
+                                                checked={extraChargeModal.openCollectAfterSave}
+                                                onChange={e => setExtraChargeModal({ ...extraChargeModal, openCollectAfterSave: e.target.checked })}
+                                                disabled={extraChargeModal.saving}
+                                            />
+                                            <label htmlFor="openCollectAfterSaveCheck" className="form-check-label small text-dark fw-semibold">
+                                                Open Collect / Print Receipt right after saving
+                                            </label>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="modal-footer border-0 px-4 pb-3 pt-1 d-flex justify-content-end gap-2" style={{ background: '#f8fafc', borderRadius: '0 0 16px 16px' }}>
+                                    <button
+                                        type="button"
+                                        className="btn btn-sm btn-outline-secondary px-3"
+                                        disabled={extraChargeModal.saving}
+                                        onClick={() => setExtraChargeModal(null)}
+                                        style={{ borderRadius: 8 }}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="btn btn-sm px-4 fw-bold text-white"
+                                        disabled={extraChargeModal.saving}
+                                        onClick={handleSaveExtraCharge}
+                                        style={{ backgroundColor: '#4338ca', borderRadius: 8 }}
+                                    >
+                                        {extraChargeModal.saving ? (
+                                            <><span className="spinner-border spinner-border-sm me-1" />Saving...</>
+                                        ) : extraChargeModal.mode === 'next_month' ? (
+                                            <><i className="bi bi-calendar-check me-1"></i>Schedule for Next Month</>
+                                        ) : (
+                                            <><i className="bi bi-check-circle me-1"></i>Add to Current Voucher</>
                                         )}
                                     </button>
                                 </div>

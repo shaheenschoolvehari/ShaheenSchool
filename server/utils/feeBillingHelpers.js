@@ -48,7 +48,14 @@ function isTrustedExemptHead(headName) {
 
 function isFineHeadName(headName) {
     const hn = (headName || '').trim().toLowerCase();
-    return hn.includes('late') || hn.includes('fine');
+    return (
+        hn === 'fine' ||
+        hn === 'late' ||
+        hn.includes('late fee') ||
+        hn.includes('late fine') ||
+        hn.includes('late payment') ||
+        hn.includes('after due')
+    );
 }
 
 /**

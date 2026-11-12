@@ -203,11 +203,44 @@ function VoucherSlip({ v, serial, month, year, school, filterClassId }: { v: Vou
     let lateFineAmount = 0;
     let fineAfterDay = (v.primary as any).fine_after_day || null;
 
+    const isLateFineHead = (headName: string, fineDay?: any) => {
+        if (fineDay && parseInt(fineDay, 10) > 0) return true;
+        const hn = (headName || '').trim().toLowerCase();
+        return (
+            hn === 'fine' ||
+            hn === 'late' ||
+            hn.includes('late fee') ||
+            hn.includes('late fine') ||
+            hn.includes('late payment') ||
+            hn.includes('after due')
+        );
+    };
+
+    const SYSTEM_BOILERPLATE_NOTES = [
+        'carried forward arrears',
+        'trusted category',
+        'waived off',
+        'adjusted from previous advance',
+        'adjusted from advance wallet',
+        'deferred mid-month adjustment',
+        'reactivation charge',
+        'collected in class',
+        'past arrears'
+    ];
+
+    const getDisplayNoteSuffix = (noteRaw?: string | null) => {
+        const n = (noteRaw || '').trim();
+        if (!n) return '';
+        const lower = n.toLowerCase();
+        if (SYSTEM_BOILERPLATE_NOTES.some(b => lower.includes(b))) return '';
+        return n.length > 36 ? `${n.slice(0, 33)}...` : n;
+    };
+
     const itemMap = new Map<string, number>();
 
     for (const item of (v.primary.line_items || [])) {
         const rawName = (item.head_name || '').trim();
-        const isFine = rawName.toLowerCase().includes('late') || rawName.toLowerCase().includes('fine');
+        const isFine = isLateFineHead(rawName, (item as any).fine_after_day);
         const amt = parseFloat(item.amount as any) || 0;
 
         if (isFine) {
@@ -219,16 +252,22 @@ function VoucherSlip({ v, serial, month, year, school, filterClassId }: { v: Vou
         const displayName = rawName.replace(/Family Monthly Fee/i, 'Monthly Fee');
         const isTuition = displayName.toLowerCase().includes('monthly fee') || displayName.toLowerCase().includes('tuition');
         const isPb = displayName.toLowerCase().includes('previous balance') || displayName.toLowerCase().includes('opening balance');
-        
+        const isAdvAdj = displayName.toLowerCase().includes('advance fee adjusted');
+        const noteLower = (item.note || '').toLowerCase();
+        const isCarried = (item as any).is_carried_forward === true || (
+            (item as any).is_carried_forward == null && (noteLower.includes('carried forward') || noteLower.includes('arrears'))
+        );
+
         let desc = displayName;
         if (isPb) {
             desc = 'Previous Balance';
         } else if (isTuition) {
             desc = displayName.includes('(') ? displayName : `${displayName} (${monthName})`;
-        } else if ((item as any).is_carried_forward || item.note?.toLowerCase().includes('carried') || item.note?.toLowerCase().includes('arrears')) {
+        } else if (isCarried) {
             desc = `${displayName} (Arrears)`;
         } else {
-            desc = displayName;
+            const cleanSuffix = !isAdvAdj ? getDisplayNoteSuffix(item.note) : '';
+            desc = cleanSuffix ? `${displayName} (${cleanSuffix})` : displayName;
         }
 
         itemMap.set(desc, (itemMap.get(desc) || 0) + amt);
@@ -261,8 +300,7 @@ function VoucherSlip({ v, serial, month, year, school, filterClassId }: { v: Vou
         regularFeeItems.push({ desc: 'Amount Already Paid', amount: -totalPaid });
     }
 
-    const maxSlots = lateFineAmount > 0 ? 3 : MAX_FEES;
-    const feeRows = regularFeeItems.slice(0, maxSlots);
+    const feeRows = [...regularFeeItems];
     while (feeRows.length < (lateFineAmount > 0 ? 2 : MIN_FEES)) {
         feeRows.push({ desc: '', amount: 0 });
     }
@@ -279,9 +317,9 @@ function VoucherSlip({ v, serial, month, year, school, filterClassId }: { v: Vou
     const pendingMonths = v.pending_months_count || (v.primary as any).pending_months_count || 1;
 
     const studentCount = Math.max(MIN_STUDENTS, Math.min(rawStudentRows.length, MAX_STUDENTS));
-    const feeCount = Math.max(MIN_FEES, Math.min(feeRows.length, MAX_FEES));
+    const feeCount = Math.max(MIN_FEES, feeRows.length);
     const extraRows = (studentCount - MIN_STUDENTS) + (feeCount - MIN_FEES) + (lateFineAmount > 0 ? 2 : 0) + (pendingMonths >= 2 ? 1 : 0);
-    const compactClass = extraRows >= 2 ? ' table-compact' : '';
+    const compactClass = extraRows >= 5 ? ' table-ultra-compact' : (extraRows >= 2 ? ' table-compact' : '');
 
     const schoolName = school.school_name || 'Falcon School System';
     const schoolAddress = school.school_address || '83/M Madina Colony Vehari';
@@ -873,6 +911,22 @@ export default function PrintSlipsPage() {
         .voucher.table-compact .fee-table td {
             height: 4.5mm;
             padding: 0.35mm 1mm;
+        }
+        .voucher.table-ultra-compact .students-table,
+        .voucher.table-ultra-compact .fee-table {
+            font-size: 8.6pt;
+        }
+        .voucher.table-ultra-compact .students-table th,
+        .voucher.table-ultra-compact .students-table td,
+        .voucher.table-ultra-compact .fee-table th,
+        .voucher.table-ultra-compact .fee-table td {
+            height: 3.7mm;
+            padding: 0.2mm 0.8mm;
+        }
+        .voucher.table-ultra-compact .rules-box {
+            font-size: 8.2pt;
+            margin-top: 0.4mm;
+            padding-top: 0.4mm;
         }
 
         .students-table th:nth-child(1), .students-table td:nth-child(1) { width: 37%; text-align: center; }

@@ -2,9 +2,14 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const {
+    MONTH_NAMES,
     CLASS_SENIORITY_ORDER,
     evaluateMembersTrusted,
+    computeSlipTotalAndStatus,
     getActiveAcademicYear,
+    buildAcademicMonthsMap,
+    isFineHeadName,
+    isTuitionHeadName,
     isTrustedExemptHead
 } = require('../utils/feeBillingHelpers');
 
@@ -453,8 +458,26 @@ router.post('/generate', async (req, res) => {
             }
         }
 
+        // Preload all member IDs for target families so cross-class sibling adjustments match reliably
+        const familyAllMemberIdsMap = {};
+        if (uniqueFamilyIds.length > 0) {
+            const fmIdsRes = await client.query(
+                `SELECT family_id, student_id FROM students WHERE family_id = ANY($1::varchar[])`,
+                [uniqueFamilyIds]
+            );
+            for (const row of fmIdsRes.rows) {
+                if (!familyAllMemberIdsMap[row.family_id]) familyAllMemberIdsMap[row.family_id] = [];
+                familyAllMemberIdsMap[row.family_id].push(row.student_id);
+            }
+        }
+
         // Preload queued mid-month reactivation/supplementary adjustments to auto-inject into next slip
-        const allTargetStudentIds = studentsResult.rows.map(s => s.student_id).filter(Boolean);
+        const allTargetStudentIds = [
+            ...new Set([
+                ...studentsResult.rows.map(s => s.student_id).filter(Boolean),
+                ...Object.values(familyAllMemberIdsMap).flat()
+            ])
+        ];
         let pendingAdjustments = [];
         if (uniqueFamilyIds.length > 0 || allTargetStudentIds.length > 0) {
             const adjRes = await client.query(
@@ -475,12 +498,18 @@ router.post('/generate', async (req, res) => {
             pendingAdjustments = adjRes.rows;
         }
         const consumedAdjIds = new Set();
-        const consumeMatchingAdjustments = (fid, stuId) => {
+        const consumeMatchingAdjustments = (fid, stuIds) => {
+            const idSet = new Set(
+                (Array.isArray(stuIds) ? stuIds : [stuIds])
+                    .map(v => parseInt(v, 10))
+                    .filter(n => !isNaN(n))
+            );
             const matched = [];
             for (const adj of pendingAdjustments) {
                 if (consumedAdjIds.has(adj.adjustment_id)) continue;
-                const matchFam = fid && adj.family_id && adj.family_id === fid;
-                const matchStu = stuId && adj.student_id && parseInt(adj.student_id, 10) === parseInt(stuId, 10);
+                const adjStuId = adj.student_id ? parseInt(adj.student_id, 10) : null;
+                const matchFam = Boolean(fid && adj.family_id && adj.family_id === fid);
+                const matchStu = Boolean(adjStuId && idSet.has(adjStuId));
                 if (matchFam || matchStu) {
                     consumedAdjIds.add(adj.adjustment_id);
                     matched.push(adj);
@@ -501,7 +530,7 @@ router.post('/generate', async (req, res) => {
                     if (head.head_type === 'prev_balance') return false; // Previous Balance added separately
 
                     // Late fine should NOT be pre-billed on fresh vouchers before due_date / fine_after_day
-                    const isFine = head.head_name.toLowerCase().includes('late') || head.head_name.toLowerCase().includes('fine');
+                    const isFine = (head.fine_after_day && parseInt(head.fine_after_day, 10) > 0) || isFineHeadName(head.head_name);
                     if (isFine) {
                         let fineCutoffDate = slipDueDate;
                         if (head.fine_after_day && parseInt(head.fine_after_day) > 0) {
@@ -644,14 +673,14 @@ router.post('/generate', async (req, res) => {
             }
 
             // ── 2b. Add queued deferred reactivation adjustments (if any) ─────
-            const famMatchedAdjs = consumeMatchingAdjustments(fid, primary.student_id);
+            const famMatchedAdjs = consumeMatchingAdjustments(fid, familyAllMemberIdsMap[fid] || members.map(m => m.student_id));
             for (const adj of famMatchedAdjs) {
                 lineItems.push({
                     head_id: adj.head_id || null,
                     head_name: adj.head_name,
                     amount: parseFloat(adj.amount) || 0,
-                    is_carried_forward: true,
-                    note: adj.reason || 'Deferred mid-month adjustment'
+                    is_carried_forward: Boolean(adj.is_carried_forward),
+                    note: adj.reason || (adj.is_carried_forward ? 'Deferred mid-month adjustment' : null)
                 });
             }
 
@@ -746,8 +775,8 @@ router.post('/generate', async (req, res) => {
                     head_id: adj.head_id || null,
                     head_name: adj.head_name,
                     amount: parseFloat(adj.amount) || 0,
-                    is_carried_forward: true,
-                    note: adj.reason || 'Deferred mid-month adjustment'
+                    is_carried_forward: Boolean(adj.is_carried_forward),
+                    note: adj.reason || (adj.is_carried_forward ? 'Deferred mid-month adjustment' : null)
                 });
             }
 
@@ -1018,7 +1047,7 @@ const syncTrustedSlipsState = async () => {
             GROUP BY mfs.slip_id, mfs.paid_amount, s.category, mfs.is_family_slip, mfs.family_id
         `);
         for (const r of trustedSlipsRes.rows) {
-            const netTotal = parseFloat(r.non_tuition_total);
+            const netTotal = Math.max(0, parseFloat(r.non_tuition_total || 0));
             const paid = parseFloat(r.paid_amount || 0);
             const newStatus = netTotal <= 0 ? 'satteled' : (paid >= netTotal ? 'paid' : (paid > 0 ? 'partial' : 'unpaid'));
             await pool.query(
@@ -1086,7 +1115,7 @@ router.get('/', async (req, res) => {
                      s.status AS student_status,
                      COALESCE(f.advance_balance, s.advance_balance, 0) AS advance_balance,
                      ay.year_name AS academic_year_name, COALESCE(ay.is_active, TRUE) AS is_active_year,
-                COALESCE(JSON_AGG(JSON_BUILD_OBJECT('item_id',sli.item_id,'head_name',sli.head_name,'amount',sli.amount,'paid_amount',COALESCE(sli.paid_amount,0),'note',sli.note) ORDER BY sli.item_id) FILTER (WHERE sli.item_id IS NOT NULL),'[]') as line_items
+                COALESCE(JSON_AGG(JSON_BUILD_OBJECT('item_id',sli.item_id,'head_id',sli.head_id,'head_name',sli.head_name,'amount',sli.amount,'paid_amount',COALESCE(sli.paid_amount,0),'is_carried_forward',COALESCE(sli.is_carried_forward,FALSE),'fine_after_day',fh.fine_after_day,'note',sli.note) ORDER BY sli.item_id) FILTER (WHERE sli.item_id IS NOT NULL),'[]') as line_items
             FROM monthly_fee_slips mfs
             JOIN students s ON mfs.student_id = s.student_id
             LEFT JOIN families f ON mfs.family_id = f.family_id
@@ -1094,6 +1123,7 @@ router.get('/', async (req, res) => {
             LEFT JOIN sections sec ON s.section_id = sec.section_id
             LEFT JOIN academic_years ay ON mfs.academic_year_id = ay.id
             LEFT JOIN slip_line_items sli ON mfs.slip_id = sli.slip_id
+            LEFT JOIN fee_heads fh ON fh.head_id = sli.head_id
             ${whereSql}
             GROUP BY mfs.slip_id, s.first_name, s.last_name, s.admission_no, s.family_id,
                        s.father_name, s.father_phone, c.class_name, sec.section_name, s.category,
@@ -1189,8 +1219,8 @@ router.get('/', async (req, res) => {
         if (month) {
             // Single month query
             const isSettledRow = r => {
-                const isTrust = Boolean(r.is_trusted);
-                return ['satteled', 'settled'].includes((r.status || '').toLowerCase()) || isTrust;
+                const isTrustedZero = Boolean(r.is_trusted) && parseFloat(r.total_amount || 0) <= 0;
+                return ['satteled', 'settled'].includes((r.status || '').toLowerCase()) || isTrustedZero;
             };
             const settledRows = result.rows.filter(isSettledRow);
             const payableRows = result.rows.filter(r => !isSettledRow(r));
@@ -1226,17 +1256,17 @@ router.get('/', async (req, res) => {
             accountMap.forEach(slips => {
                 slips.sort((a, b) => (a.year - b.year) || (a.month - b.month));
                 const latestSlip = slips[slips.length - 1];
-                const isTrustedAccount = Boolean(latestSlip.is_trusted);
+                const isTrustedSettled = Boolean(latestSlip.is_trusted) && parseFloat(latestSlip.total_amount || 0) <= 0;
                 const isExplicitSettled = ['satteled', 'settled'].includes((latestSlip.status || '').toLowerCase());
 
                 const acctPaid = slips.reduce((sum, s) => sum + parseFloat(s.paid_amount || 0), 0);
-                const acctDue = (isExplicitSettled || isTrustedAccount) ? 0 : Math.max(0, parseFloat(latestSlip.total_amount || 0) - parseFloat(latestSlip.paid_amount || 0));
+                const acctDue = (isExplicitSettled || isTrustedSettled) ? 0 : Math.max(0, parseFloat(latestSlip.total_amount || 0) - parseFloat(latestSlip.paid_amount || 0));
                 const acctBilled = acctPaid + acctDue;
 
                 totalPaid += acctPaid;
                 totalNetBilled += acctBilled;
 
-                if (isExplicitSettled || isTrustedAccount) {
+                if (isExplicitSettled || isTrustedSettled) {
                     settledCount++;
                 } else if (acctDue === 0) {
                     paidCount++;
@@ -1553,7 +1583,8 @@ router.get('/print-queue', async (req, res) => {
                            'head_name', sli.head_name,
                            'amount', sli.amount,
                            'note', sli.note,
-                           'is_carried_forward', sli.is_carried_forward
+                           'is_carried_forward', sli.is_carried_forward,
+                           'fine_after_day', fh.fine_after_day
                        )
                        ORDER BY sli.item_id
                    ) FILTER (WHERE sli.item_id IS NOT NULL), '[]') AS line_items
@@ -1563,6 +1594,7 @@ router.get('/print-queue', async (req, res) => {
             LEFT JOIN sections sec ON s.section_id = sec.section_id
             LEFT JOIN academic_years ay ON mfs.academic_year_id = ay.id
             LEFT JOIN slip_line_items sli ON mfs.slip_id = sli.slip_id
+            LEFT JOIN fee_heads fh ON fh.head_id = sli.head_id
             WHERE COALESCE(mfs.months_list, ARRAY[mfs.month]) = $1::int[] AND mfs.year = $2
               ${yearFilter}
             GROUP BY mfs.slip_id, mfs.student_id, mfs.family_id, mfs.class_id,
@@ -1795,6 +1827,31 @@ router.post('/mark-printed', async (req, res) => {
 // MONTHLY SLIP DETAIL & PAYMENT after /admission-fees
 // ============================================================
 
+// DELETE /fee-slips/pending-adjustments/:adjustment_id
+router.delete('/pending-adjustments/:adjustment_id', async (req, res) => {
+    try {
+        const adjustmentId = parseInt(req.params.adjustment_id, 10);
+        if (isNaN(adjustmentId)) {
+            return res.status(400).json({ error: 'Invalid adjustment_id' });
+        }
+        const delRes = await pool.query(
+            `DELETE FROM pending_family_adjustments
+             WHERE adjustment_id = $1 AND status = 'pending'
+             RETURNING *`,
+            [adjustmentId]
+        );
+        if (delRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Pending adjustment not found or already applied' });
+        }
+        res.json({
+            message: 'Pending extra charge cancelled successfully',
+            deleted: delRes.rows[0]
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // GET /fee-slips/:id
 router.get('/:id', async (req, res) => {
     try {
@@ -1802,7 +1859,7 @@ router.get('/:id', async (req, res) => {
         const slip = await pool.query(`
             SELECT mfs.*, ay.year_name AS academic_year_name, COALESCE(ay.is_active, TRUE) AS is_active_year,
                    s.first_name, s.last_name, s.admission_no, s.father_name, s.father_phone, c.class_name, sec.section_name, s.category,
-                   s.status AS student_status
+                   s.status AS student_status, s.family_id AS student_family_id
             FROM monthly_fee_slips mfs
             JOIN students s ON mfs.student_id = s.student_id
             LEFT JOIN classes c ON mfs.class_id = c.class_id
@@ -1810,8 +1867,15 @@ router.get('/:id', async (req, res) => {
             LEFT JOIN academic_years ay ON mfs.academic_year_id = ay.id
             WHERE mfs.slip_id = $1`, [id]);
         if (slip.rows.length === 0) return res.status(404).json({ error: 'Slip not found' });
-        const items = await pool.query('SELECT * FROM slip_line_items WHERE slip_id=$1 ORDER BY item_id', [id]);
-        const payments = await pool.query('SELECT * FROM fee_payments WHERE slip_id=$1 ORDER BY payment_date DESC', [id]);
+        const items = await pool.query(
+            `SELECT sli.*, fh.fine_after_day, fh.head_type
+             FROM slip_line_items sli
+             LEFT JOIN fee_heads fh ON fh.head_id = sli.head_id
+             WHERE sli.slip_id = $1
+             ORDER BY sli.item_id`,
+            [id]
+        );
+        const payments = await pool.query('SELECT * FROM fee_payments WHERE slip_id=$1 ORDER BY payment_date DESC, payment_id DESC', [id]);
         const r = slip.rows[0];
         r.line_items = items.rows;
         await attachClassExamCollections([r], pool);
@@ -1887,7 +1951,33 @@ router.get('/:id', async (req, res) => {
         }
         r.advance_balance = advance_balance;
 
-        res.json({ ...r, slip: { ...r, line_items: items.rows, payments: payments.rows }, line_items: items.rows, payments: payments.rows });
+        const effectiveFamilyId = r.family_id || r.student_family_id || null;
+        const memberIdList = [...new Set([r.student_id, ...(familyMembers || []).map(m => m.student_id)].filter(Boolean))];
+        let pendingAdjustments = [];
+        if (effectiveFamilyId || memberIdList.length > 0) {
+            const pAdjRes = await pool.query(
+                `SELECT pfa.*, s.first_name AS target_first_name, s.last_name AS target_last_name
+                 FROM pending_family_adjustments pfa
+                 LEFT JOIN students s ON s.student_id = pfa.student_id
+                 WHERE pfa.status = 'pending'
+                   AND (
+                       ($1::varchar IS NOT NULL AND pfa.family_id = $1)
+                       OR pfa.student_id = ANY($2::int[])
+                   )
+                 ORDER BY pfa.target_year ASC NULLS LAST, pfa.target_month ASC NULLS LAST, pfa.adjustment_id ASC`,
+                [effectiveFamilyId, memberIdList]
+            );
+            pendingAdjustments = pAdjRes.rows;
+        }
+        r.pending_adjustments = pendingAdjustments;
+
+        res.json({
+            ...r,
+            slip: { ...r, line_items: items.rows, payments: payments.rows, pending_adjustments: pendingAdjustments },
+            line_items: items.rows,
+            payments: payments.rows,
+            pending_adjustments: pendingAdjustments
+        });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -2132,6 +2222,20 @@ router.post('/:id/pay', async (req, res) => {
             console.error("Notification dispatch error:", notifErr.message);
         }
 
+        // Snapshot Previous Balance paid_amount BEFORE this payment's line-item allocation
+        const pbBeforeRes = await client.query(
+            `SELECT COALESCE(SUM(sli.paid_amount), 0) AS pb_paid
+             FROM slip_line_items sli
+             LEFT JOIN fee_heads fh ON fh.head_id = sli.head_id
+             WHERE sli.slip_id = $1 AND (
+                 fh.head_type = 'prev_balance'
+                 OR sli.head_name ILIKE '%previous balance%'
+                 OR sli.head_name ILIKE '%opening balance%'
+             )`,
+            [id]
+        );
+        const pbPaidBefore = parseFloat(pbBeforeRes.rows[0]?.pb_paid || 0);
+
         // ── Auto-allocate Line Items on Current Slip if head_breakdown not supplied ─
         if (head_breakdown && typeof head_breakdown === 'object') {
             for (const [itemId, amount] of Object.entries(head_breakdown)) {
@@ -2164,6 +2268,7 @@ router.post('/:id/pay', async (req, res) => {
             let unalloc = paidNow;
             for (const item of currentLineItems.rows) {
                 if (unalloc <= 0) break;
+                if (isTrustedSlip && isTrustedExemptHead(item.head_name)) continue;
                 const iAmt = parseFloat(item.amount);
                 const iPaid = parseFloat(item.paid_amount);
                 const iRem = Math.max(0, iAmt - iPaid);
@@ -2181,7 +2286,7 @@ router.post('/:id/pay', async (req, res) => {
         // ── Previous Balance Waterfall ─────────────────────────────────────────
         // When prev_balance line is paid: 1) settle OPB first, 2) then oldest slips
         const pbItems = await client.query(
-            `SELECT sli.amount, mfs.family_id
+            `SELECT sli.amount, sli.paid_amount, mfs.family_id
              FROM slip_line_items sli
              JOIN monthly_fee_slips mfs ON mfs.slip_id = sli.slip_id
              LEFT JOIN fee_heads fh ON fh.head_id = sli.head_id
@@ -2193,14 +2298,12 @@ router.post('/:id/pay', async (req, res) => {
             [id]
         );
         if (pbItems.rows.length > 0 && pbItems.rows[0].family_id) {
-            const pbAmount = pbItems.rows.reduce((s, r) => s + parseFloat(r.amount), 0);
+            const pbAmount = pbItems.rows.reduce((s, r) => s + parseFloat(r.amount || 0), 0);
+            const pbPaidAfter = pbItems.rows.reduce((s, r) => s + parseFloat(r.paid_amount || 0), 0);
             const familyId = pbItems.rows[0].family_id;
-            const nonPbTotal = total - pbAmount;
 
-            // How much of THIS payment went toward the prev_balance portion?
-            const prevPbCollected = Math.max(0, prevPaid - nonPbTotal);
-            const newPbCollected = Math.max(0, Math.min(newPaid - nonPbTotal, pbAmount));
-            let pbThisPayment = parseFloat((newPbCollected - prevPbCollected).toFixed(2));
+            // Compute actual incremental payment allocated to PB line items so adding Case B extra charges never re-triggers OPB/old-slip waterfall
+            let pbThisPayment = Math.max(0, parseFloat((pbPaidAfter - pbPaidBefore).toFixed(2)));
 
             if (pbThisPayment > 0) {
                 // ── Step 1: Settle OPB first (oldest debt, pre-system dues) ──────
@@ -2383,20 +2486,22 @@ router.delete('/payments/:payment_id', async (req, res) => {
         await client.query('UPDATE slip_line_items SET paid_amount = 0 WHERE slip_id = $1', [p.slip_id]);
         if (newPaid > 0) {
             const itemsRes = await client.query(`
-                SELECT item_id, amount 
-                FROM slip_line_items 
-                WHERE slip_id = $1 
+                SELECT sli.item_id, sli.amount, sli.head_name
+                FROM slip_line_items sli
+                LEFT JOIN fee_heads fh ON fh.head_id = sli.head_id
+                WHERE sli.slip_id = $1 
                 ORDER BY 
                     CASE 
-                        WHEN head_name ILIKE '%previous balance%' OR head_name ILIKE '%opening balance%' THEN 1
-                        WHEN is_carried_forward = TRUE THEN 2
+                        WHEN fh.head_type = 'prev_balance' OR sli.head_name ILIKE '%previous balance%' OR sli.head_name ILIKE '%opening balance%' THEN 1
+                        WHEN sli.is_carried_forward = TRUE THEN 2
                         ELSE 3
-                    END, item_id ASC
+                    END, sli.item_id ASC
             `, [p.slip_id]);
             let remAlloc = newPaid;
             for (const item of itemsRes.rows) {
                 if (remAlloc <= 0) break;
                 const itemAmt = parseFloat(item.amount) || 0;
+                if (itemAmt <= 0) continue;
                 const itemPaid = parseFloat(Math.min(remAlloc, itemAmt).toFixed(2));
                 await client.query('UPDATE slip_line_items SET paid_amount = $1 WHERE item_id = $2', [itemPaid, item.item_id]);
                 remAlloc = parseFloat((remAlloc - itemPaid).toFixed(2));
@@ -2411,7 +2516,8 @@ router.delete('/payments/:payment_id', async (req, res) => {
         if (slipData.family_id) {
             // Check whether this slip has a prev_balance / opening-balance line item
             const pbAmtRes = await client.query(
-                `SELECT COALESCE(SUM(sli.amount), 0) AS pb_total
+                `SELECT COALESCE(SUM(sli.amount), 0) AS pb_total,
+                        COALESCE(SUM(sli.paid_amount), 0) AS pb_paid_after
                  FROM slip_line_items sli
                  LEFT JOIN fee_heads fh ON fh.head_id = sli.head_id
                  WHERE sli.slip_id = $1 AND (
@@ -2421,6 +2527,7 @@ router.delete('/payments/:payment_id', async (req, res) => {
                  )`, [p.slip_id]
             );
             const pbAmount = parseFloat(pbAmtRes.rows[0].pb_total) || 0;
+            const pbPaidAfter = parseFloat(pbAmtRes.rows[0].pb_paid_after) || 0;
 
             if (pbAmount > 0) {
                 // ── Step 1: Remove all auto-OPB records created by any payment on this slip ──
@@ -2443,10 +2550,8 @@ router.delete('/payments/:payment_id', async (req, res) => {
                     [opbFromOtherSources, slipData.family_id]
                 );
 
-                // ── Step 3: Recompute what OPB this slip covers with REMAINING payments ──
-                // nonPbTotal = what covers tuition + other heads (before PB portion starts)
-                const nonPbTotal = slipTotal - pbAmount;
-                const opbContrib = parseFloat(Math.max(0, Math.min(newPaid - nonPbTotal, pbAmount)).toFixed(2));
+                // ── Step 3: Recompute what OPB this slip covers from actual remaining PB line-item paid_amount ──
+                const opbContrib = parseFloat(Math.max(0, Math.min(pbPaidAfter, pbAmount)).toFixed(2));
 
                 if (opbContrib > 0) {
                     // How much OPB (opening_balance) is still outstanding after other sources?
@@ -2819,6 +2924,335 @@ router.patch('/:id/adjust-tuition', async (req, res) => {
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('Error adjusting tuition fee:', err);
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+// POST /fee-slips/:id/extra-charge
+// Adds a one-time extra charge either to the current slip (Case A unpaid/partial, Case B paid->partial)
+// or schedules it for a future month in pending_family_adjustments (is_carried_forward = FALSE).
+router.post('/:id/extra-charge', async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const { id } = req.params;
+        const {
+            mode = 'same_month',
+            head_id = null,
+            head_name,
+            amount,
+            target_student_id = null,
+            target_month = null,
+            target_year = null,
+            note = null
+        } = req.body;
+
+        const parsedAmount = parseFloat(amount);
+        if (isNaN(parsedAmount) || parsedAmount <= 0) {
+            return res.status(400).json({ error: 'Valid positive amount is required' });
+        }
+        if (!['same_month', 'next_month'].includes(mode)) {
+            return res.status(400).json({ error: 'mode must be either same_month or next_month' });
+        }
+
+        await client.query('BEGIN');
+
+        const slipRes = await client.query(
+            `SELECT mfs.*, COALESCE(ay.is_active, TRUE) AS is_active_year,
+                    s.family_id AS student_family_id, s.category AS student_category,
+                    s.first_name AS student_first_name, s.last_name AS student_last_name
+             FROM monthly_fee_slips mfs
+             JOIN students s ON s.student_id = mfs.student_id
+             LEFT JOIN academic_years ay ON mfs.academic_year_id = ay.id
+             WHERE mfs.slip_id = $1
+             FOR UPDATE OF mfs`,
+            [id]
+        );
+        if (slipRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Slip not found' });
+        }
+        const slip = slipRes.rows[0];
+        if (!slip.is_active_year) {
+            await client.query('ROLLBACK');
+            return res.status(403).json({ error: 'Cannot add extra charges to slips of a closed academic year' });
+        }
+
+        // Resolve canonical fee head name cleanly (no student name stuffed into head_name)
+        let resolvedHeadId = head_id ? parseInt(head_id, 10) : null;
+        let resolvedHeadName = (head_name || '').trim();
+        if (resolvedHeadId && !isNaN(resolvedHeadId)) {
+            const headRes = await client.query(
+                'SELECT head_id, head_name FROM fee_heads WHERE head_id = $1',
+                [resolvedHeadId]
+            );
+            if (headRes.rows.length > 0 && !resolvedHeadName) {
+                resolvedHeadName = (headRes.rows[0].head_name || '').trim();
+            }
+        } else {
+            resolvedHeadId = null;
+        }
+        if (!resolvedHeadName) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Fee head name is required' });
+        }
+
+        const effectiveFamilyId = slip.family_id || slip.student_family_id || null;
+        const parsedTargetStudentId = target_student_id ? parseInt(target_student_id, 10) : null;
+
+        // Build clean note (including "For: Child" only on multi-child families when a specific child was targeted)
+        let familyMembers = [];
+        if (effectiveFamilyId) {
+            const fmRes = await client.query(
+                `SELECT student_id, first_name, last_name, category, status
+                 FROM students
+                 WHERE family_id = $1`,
+                [effectiveFamilyId]
+            );
+            familyMembers = fmRes.rows;
+        }
+        const activeMembers = familyMembers.filter(m => (m.status || 'Active').toLowerCase() === 'active');
+
+        let childTag = '';
+        if (parsedTargetStudentId && activeMembers.length > 1) {
+            const chosenChild = familyMembers.find(m => m.student_id === parsedTargetStudentId);
+            if (chosenChild) {
+                childTag = `For: ${chosenChild.first_name}`;
+            }
+        }
+        const cleanUserNote = note && String(note).trim() ? String(note).trim() : '';
+        const finalNote = childTag && cleanUserNote
+            ? `${childTag} - ${cleanUserNote}`
+            : (childTag || cleanUserNote || null);
+
+        if (mode === 'next_month') {
+            const tMonth = target_month ? parseInt(target_month, 10) : (slip.month === 12 ? 1 : slip.month + 1);
+            const tYear = target_year ? parseInt(target_year, 10) : (slip.month === 12 ? slip.year + 1 : slip.year);
+            if (isNaN(tMonth) || tMonth < 1 || tMonth > 12 || isNaN(tYear) || tYear < 2000) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'Valid target_month (1-12) and target_year are required' });
+            }
+
+            // Guard: if next month's slip already exists, do not queue stale pending adjustment
+            const existingTargetSlip = await client.query(
+                `SELECT slip_id
+                 FROM monthly_fee_slips
+                 WHERE (
+                     ($1::varchar IS NOT NULL AND family_id = $1)
+                     OR student_id = $2
+                     OR ($1::varchar IS NOT NULL AND student_id IN (SELECT student_id FROM students WHERE family_id = $1))
+                 )
+                 AND year = $3
+                 AND (month = $4 OR $4 = ANY(COALESCE(months_list, ARRAY[month])))
+                 AND ($5::int IS NULL OR academic_year_id = $5 OR academic_year_id IS NULL)
+                 LIMIT 1`,
+                [effectiveFamilyId, parsedTargetStudentId || slip.student_id, tYear, tMonth, slip.academic_year_id || null]
+            );
+            if (existingTargetSlip.rows.length > 0) {
+                const existingSlipId = existingTargetSlip.rows[0].slip_id;
+                await client.query('ROLLBACK');
+                return res.status(409).json({
+                    error: `Target month voucher (Slip #${existingSlipId}) is already generated. Please add the extra charge directly on that voucher instead.`,
+                    existing_slip_id: existingSlipId
+                });
+            }
+
+            const adjInsert = await client.query(
+                `INSERT INTO pending_family_adjustments
+                    (family_id, student_id, head_id, head_name, amount, reason, target_month, target_year, academic_year_id, is_carried_forward, status)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, FALSE, 'pending')
+                 RETURNING *`,
+                [
+                    effectiveFamilyId,
+                    parsedTargetStudentId || slip.student_id,
+                    resolvedHeadId,
+                    resolvedHeadName,
+                    parsedAmount,
+                    finalNote,
+                    tMonth,
+                    tYear,
+                    slip.academic_year_id || null
+                ]
+            );
+
+            await client.query('COMMIT');
+            return res.status(201).json({
+                message: 'Extra charge scheduled for next month voucher',
+                mode: 'next_month',
+                adjustment: adjInsert.rows[0]
+            });
+        }
+
+        // ── mode === 'same_month' (Case A: Unpaid/Partial, Case B: Paid -> Partial) ──
+        await client.query(
+            `INSERT INTO slip_line_items
+                (slip_id, head_id, head_name, amount, paid_amount, is_carried_forward, note)
+             VALUES ($1, $2, $3, $4, 0, FALSE, $5)`,
+            [id, resolvedHeadId, resolvedHeadName, parsedAmount, finalNote]
+        );
+
+        const updatedItemsRes = await client.query(
+            `SELECT sli.*, fh.fine_after_day, fh.head_type
+             FROM slip_line_items sli
+             LEFT JOIN fee_heads fh ON fh.head_id = sli.head_id
+             WHERE sli.slip_id = $1
+             ORDER BY sli.item_id ASC`,
+            [id]
+        );
+
+        const isTrustedSlip = slip.is_family_slip && effectiveFamilyId
+            ? evaluateMembersTrusted(familyMembers, slip.student_category)
+            : (slip.student_category || '').trim().toLowerCase().includes('trust');
+
+        const { totalAmount: newTotalAmount, status: newStatus } = computeSlipTotalAndStatus({
+            lineItems: updatedItemsRes.rows,
+            paidAmount: parseFloat(slip.paid_amount || 0),
+            isTrusted: isTrustedSlip
+        });
+
+        const updatedSlipRes = await client.query(
+            `UPDATE monthly_fee_slips
+             SET total_amount = $1, status = $2
+             WHERE slip_id = $3
+             RETURNING *`,
+            [newTotalAmount, newStatus, id]
+        );
+
+        await client.query('COMMIT');
+        res.status(201).json({
+            message: 'Extra charge added to current voucher successfully',
+            mode: 'same_month',
+            slip: updatedSlipRes.rows[0],
+            line_items: updatedItemsRes.rows,
+            new_total: newTotalAmount,
+            new_status: newStatus
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Error adding extra charge:', err);
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+// DELETE /fee-slips/:id/line-items/:item_id
+// Removes an unpaid extra charge line item from a slip and recalculates slip total & status
+router.delete('/:id/line-items/:item_id', async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const slipId = parseInt(req.params.id, 10);
+        const itemId = parseInt(req.params.item_id, 10);
+        if (isNaN(slipId) || isNaN(itemId)) {
+            return res.status(400).json({ error: 'Invalid slip_id or item_id' });
+        }
+
+        await client.query('BEGIN');
+
+        const slipRes = await client.query(
+            `SELECT mfs.*, COALESCE(ay.is_active, TRUE) AS is_active_year,
+                    s.family_id AS student_family_id, s.category AS student_category
+             FROM monthly_fee_slips mfs
+             JOIN students s ON s.student_id = mfs.student_id
+             LEFT JOIN academic_years ay ON mfs.academic_year_id = ay.id
+             WHERE mfs.slip_id = $1
+             FOR UPDATE OF mfs`,
+            [slipId]
+        );
+        if (slipRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Slip not found' });
+        }
+        const slip = slipRes.rows[0];
+        if (!slip.is_active_year) {
+            await client.query('ROLLBACK');
+            return res.status(403).json({ error: 'Cannot modify slips of a closed academic year' });
+        }
+
+        const itemRes = await client.query(
+            `SELECT sli.*, fh.head_type
+             FROM slip_line_items sli
+             LEFT JOIN fee_heads fh ON fh.head_id = sli.head_id
+             WHERE sli.item_id = $1 AND sli.slip_id = $2
+             FOR UPDATE OF sli`,
+            [itemId, slipId]
+        );
+        if (itemRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Line item not found on this slip' });
+        }
+
+        const item = itemRes.rows[0];
+        if (parseFloat(item.paid_amount || 0) > 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Cannot delete a fee head that already has recorded payments' });
+        }
+        const hn = (item.head_name || '').trim().toLowerCase();
+        if (
+            item.head_type === 'prev_balance' ||
+            hn.includes('previous balance') ||
+            hn.includes('opening balance') ||
+            hn.includes('advance fee adjusted') ||
+            parseFloat(item.amount || 0) <= 0
+        ) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'System-generated balance or advance items cannot be removed here' });
+        }
+        if (isTuitionHeadName(item.head_name)) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Tuition fee lines cannot be removed here; use Edit Fee instead' });
+        }
+
+        await client.query('DELETE FROM slip_line_items WHERE item_id = $1 AND slip_id = $2', [itemId, slipId]);
+
+        const remainingItemsRes = await client.query(
+            `SELECT sli.*, fh.fine_after_day, fh.head_type
+             FROM slip_line_items sli
+             LEFT JOIN fee_heads fh ON fh.head_id = sli.head_id
+             WHERE sli.slip_id = $1
+             ORDER BY sli.item_id ASC`,
+            [slipId]
+        );
+
+        const effectiveFamilyId = slip.family_id || slip.student_family_id || null;
+        let familyMembers = [];
+        if (slip.is_family_slip && effectiveFamilyId) {
+            const fmRes = await client.query(
+                `SELECT student_id, category, status FROM students WHERE family_id = $1`,
+                [effectiveFamilyId]
+            );
+            familyMembers = fmRes.rows;
+        }
+        const isTrustedSlip = slip.is_family_slip && effectiveFamilyId
+            ? evaluateMembersTrusted(familyMembers, slip.student_category)
+            : (slip.student_category || '').trim().toLowerCase().includes('trust');
+
+        const { totalAmount: newTotalAmount, status: newStatus } = computeSlipTotalAndStatus({
+            lineItems: remainingItemsRes.rows,
+            paidAmount: parseFloat(slip.paid_amount || 0),
+            isTrusted: isTrustedSlip
+        });
+
+        const updatedSlipRes = await client.query(
+            `UPDATE monthly_fee_slips
+             SET total_amount = $1, status = $2
+             WHERE slip_id = $3
+             RETURNING *`,
+            [newTotalAmount, newStatus, slipId]
+        );
+
+        await client.query('COMMIT');
+        res.json({
+            message: 'Extra charge removed successfully',
+            slip: updatedSlipRes.rows[0],
+            line_items: remainingItemsRes.rows,
+            new_total: newTotalAmount,
+            new_status: newStatus
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Error removing line item:', err);
         res.status(500).json({ error: err.message });
     } finally {
         client.release();
