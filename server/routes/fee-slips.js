@@ -1115,7 +1115,7 @@ router.get('/', async (req, res) => {
                      s.status AS student_status,
                      COALESCE(f.advance_balance, s.advance_balance, 0) AS advance_balance,
                      ay.year_name AS academic_year_name, COALESCE(ay.is_active, TRUE) AS is_active_year,
-                COALESCE(JSON_AGG(JSON_BUILD_OBJECT('item_id',sli.item_id,'head_id',sli.head_id,'head_name',sli.head_name,'amount',sli.amount,'paid_amount',COALESCE(sli.paid_amount,0),'is_carried_forward',COALESCE(sli.is_carried_forward,FALSE),'fine_after_day',fh.fine_after_day,'note',sli.note) ORDER BY sli.item_id) FILTER (WHERE sli.item_id IS NOT NULL),'[]') as line_items
+                COALESCE(JSON_AGG(JSON_BUILD_OBJECT('item_id',sli.item_id,'head_id',sli.head_id,'head_name',sli.head_name,'amount',sli.amount,'paid_amount',COALESCE(sli.paid_amount,0),'is_carried_forward',COALESCE(sli.is_carried_forward,FALSE),'head_type',fh.head_type,'note',sli.note) ORDER BY sli.item_id) FILTER (WHERE sli.item_id IS NOT NULL),'[]') as line_items
             FROM monthly_fee_slips mfs
             JOIN students s ON mfs.student_id = s.student_id
             LEFT JOIN families f ON mfs.family_id = f.family_id
@@ -1584,7 +1584,7 @@ router.get('/print-queue', async (req, res) => {
                            'amount', sli.amount,
                            'note', sli.note,
                            'is_carried_forward', sli.is_carried_forward,
-                           'fine_after_day', fh.fine_after_day
+                           'head_type', fh.head_type
                        )
                        ORDER BY sli.item_id
                    ) FILTER (WHERE sli.item_id IS NOT NULL), '[]') AS line_items
@@ -1868,7 +1868,10 @@ router.get('/:id', async (req, res) => {
             WHERE mfs.slip_id = $1`, [id]);
         if (slip.rows.length === 0) return res.status(404).json({ error: 'Slip not found' });
         const items = await pool.query(
-            `SELECT sli.*, fh.fine_after_day, fh.head_type
+            `SELECT sli.*, fh.head_type,
+                    (SELECT MAX(fph.fine_after_day)
+                     FROM fee_plan_heads fph
+                     WHERE fph.head_id = sli.head_id AND fph.fine_after_day > 0) AS fine_after_day
              FROM slip_line_items sli
              LEFT JOIN fee_heads fh ON fh.head_id = sli.head_id
              WHERE sli.slip_id = $1
@@ -3093,7 +3096,10 @@ router.post('/:id/extra-charge', async (req, res) => {
         );
 
         const updatedItemsRes = await client.query(
-            `SELECT sli.*, fh.fine_after_day, fh.head_type
+            `SELECT sli.*, fh.head_type,
+                    (SELECT MAX(fph.fine_after_day)
+                     FROM fee_plan_heads fph
+                     WHERE fph.head_id = sli.head_id AND fph.fine_after_day > 0) AS fine_after_day
              FROM slip_line_items sli
              LEFT JOIN fee_heads fh ON fh.head_id = sli.head_id
              WHERE sli.slip_id = $1
@@ -3207,7 +3213,10 @@ router.delete('/:id/line-items/:item_id', async (req, res) => {
         await client.query('DELETE FROM slip_line_items WHERE item_id = $1 AND slip_id = $2', [itemId, slipId]);
 
         const remainingItemsRes = await client.query(
-            `SELECT sli.*, fh.fine_after_day, fh.head_type
+            `SELECT sli.*, fh.head_type,
+                    (SELECT MAX(fph.fine_after_day)
+                     FROM fee_plan_heads fph
+                     WHERE fph.head_id = sli.head_id AND fph.fine_after_day > 0) AS fine_after_day
              FROM slip_line_items sli
              LEFT JOIN fee_heads fh ON fh.head_id = sli.head_id
              WHERE sli.slip_id = $1
