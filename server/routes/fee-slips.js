@@ -1,33 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-
-// Helper to get active academic year
-async function getActiveAcademicYear(clientPool) {
-    let yearRes = await clientPool.query(
-        `SELECT id, year_name, is_active, status, start_date, end_date
-         FROM academic_years
-         WHERE is_active = TRUE OR status = 'active'
-         ORDER BY id ASC
-         LIMIT 1`
-    );
-
-    if (yearRes.rows.length === 0) {
-        yearRes = await clientPool.query(
-            `SELECT id, year_name, is_active, status, start_date, end_date
-             FROM academic_years
-             ORDER BY id ASC
-             LIMIT 1`
-        );
-        if (yearRes.rows.length > 0) {
-            await clientPool.query(`UPDATE academic_years SET is_active = TRUE, status = 'active' WHERE id = $1`, [yearRes.rows[0].id]);
-            yearRes.rows[0].is_active = true;
-            yearRes.rows[0].status = 'active';
-        }
-    }
-
-    return yearRes.rows[0] || null;
-}
+const {
+    CLASS_SENIORITY_ORDER,
+    evaluateMembersTrusted,
+    getActiveAcademicYear,
+    isTrustedExemptHead
+} = require('../utils/feeBillingHelpers');
 
 // Helper to attach class exam fee collections to slips and line items,
 // and deduct the class-collected portion from the monthly fee voucher's exam head and total bill
@@ -167,7 +146,8 @@ async function attachClassExamCollections(slips, clientPool) {
 router.post('/generate', async (req, res) => {
     const client = await pool.connect();
     try {
-        const { class_id, year, due_date, issue_date, extra_heads, plan_id, academic_year_id } = req.body;
+        const { class_id, year, due_date, issue_date, extra_heads, plan_id, academic_year_id, mode } = req.body;
+        const isMissingOnlyMode = mode === 'missing_only';
         // Accept either months[] array (new) or single month (backward compat)
         const rawMonths = req.body.months || (req.body.month ? [req.body.month] : null);
         if (!class_id || !rawMonths || rawMonths.length === 0 || !year)
@@ -224,42 +204,43 @@ router.post('/generate', async (req, res) => {
 
         const monthsArray = rawMonths.map(Number).sort((a, b) => a - b); // sorted ascending
 
-        // SECURITY CHECK: Only block if DIRECT slips already exist for students in this class.
-        // Cross-class family coverage (sibling's slip in a higher class) is NOT a reason to block —
-        // the generation loops handle that gracefully by checking family_id and skipping with skippedCount++.
-        const checkQuery = `
-            SELECT DISTINCT month, months_list
-            FROM monthly_fee_slips mfs
-            WHERE (year = $2 OR (academic_year_id = $4 AND $4 IS NOT NULL))
-              AND (
-                 month = ANY($3::int[]) 
-                 OR 
-                 $3::int[] && months_list
-              )
-              AND (
-                mfs.class_id = $1
-                OR mfs.student_id IN (
-                    SELECT student_id FROM students 
-                    WHERE class_id = $1 AND status = 'Active'
-                )
-              )
-        `;
-        const checkRes = await client.query(checkQuery, [class_id, actualYear, monthsArray, targetYearId]);
-        if (checkRes.rows.length > 0) {
-            await client.query('ROLLBACK');
-            let conflictingSet = new Set();
-            for (const r of checkRes.rows) {
-                if (r.months_list && r.months_list.length > 0) {
-                    r.months_list.forEach(m => conflictingSet.add(m));
-                } else {
-                    conflictingSet.add(r.month);
+        // SECURITY CHECK: Only block if DIRECT slips already exist for students in this class
+        // unless caller explicitly requests missing_only mode (e.g. mid-month reactivation before batch run).
+        if (!isMissingOnlyMode) {
+            const checkQuery = `
+                SELECT DISTINCT month, months_list
+                FROM monthly_fee_slips mfs
+                WHERE (year = $2 OR (academic_year_id = $4 AND $4 IS NOT NULL))
+                  AND (
+                     month = ANY($3::int[]) 
+                     OR 
+                     $3::int[] && months_list
+                  )
+                  AND (
+                    mfs.class_id = $1
+                    OR mfs.student_id IN (
+                        SELECT student_id FROM students 
+                        WHERE class_id = $1 AND status = 'Active'
+                    )
+                  )
+            `;
+            const checkRes = await client.query(checkQuery, [class_id, actualYear, monthsArray, targetYearId]);
+            if (checkRes.rows.length > 0) {
+                await client.query('ROLLBACK');
+                let conflictingSet = new Set();
+                for (const r of checkRes.rows) {
+                    if (r.months_list && r.months_list.length > 0) {
+                        r.months_list.forEach(m => conflictingSet.add(m));
+                    } else {
+                        conflictingSet.add(r.month);
+                    }
                 }
+                const conflictingMonths = [...conflictingSet]
+                    .filter(m => monthsArray.includes(m))
+                    .sort((a, b) => a - b)
+                    .join(', ');
+                return res.status(400).json({ error: `Cannot generate. The following month(s) are already generated for this class: ${conflictingMonths}. Please select only ungenerated months or undo the existing ones first.` });
             }
-            const conflictingMonths = [...conflictingSet]
-                .filter(m => monthsArray.includes(m))
-                .sort((a, b) => a - b)
-                .join(', ');
-            return res.status(400).json({ error: `Cannot generate. The following month(s) are already generated for this class: ${conflictingMonths}. Please select only ungenerated months or undo the existing ones first.` });
         }
 
         const firstMonth = monthsArray[0];
@@ -472,6 +453,42 @@ router.post('/generate', async (req, res) => {
             }
         }
 
+        // Preload queued mid-month reactivation/supplementary adjustments to auto-inject into next slip
+        const allTargetStudentIds = studentsResult.rows.map(s => s.student_id).filter(Boolean);
+        let pendingAdjustments = [];
+        if (uniqueFamilyIds.length > 0 || allTargetStudentIds.length > 0) {
+            const adjRes = await client.query(
+                `SELECT *
+                 FROM pending_family_adjustments
+                 WHERE status = 'pending'
+                   AND (
+                       (family_id IS NOT NULL AND family_id = ANY($1::varchar[]))
+                       OR student_id = ANY($2::int[])
+                   )
+                   AND (academic_year_id IS NULL OR $3::int IS NULL OR academic_year_id = $3)
+                   AND (target_month IS NULL OR target_month = ANY($4::int[]))
+                   AND (target_year IS NULL OR target_year = $5)
+                 ORDER BY adjustment_id ASC
+                 FOR UPDATE`,
+                [uniqueFamilyIds, allTargetStudentIds, targetYearId, monthsArray, actualYear]
+            );
+            pendingAdjustments = adjRes.rows;
+        }
+        const consumedAdjIds = new Set();
+        const consumeMatchingAdjustments = (fid, stuId) => {
+            const matched = [];
+            for (const adj of pendingAdjustments) {
+                if (consumedAdjIds.has(adj.adjustment_id)) continue;
+                const matchFam = fid && adj.family_id && adj.family_id === fid;
+                const matchStu = stuId && adj.student_id && parseInt(adj.student_id, 10) === parseInt(stuId, 10);
+                if (matchFam || matchStu) {
+                    consumedAdjIds.add(adj.adjustment_id);
+                    matched.push(adj);
+                }
+            }
+            return matched;
+        };
+
         // ─── Helper: build line items from plan heads (skips prev_balance handled separately) ─
         const buildLineItems = (personalFee = 0, multiplier = 1, isTrusted = false) => {
             const slipDueDate = due_date ? new Date(due_date) : null;
@@ -561,29 +578,18 @@ router.post('/generate', async (req, res) => {
             const famPrimaryRes = await client.query(
                 `SELECT s.*, COALESCE(f.family_fee, 0) AS family_fee,
                         (SELECT COUNT(*) FROM students s2 WHERE s2.family_id = s.family_id AND s2.status = 'Active') AS total_family_size,
+                        NOT EXISTS (
+                            SELECT 1 FROM students s3
+                            WHERE s3.family_id = s.family_id
+                              AND LOWER(COALESCE(s3.status, 'Active')) = 'active'
+                              AND LOWER(COALESCE(s3.category, 'Normal')) NOT LIKE '%trust%'
+                        ) AS is_all_trusted,
                         c.class_id AS sort_class_id
                  FROM students s
                  LEFT JOIN families f ON f.family_id = s.family_id
                  LEFT JOIN classes c ON c.class_id = s.class_id
                  WHERE s.family_id = $1 AND s.status = 'Active'
-                 ORDER BY 
-                     CASE 
-                         WHEN c.class_name ~ '^[0-9]+' THEN CAST(SUBSTRING(c.class_name FROM '^[0-9]+') AS INTEGER)
-                         WHEN c.class_name ILIKE '%Class 10%' OR c.class_name ILIKE '%10%' THEN 10
-                         WHEN c.class_name ILIKE '%Class 9%' OR c.class_name ILIKE '%9%' THEN 9
-                         WHEN c.class_name ILIKE '%Class 8%' OR c.class_name ILIKE '%8%' THEN 8
-                         WHEN c.class_name ILIKE '%Class 7%' OR c.class_name ILIKE '%7%' THEN 7
-                         WHEN c.class_name ILIKE '%Class 6%' OR c.class_name ILIKE '%6%' THEN 6
-                         WHEN c.class_name ILIKE '%Class 5%' OR c.class_name ILIKE '%5%' THEN 5
-                         WHEN c.class_name ILIKE '%Class 4%' OR c.class_name ILIKE '%4%' THEN 4
-                         WHEN c.class_name ILIKE '%Class 3%' OR c.class_name ILIKE '%3%' THEN 3
-                         WHEN c.class_name ILIKE '%Class 2%' OR c.class_name ILIKE '%2%' THEN 2
-                         WHEN c.class_name ILIKE '%Class 1%' OR c.class_name ILIKE '%1%' THEN 1
-                         WHEN c.class_name ILIKE '%Prep%' OR c.class_name ILIKE '%KG%' THEN 0
-                         WHEN c.class_name ILIKE '%Nursery%' THEN -1
-                         WHEN c.class_name ILIKE '%Reception%' OR c.class_name ILIKE '%Play%' THEN -2
-                         ELSE COALESCE(c.class_id, 0)
-                     END DESC, c.class_id DESC, s.first_name ASC LIMIT 1`,
+                 ORDER BY ${CLASS_SENIORITY_ORDER} LIMIT 1`,
                 [fid]
             );
             if (famPrimaryRes.rows.length === 0) {
@@ -593,9 +599,8 @@ router.post('/generate', async (req, res) => {
             }
             const primary = famPrimaryRes.rows[0];
             
-            // Check if all active family members are in Trusted category
-            const activeMembers = members.filter(m => (m.status || '').trim().toLowerCase() === 'active');
-            const isFamTrusted = activeMembers.length > 0 && activeMembers.every(m => (m.category || '').trim().toLowerCase() === 'trusted');
+            // Check ALL active family members across every class (mixed Trusted + Normal families must NOT be tuition-free)
+            const isFamTrusted = Boolean(primary.is_all_trusted);
 
             const familyFee = parseFloat(primary.family_fee) || 0;
             const familySize = parseInt(primary.total_family_size) || 1;
@@ -638,12 +643,21 @@ router.post('/generate', async (req, res) => {
                 }
             }
 
+            // ── 2b. Add queued deferred reactivation adjustments (if any) ─────
+            const famMatchedAdjs = consumeMatchingAdjustments(fid, primary.student_id);
+            for (const adj of famMatchedAdjs) {
+                lineItems.push({
+                    head_id: adj.head_id || null,
+                    head_name: adj.head_name,
+                    amount: parseFloat(adj.amount) || 0,
+                    is_carried_forward: true,
+                    note: adj.reason || 'Deferred mid-month adjustment'
+                });
+            }
+
             // For Trusted families, tuition is 100% exempt from payable total_amount
             let totalAmount = isFamTrusted
-                ? lineItems.filter(h => {
-                    const hn = (h.head_name || '').toLowerCase();
-                    return !hn.includes('tuition') && !hn.includes('family monthly fee') && !hn.includes('monthly fee') && !hn.includes('previous balance');
-                }).reduce((s, h) => s + h.amount, 0)
+                ? lineItems.filter(h => !isTrustedExemptHead(h.head_name)).reduce((s, h) => s + h.amount, 0)
                 : lineItems.reduce((s, h) => s + h.amount, 0);
 
             if (extra_heads && extra_heads.length > 0)
@@ -671,7 +685,15 @@ router.post('/generate', async (req, res) => {
                 familyAdvanceMap[fid] -= advanceAdjusted;
             }
 
-            await insertSlip(primary, totalAmount, lineItems, true, isFamTrusted, advanceAdjusted);
+            const famSlipId = await insertSlip(primary, totalAmount, lineItems, true, isFamTrusted, advanceAdjusted);
+            if (famMatchedAdjs.length > 0) {
+                await client.query(
+                    `UPDATE pending_family_adjustments
+                     SET status = 'applied', applied_slip_id = $1, applied_at = NOW()
+                     WHERE adjustment_id = ANY($2::int[])`,
+                    [famSlipId, famMatchedAdjs.map(a => a.adjustment_id)]
+                );
+            }
             generatedCount++;
         }
 
@@ -679,13 +701,14 @@ router.post('/generate', async (req, res) => {
         for (const student of soloStudents) {
             const existing = await client.query(
                 `SELECT slip_id FROM monthly_fee_slips 
-                 WHERE student_id=$1 AND (year=$2 OR (academic_year_id=$4 AND $4 IS NOT NULL))
+                 WHERE (student_id = $1 OR ($5::varchar IS NOT NULL AND family_id = $5))
+                   AND (year=$2 OR (academic_year_id=$4 AND $4 IS NOT NULL))
                    AND (month = ANY($3::int[]) OR $3::int[] && months_list)`,
-                [student.student_id, actualYear, monthsArray, targetYearId]
+                [student.student_id, actualYear, monthsArray, targetYearId, student.family_id || null]
             );
             if (existing.rows.length > 0) { skippedCount++; continue; }
 
-            const isSoloTrusted = (student.category || '').trim().toLowerCase() === 'trusted';
+            const isSoloTrusted = (student.category || '').trim().toLowerCase().includes('trust');
             const personalFee = parseFloat(student.personal_monthly_fee) || parseFloat(student.family_fee) || 0;
             const lineItems = buildLineItems(personalFee, 1, isSoloTrusted);
 
@@ -716,12 +739,21 @@ router.post('/generate', async (req, res) => {
                 }
             }
 
+            // ── 2b. Add queued deferred reactivation adjustments (if any) ─────
+            const soloMatchedAdjs = consumeMatchingAdjustments(student.family_id || null, student.student_id);
+            for (const adj of soloMatchedAdjs) {
+                lineItems.push({
+                    head_id: adj.head_id || null,
+                    head_name: adj.head_name,
+                    amount: parseFloat(adj.amount) || 0,
+                    is_carried_forward: true,
+                    note: adj.reason || 'Deferred mid-month adjustment'
+                });
+            }
+
             // For Trusted students, tuition is 100% exempt from payable total_amount
             let totalAmount = isSoloTrusted
-                ? lineItems.filter(h => {
-                    const hn = (h.head_name || '').toLowerCase();
-                    return !hn.includes('tuition') && !hn.includes('monthly fee') && !hn.includes('previous balance');
-                }).reduce((s, h) => s + h.amount, 0)
+                ? lineItems.filter(h => !isTrustedExemptHead(h.head_name)).reduce((s, h) => s + h.amount, 0)
                 : lineItems.reduce((s, h) => s + h.amount, 0);
 
             if (extra_heads && extra_heads.length > 0)
@@ -760,7 +792,15 @@ router.post('/generate', async (req, res) => {
                 }
             }
 
-            await insertSlip(student, totalAmount, lineItems, false, isSoloTrusted, advanceAdjusted);
+            const soloSlipId = await insertSlip(student, totalAmount, lineItems, false, isSoloTrusted, advanceAdjusted);
+            if (soloMatchedAdjs.length > 0) {
+                await client.query(
+                    `UPDATE pending_family_adjustments
+                     SET status = 'applied', applied_slip_id = $1, applied_at = NOW()
+                     WHERE adjustment_id = ANY($2::int[])`,
+                    [soloSlipId, soloMatchedAdjs.map(a => a.adjustment_id)]
+                );
+            }
             generatedCount++;
         }
 
@@ -844,26 +884,6 @@ router.get('/available-months', async (req, res) => {
 
 const syncFamilyLeadSlips = async () => {
     try {
-        const CLASS_SENIORITY_ORDER = `
-            CASE 
-                WHEN c.class_name ~ '^[0-9]+' THEN CAST(SUBSTRING(c.class_name FROM '^[0-9]+') AS INTEGER)
-                WHEN c.class_name ILIKE '%Class 10%' OR c.class_name ILIKE '%10%' THEN 10
-                WHEN c.class_name ILIKE '%Class 9%' OR c.class_name ILIKE '%9%' THEN 9
-                WHEN c.class_name ILIKE '%Class 8%' OR c.class_name ILIKE '%8%' THEN 8
-                WHEN c.class_name ILIKE '%Class 7%' OR c.class_name ILIKE '%7%' THEN 7
-                WHEN c.class_name ILIKE '%Class 6%' OR c.class_name ILIKE '%6%' THEN 6
-                WHEN c.class_name ILIKE '%Class 5%' OR c.class_name ILIKE '%5%' THEN 5
-                WHEN c.class_name ILIKE '%Class 4%' OR c.class_name ILIKE '%4%' THEN 4
-                WHEN c.class_name ILIKE '%Class 3%' OR c.class_name ILIKE '%3%' THEN 3
-                WHEN c.class_name ILIKE '%Class 2%' OR c.class_name ILIKE '%2%' THEN 2
-                WHEN c.class_name ILIKE '%Class 1%' OR c.class_name ILIKE '%1%' THEN 1
-                WHEN c.class_name ILIKE '%Prep%' OR c.class_name ILIKE '%KG%' THEN 0
-                WHEN c.class_name ILIKE '%Nursery%' THEN -1
-                WHEN c.class_name ILIKE '%Reception%' OR c.class_name ILIKE '%Play%' THEN -2
-                ELSE COALESCE(c.class_id, 0)
-            END DESC, c.class_id DESC, s.first_name ASC
-        `;
-
         // Find any unpaid or partial family slips assigned to an inactive student
         const orphanedSlips = await pool.query(`
             SELECT mfs.slip_id, mfs.family_id, mfs.student_id
@@ -887,7 +907,13 @@ const syncFamilyLeadSlips = async () => {
 
             if (leadRes.rows.length > 0) {
                 await pool.query(
-                    `UPDATE monthly_fee_slips SET student_id = $1, class_id = $2 WHERE slip_id = $3`,
+                    `UPDATE monthly_fee_slips mfs
+                     SET student_id = $1, class_id = $2
+                     WHERE mfs.slip_id = $3
+                       AND NOT EXISTS (
+                           SELECT 1 FROM monthly_fee_slips dup
+                           WHERE dup.student_id = $1 AND dup.month = mfs.month AND dup.year = mfs.year AND dup.slip_id != mfs.slip_id
+                       )`,
                     [leadRes.rows[0].student_id, leadRes.rows[0].class_id, slip.slip_id]
                 );
             }
@@ -973,11 +999,22 @@ const syncTrustedSlipsState = async () => {
     try {
         const trustedSlipsRes = await pool.query(`
             SELECT mfs.slip_id, mfs.paid_amount, s.category, mfs.is_family_slip, mfs.family_id,
-                   COALESCE(SUM(CASE WHEN NOT (sli.head_name ILIKE '%tuition%' OR sli.head_name ILIKE '%family monthly fee%' OR sli.head_name ILIKE '%monthly fee%' OR sli.head_name ILIKE '%previous balance%') THEN sli.amount ELSE 0 END), 0) as non_tuition_total
+                   COALESCE(SUM(CASE WHEN NOT (sli.head_name ILIKE '%tuition%' OR sli.head_name ILIKE '%family monthly fee%' OR sli.head_name ILIKE '%monthly fee%' OR sli.head_name ILIKE '%previous balance%' OR sli.head_name ILIKE '%opening balance%') THEN sli.amount ELSE 0 END), 0) as non_tuition_total
             FROM monthly_fee_slips mfs
             JOIN students s ON mfs.student_id = s.student_id
             LEFT JOIN slip_line_items sli ON mfs.slip_id = sli.slip_id
-            WHERE s.category ILIKE '%trust%'
+            WHERE (
+                (mfs.is_family_slip = TRUE AND mfs.family_id IS NOT NULL AND EXISTS (
+                    SELECT 1 FROM students s_act
+                    WHERE s_act.family_id = mfs.family_id AND LOWER(COALESCE(s_act.status, 'Active')) = 'active'
+                ) AND NOT EXISTS (
+                    SELECT 1 FROM students s_non
+                    WHERE s_non.family_id = mfs.family_id
+                      AND LOWER(COALESCE(s_non.status, 'Active')) = 'active'
+                      AND LOWER(COALESCE(s_non.category, 'Normal')) NOT LIKE '%trust%'
+                ))
+                OR ((mfs.is_family_slip IS NOT TRUE OR mfs.family_id IS NULL) AND LOWER(COALESCE(s.category, 'Normal')) LIKE '%trust%')
+            )
             GROUP BY mfs.slip_id, mfs.paid_amount, s.category, mfs.is_family_slip, mfs.family_id
         `);
         for (const r of trustedSlipsRes.rows) {
@@ -1128,25 +1165,19 @@ router.get('/', async (req, res) => {
             } else {
                 r.family_members = [];
             }
-            const isSingleTrusted = (r.category || '').toLowerCase().includes('trust');
-            const isFamilyAllTrusted = r.family_members.length > 0 && r.family_members.every(m => (m.category || '').toLowerCase().includes('trust'));
-            r.is_trusted = isSingleTrusted || isFamilyAllTrusted;
+            r.is_trusted = r.family_id
+                ? evaluateMembersTrusted(r.family_members, r.category)
+                : (r.category || '').trim().toLowerCase().includes('trust');
 
             if (r.is_trusted) {
-                const nonTuitionHeads = (r.line_items || []).filter(item => {
-                    const hn = (item.head_name || '').toLowerCase();
-                    return !hn.includes('tuition') && 
-                           !hn.includes('family monthly fee') && 
-                           !hn.includes('monthly fee') && 
-                           !hn.includes('previous balance');
-                });
+                const nonTuitionHeads = (r.line_items || []).filter(item => !isTrustedExemptHead(item.head_name));
                 const payableTotal = nonTuitionHeads.reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
                 r.total_amount = payableTotal;
                 const slipPaid = parseFloat(r.paid_amount || 0);
-                if (payableTotal <= 0 || slipPaid >= payableTotal) {
+                if (payableTotal <= 0) {
                     r.status = 'satteled';
                 } else {
-                    r.status = slipPaid > 0 ? 'partial' : 'unpaid';
+                    r.status = slipPaid >= payableTotal ? 'paid' : (slipPaid > 0 ? 'partial' : 'unpaid');
                 }
             }
         });
@@ -1158,7 +1189,7 @@ router.get('/', async (req, res) => {
         if (month) {
             // Single month query
             const isSettledRow = r => {
-                const isTrust = Boolean(r.is_trusted || (r.category && r.category.trim().toLowerCase().includes('trust')));
+                const isTrust = Boolean(r.is_trusted);
                 return ['satteled', 'settled'].includes((r.status || '').toLowerCase()) || isTrust;
             };
             const settledRows = result.rows.filter(isSettledRow);
@@ -1195,11 +1226,7 @@ router.get('/', async (req, res) => {
             accountMap.forEach(slips => {
                 slips.sort((a, b) => (a.year - b.year) || (a.month - b.month));
                 const latestSlip = slips[slips.length - 1];
-                const isTrustedAccount = Boolean(
-                    latestSlip.is_trusted ||
-                    (latestSlip.category && latestSlip.category.trim().toLowerCase().includes('trust')) ||
-                    (latestSlip.family_members && latestSlip.family_members.length > 0 && latestSlip.family_members.every(m => (m.category || '').toLowerCase().includes('trust')))
-                );
+                const isTrustedAccount = Boolean(latestSlip.is_trusted);
                 const isExplicitSettled = ['satteled', 'settled'].includes((latestSlip.status || '').toLowerCase());
 
                 const acctPaid = slips.reduce((sum, s) => sum + parseFloat(s.paid_amount || 0), 0);
@@ -1833,19 +1860,13 @@ router.get('/:id', async (req, res) => {
                 if (activeLead.father_name) r.father_name = activeLead.father_name;
             }
         }
-        const isSingleTrusted = (r.category || '').trim().toLowerCase() === 'trusted';
-        const isFamilyAllTrusted = familyMembers.length > 0 && familyMembers.every(m => (m.category || '').trim().toLowerCase() === 'trusted');
-        r.is_trusted = isSingleTrusted || isFamilyAllTrusted;
+        r.is_trusted = r.family_id
+            ? evaluateMembersTrusted(familyMembers, r.category)
+            : (r.category || '').trim().toLowerCase().includes('trust');
         r.family_members = familyMembers;
 
         if (r.is_trusted) {
-            const nonTuitionHeads = items.rows.filter(item => {
-                const hn = (item.head_name || '').toLowerCase();
-                return !hn.includes('tuition') && 
-                       !hn.includes('family monthly fee') && 
-                       !hn.includes('monthly fee') && 
-                       !hn.includes('previous balance');
-            });
+            const nonTuitionHeads = items.rows.filter(item => !isTrustedExemptHead(item.head_name));
             const payableTotal = nonTuitionHeads.reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
             r.total_amount = payableTotal;
             const slipPaid = parseFloat(r.paid_amount || 0);
@@ -1924,19 +1945,20 @@ router.post('/:id/pay', async (req, res) => {
         }
 
         const stuCatRes = await client.query(`SELECT s.category, s.family_id FROM students s WHERE s.student_id = $1`, [cur.student_id]);
-        let isTrustedSlip = (stuCatRes.rows[0]?.category || '').trim().toLowerCase() === 'trusted';
-        if (!isTrustedSlip && cur.is_family_slip && cur.family_id) {
-            const fmRes = await client.query(`SELECT category FROM students WHERE family_id = $1 AND status = 'Active'`, [cur.family_id]);
-            isTrustedSlip = fmRes.rows.length > 0 && fmRes.rows.every(m => (m.category || '').trim().toLowerCase() === 'trusted');
+        let isTrustedSlip = false;
+        if (cur.is_family_slip && cur.family_id) {
+            const fmRes = await client.query(`SELECT category, status FROM students WHERE family_id = $1`, [cur.family_id]);
+            isTrustedSlip = evaluateMembersTrusted(fmRes.rows, stuCatRes.rows[0]?.category || '');
+        } else {
+            isTrustedSlip = (stuCatRes.rows[0]?.category || '').trim().toLowerCase().includes('trust');
         }
 
         let effectiveTotal = parseFloat(cur.total_amount);
         if (isTrustedSlip) {
             const itemsRes = await client.query(`SELECT head_name, amount FROM slip_line_items WHERE slip_id = $1`, [id]);
-            const nonTuitionSum = itemsRes.rows.filter(item => {
-                const hn = (item.head_name || '').toLowerCase();
-                return !hn.includes('tuition') && !hn.includes('family monthly fee') && !hn.includes('monthly fee') && !hn.includes('previous balance');
-            }).reduce((s, it) => s + parseFloat(it.amount || 0), 0);
+            const nonTuitionSum = itemsRes.rows
+                .filter(item => !isTrustedExemptHead(item.head_name))
+                .reduce((s, it) => s + parseFloat(it.amount || 0), 0);
             effectiveTotal = nonTuitionSum;
         }
 
@@ -2807,11 +2829,15 @@ router.patch('/:id/adjust-tuition', async (req, res) => {
 router.get('/family-summary/:student_id', async (req, res) => {
     try {
         const { student_id } = req.params;
-        const famRes = await pool.query('SELECT family_id FROM students WHERE student_id = $1', [student_id]);
+        const famRes = await pool.query('SELECT family_id, category, COALESCE(advance_balance, 0) AS student_adv FROM students WHERE student_id = $1', [student_id]);
         if (famRes.rows.length === 0) return res.status(404).json({ error: 'Student not found' });
 
         const family_id = famRes.rows[0].family_id;
-        if (!family_id) return res.json({ slips: [] });
+        let isFamilyAllTrusted = (famRes.rows[0].category || '').trim().toLowerCase().includes('trust');
+        if (family_id) {
+            const fmCatRes = await pool.query('SELECT category, status FROM students WHERE family_id = $1', [family_id]);
+            isFamilyAllTrusted = evaluateMembersTrusted(fmCatRes.rows, famRes.rows[0].category || '');
+        }
 
         const query = `
             SELECT 
@@ -2830,14 +2856,25 @@ router.get('/family-summary/:student_id', async (req, res) => {
                 ) as heads
             FROM monthly_fee_slips mfs
             JOIN students s ON mfs.student_id = s.student_id
-            WHERE mfs.family_id = $1
+            WHERE ${family_id ? 'mfs.family_id = $1' : 'mfs.student_id = $1'}
             ORDER BY mfs.year DESC, mfs.month DESC, s.admission_no ASC
         `;
 
-        const result = await pool.query(query, [family_id]);
+        const result = await pool.query(query, [family_id || student_id]);
 
-        const famAdvRes = await pool.query('SELECT advance_balance FROM families WHERE family_id = $1', [family_id]);
-        const family_advance_balance = parseFloat(famAdvRes.rows[0]?.advance_balance || 0);
+        let family_advance_balance = parseFloat(famRes.rows[0].student_adv || 0);
+        if (family_id) {
+            const famAdvRes = await pool.query('SELECT advance_balance FROM families WHERE family_id = $1', [family_id]);
+            family_advance_balance = parseFloat(famAdvRes.rows[0]?.advance_balance || 0);
+        }
+
+        const pendingAdjRes = await pool.query(
+            `SELECT adjustment_id, head_name, amount, target_month, target_year, reason, created_at
+             FROM pending_family_adjustments
+             WHERE status = 'pending' AND ((family_id IS NOT NULL AND family_id = $1) OR student_id = $2)
+             ORDER BY adjustment_id ASC`,
+            [family_id || null, student_id]
+        );
 
         const summary = {};
         result.rows.forEach(row => {
@@ -2856,7 +2893,7 @@ router.get('/family-summary/:student_id', async (req, res) => {
                 };
             }
 
-            const isTrusted = row.category && row.category.trim().toLowerCase() === 'trusted';
+            const isTrusted = isFamilyAllTrusted;
             const billedAmount = Number(row.total_amount || 0);
             const paidAmount = Number(row.paid_amount || 0);
             const advAdjusted = Number(row.advance_adjusted || 0);
@@ -2876,7 +2913,7 @@ router.get('/family-summary/:student_id', async (req, res) => {
 
             summary[myKey].students.push({
                 slip_id: row.slip_id,
-                name: row.first_name + ' ' + row.last_name,
+                name: row.first_name + ' ' + (row.last_name || ''),
                 admission_no: row.admission_no,
                 category: row.category || 'Normal',
                 is_trusted: isTrusted,
@@ -2910,7 +2947,7 @@ router.get('/family-summary/:student_id', async (req, res) => {
             }
         });
 
-        res.json({ slips, family_advance_balance });
+        res.json({ slips, family_advance_balance, pending_adjustments: pendingAdjRes.rows });
     } catch (e) {
         console.error(e);
         res.status(500).json({ error: 'Internal Server Error' });

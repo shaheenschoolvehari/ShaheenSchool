@@ -285,7 +285,7 @@ export default function FeeGeneratePage() {
         setExtraHeads(p => p.map((h, idx) => idx === i ? { ...h, [field]: value } : h));
     };
 
-    const handleGenerate = async () => {
+    const handleGenerate = async (modeOverride?: 'missing_only') => {
         if (!selectedClass || selectedMonths.length === 0 || !selectedYear) {
             notify.error('Please select class, at least one month and year.');
             return;
@@ -311,7 +311,8 @@ export default function FeeGeneratePage() {
                     due_date: dueDate || null,
                     issue_date: issueDate || null,
                     plan_id: selectedPlanId ? parseInt(selectedPlanId) : undefined,
-                    extra_heads: extraHeads.filter(h => h.head_name && parseFloat(h.amount) > 0)
+                    extra_heads: extraHeads.filter(h => h.head_name && parseFloat(h.amount) > 0),
+                    mode: modeOverride
                 })
             });
             const data = await res.json();
@@ -672,25 +673,37 @@ export default function FeeGeneratePage() {
                             </div>
 
                             {hasPermission('fees', 'write') && (
-                                <button
-                                    className={`btn w-100 py-2 fw-bold shadow-sm ${hasGeneratedSelected || isClosedFiscalYear ? 'btn-secondary' : 'btn-primary-custom'}`}
-                                    onClick={handleGenerate}
-                                    disabled={generating || hasGeneratedSelected || !!partialGroupLabel || isClosedFiscalYear}
-                                >
-                                    {generating ? (
-                                        <><span className="spinner-border spinner-border-sm me-2"></span>Generating...</>
-                                    ) : isClosedFiscalYear ? (
-                                        <><i className="bi bi-lock-fill me-2"></i>Generation Locked (Closed Session)</>
-                                    ) : partialGroupLabel ? (
-                                        <><i className="bi bi-x-circle me-2"></i>Select Entire Combined ({partialGroupLabel}) first</>
-                                    ) : hasGeneratedSelected ? (
-                                        <><i className="bi bi-x-circle me-2"></i>Cannot Generate (Month Already Issued)</>
-                                    ) : selectedMonths.length > 1 ? (
-                                        <><i className="bi bi-lightning-charge me-2"></i>Generate for {selectedMonths.length} Months</>
-                                    ) : (
-                                        <><i className="bi bi-lightning-charge me-2"></i>Generate Fee Slips</>
+                                <>
+                                    <button
+                                        className={`btn w-100 py-2 fw-bold shadow-sm ${hasGeneratedSelected || isClosedFiscalYear ? 'btn-secondary' : 'btn-primary-custom'}`}
+                                        onClick={() => handleGenerate()}
+                                        disabled={generating || hasGeneratedSelected || !!partialGroupLabel || isClosedFiscalYear}
+                                    >
+                                        {generating ? (
+                                            <><span className="spinner-border spinner-border-sm me-2"></span>Generating...</>
+                                        ) : isClosedFiscalYear ? (
+                                            <><i className="bi bi-lock-fill me-2"></i>Generation Locked (Closed Session)</>
+                                        ) : partialGroupLabel ? (
+                                            <><i className="bi bi-x-circle me-2"></i>Select Entire Combined ({partialGroupLabel}) first</>
+                                        ) : hasGeneratedSelected ? (
+                                            <><i className="bi bi-x-circle me-2"></i>Cannot Generate (Month Already Issued)</>
+                                        ) : selectedMonths.length > 1 ? (
+                                            <><i className="bi bi-lightning-charge me-2"></i>Generate for {selectedMonths.length} Months</>
+                                        ) : (
+                                            <><i className="bi bi-lightning-charge me-2"></i>Generate Fee Slips</>
+                                        )}
+                                    </button>
+                                    {hasGeneratedSelected && !partialGroupLabel && !isClosedFiscalYear && (
+                                        <button
+                                            className="btn btn-outline-primary w-100 py-2 fw-bold mt-2 shadow-sm"
+                                            onClick={() => handleGenerate('missing_only')}
+                                            disabled={generating}
+                                            title="Skips students/families who already have a slip for this month and issues slips only for newly added/reactivated Active students."
+                                        >
+                                            <i className="bi bi-person-plus-fill me-2"></i>Generate Missing Active Students Only
+                                        </button>
                                     )}
-                                </button>
+                                </>
                             )}
                         </div>
                     </div>

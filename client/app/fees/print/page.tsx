@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'];
@@ -468,8 +468,24 @@ export default function PrintSlipsPage() {
     const [markingPrinted, setMarkingPrinted] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'danger'; text: string } | null>(null);
     const [printing, setPrinting] = useState(false);
+    const urlDeepLinkRef = useRef<{ month: string; year: string; classId: string } | null>(null);
+    const hasAutoLoadedRef = useRef(false);
 
     useEffect(() => {
+        let initialUrlYear = '';
+        if (typeof window !== 'undefined') {
+            const usp = new URLSearchParams(window.location.search);
+            const qM = usp.get('month') || '';
+            const qY = usp.get('year') || '';
+            const qC = usp.get('class_id') || '';
+            if (qM || qY || qC) {
+                urlDeepLinkRef.current = { month: qM, year: qY, classId: qC };
+                if (qY) { setYear(qY); initialUrlYear = qY; }
+                if (qM) setMonth(qM);
+                if (qC) setClassId(qC);
+            }
+        }
+
         fetch(`${API}/academic`).then(r => r.json()).then(setClasses).catch(() => { });
         fetch(`${API}/academic/years`).then(r => r.json()).then(data => {
             if (Array.isArray(data)) {
@@ -486,7 +502,7 @@ export default function PrintSlipsPage() {
                 setActiveYear(data);
                 setSelectedAcademicYear(data.id.toString());
                 const startY = data.start_date ? new Date(data.start_date).getFullYear().toString() : (data.year_name ? data.year_name.split('-')[0].trim() : new Date().getFullYear().toString());
-                if (startY && !isNaN(parseInt(startY))) {
+                if (!initialUrlYear && startY && !isNaN(parseInt(startY))) {
                     setYear(startY);
                 }
             }
@@ -520,7 +536,11 @@ export default function PrintSlipsPage() {
             .then(data => {
                 if (data.months) {
                     setAvailableMonths(data.months);
-                    if (data.months.length > 0) {
+                    const deepMonth = urlDeepLinkRef.current?.month;
+                    if (deepMonth && data.months.some((m: AvailableMonth) => m.months.includes(parseInt(deepMonth)))) {
+                        const matched = data.months.find((m: AvailableMonth) => m.months.includes(parseInt(deepMonth)));
+                        if (matched) setMonth(matched.value);
+                    } else if (data.months.length > 0) {
                         const currentM = (new Date().getMonth() + 1).toString();
                         const isCurrentValid = data.months.some((m: AvailableMonth) => m.months.includes(parseInt(currentM)));
                         if (!isCurrentValid) {
@@ -536,6 +556,14 @@ export default function PrintSlipsPage() {
             })
             .catch(() => { });
     }, [year, selectedAcademicYear, activeYear]);
+
+    useEffect(() => {
+        if (urlDeepLinkRef.current?.month && month && year && !hasAutoLoadedRef.current) {
+            hasAutoLoadedRef.current = true;
+            loadQueue();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [month, year, selectedAcademicYear]);
 
     const loadQueue = async () => {
         if (!month || !year) {

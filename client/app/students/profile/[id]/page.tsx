@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { notify } from '@/app/utils/notify';
 import { useAuth } from '@/contexts/AuthContext';
+import StudentReactivationModal from '@/components/students/StudentReactivationModal';
 
 export default function StudentProfile({ params }: { params: { id: string } }) {
     const [student, setStudent] = useState<any>(null);
@@ -17,6 +18,7 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
     const [changePwdModalOpen, setChangePwdModalOpen] = useState(false);
     const [newAdminPwd, setNewAdminPwd] = useState('');
     const [isChangingPwd, setIsChangingPwd] = useState(false);
+    const [showReactivateModal, setShowReactivateModal] = useState(false);
 
     // Attendance states
     const [attAcademicYears, setAttAcademicYears] = useState<any[]>([]);
@@ -200,10 +202,12 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
     };
 
     const handleToggleStatus = async () => {
-        const isDeactivating = student.status === 'Active';
-        const confirmMsg = isDeactivating
-            ? `Are you sure you want to DEACTIVATE ${student.first_name || 'this student'}?\n\n• Status will change to Inactive.\n• If this student is the Family Lead, leadership will automatically pass to the next senior active sibling in the highest class.\n• They will not be billed in future fee generation and will be excluded from attendance.`
-            : `Are you sure you want to RE-ACTIVATE ${student.first_name || 'this student'}?\n\n• Status will change to Active.\n• If they are the senior-most in the family, they will automatically regain Family Lead.\n• Fee slip generation and attendance tracking will resume.`;
+        const isDeactivating = (student.status || '').trim().toLowerCase() === 'active';
+        if (!isDeactivating) {
+            setShowReactivateModal(true);
+            return;
+        }
+        const confirmMsg = `Are you sure you want to DEACTIVATE ${student.first_name || 'this student'}?\n\n• Status will change to Inactive.\n• If this student is the Family Lead, leadership will automatically pass to the next senior active sibling in the highest class.\n• They will not be billed in future fee generation and will be excluded from attendance.`;
 
         if (!confirm(confirmMsg)) return;
         try {
@@ -560,7 +564,7 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                                                 <button
                                                     onClick={handleToggleStatus}
                                                     className={`btn w-100 py-2.5 rounded-3 fw-bold shadow-sm d-flex align-items-center justify-content-center gap-2 ${
-                                                        student.status === 'Active'
+                                                        (student.status || '').trim().toLowerCase() === 'active'
                                                             ? 'btn-outline-danger'
                                                             : 'btn-outline-success'
                                                     }`}
@@ -572,8 +576,8 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                                                         cursor: 'pointer'
                                                     }}
                                                 >
-                                                    <i className={`bi bi-${student.status === 'Active' ? 'person-x-fill' : 'person-check-fill'} fs-6`}></i>
-                                                    <span>{student.status === 'Active' ? 'Deactivate Student' : 'Activate Student'}</span>
+                                                    <i className={`bi bi-${(student.status || '').trim().toLowerCase() === 'active' ? 'person-x-fill' : 'person-check-fill'} fs-6`}></i>
+                                                    <span>{(student.status || '').trim().toLowerCase() === 'active' ? 'Deactivate Student' : 'Activate Student'}</span>
                                                 </button>
                                             </div>
                                         )}
@@ -1941,6 +1945,17 @@ export default function StudentProfile({ params }: { params: { id: string } }) {
                     </div>
                 </div>
             </div>
+
+            <StudentReactivationModal
+                isOpen={showReactivateModal}
+                studentId={params.id}
+                onClose={() => setShowReactivateModal(false)}
+                onSuccess={() => {
+                    fetchStudent();
+                    fetchSiblings();
+                    fetchFamilySlips();
+                }}
+            />
         </div>
     );
 }

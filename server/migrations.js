@@ -469,6 +469,34 @@ async function runEssentialMigrations() {
             ALTER TABLE fee_payments ADD COLUMN IF NOT EXISTS advance_surplus NUMERIC(10,2) DEFAULT 0;
         `);
 
+        // 13. Student Reactivation & Mid-Month Billing Support
+        console.log("   → Checking reactivation & deferred family adjustment tables/columns...");
+        await client.query(`
+            ALTER TABLE monthly_fee_slips ADD COLUMN IF NOT EXISTS generation_source VARCHAR(50) DEFAULT 'batch';
+            ALTER TABLE monthly_fee_slips ADD COLUMN IF NOT EXISTS notes TEXT;
+
+            CREATE TABLE IF NOT EXISTS pending_family_adjustments (
+                adjustment_id SERIAL PRIMARY KEY,
+                family_id VARCHAR(50),
+                student_id INTEGER REFERENCES students(student_id) ON DELETE CASCADE,
+                academic_year_id INTEGER REFERENCES academic_years(id),
+                target_month INTEGER,
+                target_year INTEGER,
+                head_id INTEGER REFERENCES fee_heads(head_id),
+                head_name VARCHAR(255) NOT NULL,
+                amount NUMERIC(10, 2) NOT NULL CHECK (amount >= 0),
+                reason TEXT,
+                source_slip_id INTEGER,
+                status VARCHAR(30) DEFAULT 'pending',
+                applied_slip_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                applied_at TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_pending_fam_adj_lookup
+            ON pending_family_adjustments (status, family_id, student_id);
+        `);
+
         const { syncAllSequences } = require('./utils/sequenceSync');
         await syncAllSequences(client);
 

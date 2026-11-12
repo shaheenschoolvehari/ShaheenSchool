@@ -5,6 +5,15 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcryptjs'); // Added for Password Hashing
+const {
+    CLASS_SENIORITY_ORDER,
+    evaluateMembersTrusted,
+    shiftFamilySlipsLead
+} = require('../utils/feeBillingHelpers');
+const {
+    getReactivationPreview,
+    executeStudentReactivation
+} = require('../utils/studentReactivationService');
 
 // Multer Configuration
 const storage = multer.diskStorage({
@@ -800,9 +809,10 @@ router.get('/families-directory', async (req, res) => {
             slips.sort((a, b) => (a.year - b.year) || (a.month - b.month));
             const latestSlip = slips[slips.length - 1];
 
-            const isTrusted = Boolean(
-                latestSlip.stu_category && latestSlip.stu_category.toLowerCase().includes('trust')
-            );
+            const famMembers = familiesMap[fid]?.members || [];
+            const isTrusted = famMembers.length > 0
+                ? evaluateMembersTrusted(famMembers, latestSlip.stu_category)
+                : Boolean(latestSlip.stu_category && latestSlip.stu_category.toLowerCase().includes('trust'));
             const isSettled = ['satteled', 'settled'].includes((latestSlip.status || '').toLowerCase()) || isTrusted;
 
             const totalPaid = slips.reduce((sum, s) => sum + parseFloat(s.paid_amount || 0), 0);
@@ -2277,6 +2287,75 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
     }
 });
 
+// 5b. Smart Reactivation Preview (Cases 1, 2, 3A, 3B)
+router.get('/:id/reactivation-preview', async (req, res) => {
+    try {
+        const { month, year, selected_ids, class_id } = req.query;
+        const preview = await getReactivationPreview(pool, req.params.id, {
+            month,
+            year,
+            selected_ids,
+            class_id
+        });
+        res.json(preview);
+    } catch (err) {
+        console.error('Reactivation preview error:', err);
+        res.status(err.statusCode || 500).json({ error: err.message || 'Server Error' });
+    }
+});
+
+// 5c. Atomic Student & Family Reactivation + Mid-Month Billing
+router.post('/:id/reactivate', async (req, res) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const result = await executeStudentReactivation(client, req.params.id, req.body || {});
+        await client.query('COMMIT');
+
+        try {
+            const { notifyPermission, createNotification } = require('../utils/notify');
+            await notifyPermission('students.details', {
+                type: 'student_status',
+                title: `Student Reactivated ✅`,
+                message: `${result.activated_names} marked Active${result.family_id ? ` (Family: ${result.family_id})` : ''}.`,
+                link: `/students/profile/${req.params.id}`,
+                clientOrPool: pool
+            });
+
+            if (result.slip && result.billing_case !== 'CASE_3B_DEFER_NEXT_MONTH') {
+                await notifyPermission('fees.collect', {
+                    type: 'fee_generation',
+                    title: `Reactivation Voucher Ready 🧾`,
+                    message: `${result.activated_names}: ${result.month}/${result.year} slip #${result.slip.slip_id} updated/issued (Total: PKR ${Number(result.slip.total_amount || 0).toLocaleString('en-PK')}).`,
+                    link: '/fees/collect',
+                    clientOrPool: pool
+                });
+
+                await createNotification({
+                    familyId: result.family_id,
+                    studentId: result.lead_student?.student_id || parseInt(req.params.id, 10),
+                    role: 'student',
+                    type: 'fee_generation',
+                    title: `Fee Voucher Issued 🧾`,
+                    message: `Your account is active and the ${result.month}/${result.year} fee voucher (PKR ${Number(result.slip.total_amount || 0).toLocaleString('en-PK')}) is ready.`,
+                    link: '/',
+                    clientOrPool: pool
+                });
+            }
+        } catch (notifErr) {
+            console.error('Reactivation notification error:', notifErr.message);
+        }
+
+        res.json(result);
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Reactivation commit error:', err);
+        res.status(err.statusCode || 500).json({ error: err.message || 'Server Error' });
+    } finally {
+        client.release();
+    }
+});
+
 // 6. Toggle Status
 router.patch('/:id/status', async (req, res) => {
     const client = await pool.connect();
@@ -2309,26 +2388,6 @@ router.patch('/:id/status', async (req, res) => {
 
         // Auto-shift Family Fee Slips & Arrears to the Active Family Lead
         if (family_id) {
-            const CLASS_SENIORITY_ORDER = `
-                CASE 
-                    WHEN c.class_name ~ '^[0-9]+' THEN CAST(SUBSTRING(c.class_name FROM '^[0-9]+') AS INTEGER)
-                    WHEN c.class_name ILIKE '%Class 10%' OR c.class_name ILIKE '%10%' THEN 10
-                    WHEN c.class_name ILIKE '%Class 9%' OR c.class_name ILIKE '%9%' THEN 9
-                    WHEN c.class_name ILIKE '%Class 8%' OR c.class_name ILIKE '%8%' THEN 8
-                    WHEN c.class_name ILIKE '%Class 7%' OR c.class_name ILIKE '%7%' THEN 7
-                    WHEN c.class_name ILIKE '%Class 6%' OR c.class_name ILIKE '%6%' THEN 6
-                    WHEN c.class_name ILIKE '%Class 5%' OR c.class_name ILIKE '%5%' THEN 5
-                    WHEN c.class_name ILIKE '%Class 4%' OR c.class_name ILIKE '%4%' THEN 4
-                    WHEN c.class_name ILIKE '%Class 3%' OR c.class_name ILIKE '%3%' THEN 3
-                    WHEN c.class_name ILIKE '%Class 2%' OR c.class_name ILIKE '%2%' THEN 2
-                    WHEN c.class_name ILIKE '%Class 1%' OR c.class_name ILIKE '%1%' THEN 1
-                    WHEN c.class_name ILIKE '%Prep%' OR c.class_name ILIKE '%KG%' THEN 0
-                    WHEN c.class_name ILIKE '%Nursery%' THEN -1
-                    WHEN c.class_name ILIKE '%Reception%' OR c.class_name ILIKE '%Play%' THEN -2
-                    ELSE COALESCE(c.class_id, 0)
-                END DESC, c.class_id DESC, s.first_name ASC
-            `;
-
             if (status.toLowerCase() !== 'active') {
                 // Student is being DEACTIVATED: find the next senior active sibling
                 const leadRes = await client.query(`
@@ -2342,11 +2401,14 @@ router.patch('/:id/status', async (req, res) => {
 
                 if (leadRes.rows.length > 0) {
                     const newLead = leadRes.rows[0];
-                    // Shift all unpaid / partial slips from this deactivated student to the new active lead
                     await client.query(`
-                        UPDATE monthly_fee_slips
+                        UPDATE monthly_fee_slips mfs
                         SET student_id = $1, class_id = $2, is_family_slip = TRUE
-                        WHERE student_id = $3 AND family_id = $4 AND status IN ('unpaid', 'partial')
+                        WHERE mfs.student_id = $3 AND mfs.family_id = $4 AND mfs.status IN ('unpaid', 'partial')
+                          AND NOT EXISTS (
+                              SELECT 1 FROM monthly_fee_slips dup
+                              WHERE dup.student_id = $1 AND dup.month = mfs.month AND dup.year = mfs.year AND dup.slip_id != mfs.slip_id
+                          )
                     `, [newLead.student_id, newLead.class_id, id, family_id]);
                 }
             } else {
@@ -2361,12 +2423,12 @@ router.patch('/:id/status', async (req, res) => {
                 `, [family_id]);
 
                 if (topLeadRes.rows.length > 0 && topLeadRes.rows[0].student_id === parseInt(id, 10)) {
-                    // This newly activated student is the highest-class sibling -> reclaim all unpaid/partial family slips
-                    await client.query(`
-                        UPDATE monthly_fee_slips
-                        SET student_id = $1, class_id = $2, is_family_slip = TRUE
-                        WHERE family_id = $3 AND status IN ('unpaid', 'partial') AND student_id != $1
-                    `, [id, class_id, family_id]);
+                    await shiftFamilySlipsLead(client, {
+                        familyId: family_id,
+                        newLeadStudentId: parseInt(id, 10),
+                        newLeadClassId: class_id,
+                        statuses: ['unpaid', 'partial']
+                    });
                 }
             }
 
