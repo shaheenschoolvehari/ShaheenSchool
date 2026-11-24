@@ -251,7 +251,7 @@ export default function FamilyFeeReportPage() {
             if (headId) params.append('head_id', headId);
             if (asOfDate) params.append('as_of_date', asOfDate);
 
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/reports/family-fee?${params}`);
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/reports/family-fee?${params}`, { cache: 'no-store' });
             if (!res.ok) throw new Error((await res.json()).error || 'Failed to load report');
             const data = await res.json();
 
@@ -281,6 +281,36 @@ export default function FamilyFeeReportPage() {
         } catch (e: any) { setError(e.message); }
         finally { setLoading(false); }
     };
+
+    useEffect(() => {
+        if (month && year) {
+            loadReport();
+        }
+    }, [month, year, academicYearId, classId, sectionId, statusFilter, headId, asOfDate]);
+
+    useEffect(() => {
+        const handleSync = () => {
+            if (month && year) loadReport();
+        };
+        const handleStorage = (e: StorageEvent) => {
+            if (e.key === 'fee_payment_last_updated' && month && year) loadReport();
+        };
+        const handleVisibility = () => {
+            if (document.visibilityState === 'visible' && month && year) loadReport();
+        };
+
+        window.addEventListener('focus', handleSync);
+        window.addEventListener('fee-payment-updated', handleSync);
+        window.addEventListener('storage', handleStorage);
+        document.addEventListener('visibilitychange', handleVisibility);
+
+        return () => {
+            window.removeEventListener('focus', handleSync);
+            window.removeEventListener('fee-payment-updated', handleSync);
+            window.removeEventListener('storage', handleStorage);
+            document.removeEventListener('visibilitychange', handleVisibility);
+        };
+    }, [month, year, academicYearId, classId, sectionId, statusFilter, headId, asOfDate]);
 
     const filteredSlips = useMemo(() => {
         if (!searchKeyword.trim()) return slips;
@@ -449,6 +479,31 @@ export default function FamilyFeeReportPage() {
                         </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <button
+                            type="button"
+                            onClick={() => loadReport()}
+                            title="Refresh report data"
+                            style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                background: 'rgba(255, 255, 255, 0.18)',
+                                border: '1px solid rgba(255, 255, 255, 0.25)',
+                                borderRadius: 14,
+                                padding: '8px 15px',
+                                color: '#ffffff',
+                                fontSize: 13,
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                backdropFilter: 'blur(8px)',
+                                transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255, 255, 255, 0.28)'; }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255, 255, 255, 0.18)'; }}
+                        >
+                            <i className={`bi bi-arrow-clockwise ${loading ? 'spin-anim' : ''}`} style={{ fontSize: 14 }} />
+                            {loading ? 'Updating...' : 'Refresh'}
+                        </button>
                         <span className="badge rounded-pill bg-white text-dark px-3 py-2 shadow-sm d-inline-flex align-items-center gap-1.5" style={{ fontSize: '13px', fontWeight: 700 }}>
                             <i className="bi bi-mortarboard-fill" style={{ color: BRAND.teal }}></i>
                             Academic Year: {activeYearName || '—'}

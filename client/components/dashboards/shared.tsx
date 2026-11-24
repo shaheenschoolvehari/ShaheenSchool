@@ -1074,13 +1074,32 @@ export function DailyFeeReceipts() {
   const [loading, setLoading] = useState(true);
   const [showAmounts, setShowAmounts] = useState(false);
 
-  useEffect(() => {
-    setLoading(true);
-    fetch(API + '/dashboard/daily-fee-receipts?date=' + date)
+  const loadReceipts = (isSilent = false) => {
+    if (!isSilent) setLoading(true);
+    fetch(API + '/dashboard/daily-fee-receipts?date=' + date, { cache: 'no-store' })
       .then(async r => {
         if (r.ok) setData(await r.json());
         setLoading(false);
       }).catch(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadReceipts();
+
+    const handleSync = () => loadReceipts(true);
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'fee_payment_last_updated') loadReceipts(true);
+    };
+
+    window.addEventListener('focus', handleSync);
+    window.addEventListener('fee-payment-updated', handleSync);
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      window.removeEventListener('focus', handleSync);
+      window.removeEventListener('fee-payment-updated', handleSync);
+      window.removeEventListener('storage', handleStorage);
+    };
   }, [date]);
 
   const handleMarkPrinted = async (paymentId: number) => {

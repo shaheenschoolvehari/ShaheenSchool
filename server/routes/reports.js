@@ -227,6 +227,7 @@ router.get('/expense-categories', async (req, res) => {
 // ─── 6. Family Fee Report (monthly, head-wise & collective) ──────────────────
 router.get('/family-fee', async (req, res) => {
     try {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
         const { month, year, class_id, section_id, status, head_id, academic_year_id, as_of_date } = req.query;
 
         const monthArr = month ? month.toString().split(',').map(n => parseInt(n.trim(), 10)).filter(n => !isNaN(n)) : [];
@@ -674,6 +675,7 @@ router.get('/admission-fee', async (req, res) => {
 // ─── 8. Monthly Tuition & Financial Summary Report ────────────────────────
 router.get('/monthly-tuition', async (req, res) => {
     try {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
         const { month, year, class_id, section_id, status, academic_year_id } = req.query;
 
         if (!month || !year) {
@@ -721,14 +723,24 @@ router.get('/monthly-tuition', async (req, res) => {
                     SELECT SUM(sli.amount)
                     FROM slip_line_items sli
                     WHERE sli.slip_id = ms.slip_id 
-                      AND (LOWER(sli.head_name) LIKE '%tuition%' OR LOWER(sli.head_name) LIKE '%tution%' OR sli.head_id = 1)
+                      AND (
+                          LOWER(sli.head_name) LIKE '%tuition%' 
+                          OR LOWER(sli.head_name) LIKE '%tution%' 
+                          OR LOWER(sli.head_name) LIKE '%family monthly fee%'
+                          OR sli.head_id IN (SELECT head_id FROM fee_heads WHERE LOWER(head_name) LIKE '%tuition%' OR LOWER(head_name) LIKE '%family monthly fee%')
+                      )
                 ), ms.total_amount) AS tuition_billed,
                 -- Tuition Fee Paid (From line items or proportional slip paid)
                 COALESCE((
                     SELECT SUM(COALESCE(sli.paid_amount, 0))
                     FROM slip_line_items sli
                     WHERE sli.slip_id = ms.slip_id 
-                      AND (LOWER(sli.head_name) LIKE '%tuition%' OR LOWER(sli.head_name) LIKE '%tution%' OR sli.head_id = 1)
+                      AND (
+                          LOWER(sli.head_name) LIKE '%tuition%' 
+                          OR LOWER(sli.head_name) LIKE '%tution%' 
+                          OR LOWER(sli.head_name) LIKE '%family monthly fee%'
+                          OR sli.head_id IN (SELECT head_id FROM fee_heads WHERE LOWER(head_name) LIKE '%tuition%' OR LOWER(head_name) LIKE '%family monthly fee%')
+                      )
                 ), ms.paid_amount) AS tuition_paid
             FROM monthly_fee_slips ms
             LEFT JOIN students s ON ms.student_id = s.student_id

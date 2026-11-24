@@ -192,6 +192,7 @@ router.get('/teacher', async (req, res) => {
 // ============================================================
 router.get('/accountant', async (req, res) => {
     try {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
         const [
             todayRes,
             monthRes,
@@ -221,27 +222,47 @@ router.get('/accountant', async (req, res) => {
                 WHERE EXTRACT(MONTH FROM payment_date)=EXTRACT(MONTH FROM CURRENT_DATE)
                   AND EXTRACT(YEAR  FROM payment_date)=EXTRACT(YEAR  FROM CURRENT_DATE)`),
 
-            // Total pending fees (latest slip per account + unbilled inactive OPB, preventing double-counting of arrears)
+            // Total pending fees (latest slip per account + unbilled inactive OPB, plus older unpaid slips not folded into newer slips)
             pool.query(`
-                WITH ranked_slips AS (
+                WITH slip_cf AS (
                     SELECT 
                         ms.slip_id,
+                        COALESCE('fam_' || COALESCE(ms.family_id, s.family_id), 'stu_' || ms.student_id) as acct,
                         ms.family_id,
                         ms.student_id,
                         ms.status,
-                        ms.total_amount,
-                        ms.paid_amount,
-                        GREATEST(0, ms.total_amount - ms.paid_amount) AS remaining_due,
                         s.category,
+                        GREATEST(0, ms.total_amount - ms.paid_amount) AS remaining_due,
                         ROW_NUMBER() OVER (
                             PARTITION BY COALESCE('fam_' || COALESCE(ms.family_id, s.family_id), 'stu_' || ms.student_id)
                             ORDER BY ms.year DESC, ms.month DESC, ms.slip_id DESC
-                        ) as rn
+                        ) as rn,
+                        EXISTS (
+                            SELECT 1 FROM slip_line_items sli
+                            LEFT JOIN fee_heads fh ON fh.head_id = sli.head_id
+                            WHERE sli.slip_id = ms.slip_id 
+                              AND (fh.head_type = 'prev_balance' OR sli.head_name ILIKE '%previous balance%' OR sli.head_name ILIKE '%opening balance%')
+                              AND sli.amount > 0
+                        ) as has_prev_balance
                     FROM monthly_fee_slips ms
                     LEFT JOIN students s ON ms.student_id = s.student_id
                 )
                 SELECT (
-                    COALESCE(SUM(remaining_due), 0)
+                    COALESCE((
+                        SELECT SUM(sc1.remaining_due)
+                        FROM slip_cf sc1
+                        WHERE LOWER(TRIM(sc1.status)) IN ('unpaid', 'partial')
+                          AND (sc1.category IS NULL OR LOWER(TRIM(sc1.category)) != 'trusted')
+                          AND (
+                              sc1.rn = 1
+                              OR NOT EXISTS (
+                                  SELECT 1 FROM slip_cf sc2
+                                  WHERE sc2.acct = sc1.acct
+                                    AND sc2.rn < sc1.rn
+                                    AND sc2.has_prev_balance = true
+                              )
+                          )
+                    ), 0)
                     +
                     COALESCE((
                         SELECT SUM(GREATEST(0, f.opening_balance - COALESCE(f.opening_balance_paid, 0)))
@@ -255,11 +276,7 @@ router.get('/accountant', async (req, res) => {
                             WHERE ms2.family_id = f.family_id AND LOWER(TRIM(ms2.status)) IN ('unpaid', 'partial')
                         )
                     ), 0)
-                ) AS pending
-                FROM ranked_slips
-                WHERE rn = 1
-                  AND LOWER(TRIM(status)) IN ('unpaid', 'partial')
-                  AND (category IS NULL OR LOWER(TRIM(category)) != 'trusted')`),
+                ) AS pending`),
 
             pool.query(`SELECT COUNT(*) AS total FROM students WHERE status='Active'`),
             pool.query(`SELECT COUNT(*) AS total FROM employees WHERE status = 'Active'`),
@@ -391,22 +408,29 @@ router.get('/accountant', async (req, res) => {
                   AND (status IS NULL OR LOWER(status) != 'cancelled')
             `),
 
-            // Active Student Pending Dues (Latest slip per active account)
+            // Active Student Pending Dues (Latest slip per active account, plus older unpaid slips not folded into newer slips)
             pool.query(`
-                WITH ranked_slips AS (
+                WITH slip_cf AS (
                     SELECT 
                         ms.slip_id,
+                        COALESCE('fam_' || COALESCE(ms.family_id, s.family_id), 'stu_' || ms.student_id) as acct,
                         ms.family_id,
                         ms.student_id,
                         ms.status,
-                        ms.total_amount,
-                        ms.paid_amount,
-                        GREATEST(0, ms.total_amount - ms.paid_amount) AS remaining_due,
                         s.category,
+                        s.status as student_status,
+                        GREATEST(0, ms.total_amount - ms.paid_amount) AS remaining_due,
                         ROW_NUMBER() OVER (
                             PARTITION BY COALESCE('fam_' || COALESCE(ms.family_id, s.family_id), 'stu_' || ms.student_id)
                             ORDER BY ms.year DESC, ms.month DESC, ms.slip_id DESC
-                        ) as rn
+                        ) as rn,
+                        EXISTS (
+                            SELECT 1 FROM slip_line_items sli
+                            LEFT JOIN fee_heads fh ON fh.head_id = sli.head_id
+                            WHERE sli.slip_id = ms.slip_id 
+                              AND (fh.head_type = 'prev_balance' OR sli.head_name ILIKE '%previous balance%' OR sli.head_name ILIKE '%opening balance%')
+                              AND sli.amount > 0
+                        ) as has_prev_balance
                     FROM monthly_fee_slips ms
                     LEFT JOIN students s ON ms.student_id = s.student_id
                 )
@@ -414,21 +438,28 @@ router.get('/accountant', async (req, res) => {
                     CASE
                         -- Solo student slip
                         WHEN ms.family_id IS NULL THEN
-                            CASE WHEN LOWER(COALESCE(s.status, 'Active')) = 'active' THEN remaining_due ELSE 0 END
+                            CASE WHEN LOWER(COALESCE(ms.student_status, 'Active')) = 'active' THEN ms.remaining_due ELSE 0 END
                         
                         -- Family slip: if at least 1 student is active, the entire slip is Active Family Dues
                         WHEN EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active') THEN
-                            remaining_due
+                            ms.remaining_due
 
                         -- Family slip with NO active students remaining
                         ELSE 0
                     END
                 ), 0) AS total
-                FROM ranked_slips ms
-                LEFT JOIN students s ON ms.student_id = s.student_id
-                WHERE ms.rn = 1
-                  AND LOWER(TRIM(ms.status)) IN ('unpaid', 'partial')
+                FROM slip_cf ms
+                WHERE LOWER(TRIM(ms.status)) IN ('unpaid', 'partial')
                   AND (ms.category IS NULL OR LOWER(TRIM(ms.category)) != 'trusted')
+                  AND (
+                      ms.rn = 1
+                      OR NOT EXISTS (
+                          SELECT 1 FROM slip_cf sc2
+                          WHERE sc2.acct = ms.acct
+                            AND sc2.rn < ms.rn
+                            AND sc2.has_prev_balance = true
+                      )
+                  )
             `),
 
             // Inactive Student Pending Dues (Latest slip per inactive account + unbilled inactive OPB)
@@ -538,7 +569,8 @@ router.get('/accountant', async (req, res) => {
 // ============================================================
 router.get('/', async (req, res) => {
     try {
-             const [
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+        const [
             studentsRes,
             teachersRes,
             classesRes,
@@ -570,27 +602,47 @@ router.get('/', async (req, res) => {
             // 3. Total classes
             pool.query(`SELECT COUNT(*) AS total FROM classes`),
 
-            // 4. Total pending fees (latest slip per account + unbilled inactive OPB, preventing double-counting of arrears)
+            // 4. Total pending fees (latest slip per account + unbilled inactive OPB, plus older unpaid slips not folded into newer slips)
             pool.query(`
-                WITH ranked_slips AS (
+                WITH slip_cf AS (
                     SELECT 
                         ms.slip_id,
+                        COALESCE('fam_' || COALESCE(ms.family_id, s.family_id), 'stu_' || ms.student_id) as acct,
                         ms.family_id,
                         ms.student_id,
                         ms.status,
-                        ms.total_amount,
-                        ms.paid_amount,
-                        GREATEST(0, ms.total_amount - ms.paid_amount) AS remaining_due,
                         s.category,
+                        GREATEST(0, ms.total_amount - ms.paid_amount) AS remaining_due,
                         ROW_NUMBER() OVER (
                             PARTITION BY COALESCE('fam_' || COALESCE(ms.family_id, s.family_id), 'stu_' || ms.student_id)
                             ORDER BY ms.year DESC, ms.month DESC, ms.slip_id DESC
-                        ) as rn
+                        ) as rn,
+                        EXISTS (
+                            SELECT 1 FROM slip_line_items sli
+                            LEFT JOIN fee_heads fh ON fh.head_id = sli.head_id
+                            WHERE sli.slip_id = ms.slip_id 
+                              AND (fh.head_type = 'prev_balance' OR sli.head_name ILIKE '%previous balance%' OR sli.head_name ILIKE '%opening balance%')
+                              AND sli.amount > 0
+                        ) as has_prev_balance
                     FROM monthly_fee_slips ms
                     LEFT JOIN students s ON ms.student_id = s.student_id
                 )
                 SELECT (
-                    COALESCE(SUM(remaining_due), 0)
+                    COALESCE((
+                        SELECT SUM(sc1.remaining_due)
+                        FROM slip_cf sc1
+                        WHERE LOWER(TRIM(sc1.status)) IN ('unpaid', 'partial')
+                          AND (sc1.category IS NULL OR LOWER(TRIM(sc1.category)) != 'trusted')
+                          AND (
+                              sc1.rn = 1
+                              OR NOT EXISTS (
+                                  SELECT 1 FROM slip_cf sc2
+                                  WHERE sc2.acct = sc1.acct
+                                    AND sc2.rn < sc1.rn
+                                    AND sc2.has_prev_balance = true
+                              )
+                          )
+                    ), 0)
                     +
                     COALESCE((
                         SELECT SUM(GREATEST(0, f.opening_balance - COALESCE(f.opening_balance_paid, 0)))
@@ -605,10 +657,6 @@ router.get('/', async (req, res) => {
                         )
                     ), 0)
                 ) AS pending
-                FROM ranked_slips
-                WHERE rn = 1
-                  AND LOWER(TRIM(status)) IN ('unpaid', 'partial')
-                  AND (category IS NULL OR LOWER(TRIM(category)) != 'trusted')
             `),
 
             // 5. This month's fee collected
@@ -814,22 +862,29 @@ router.get('/', async (req, res) => {
                   AND (status IS NULL OR LOWER(status) != 'cancelled')
             `),
 
-            // 17. Active Student Pending Dues (Latest slip per active account)
+            // 17. Active Student Pending Dues (Latest slip per active account, plus older unpaid slips not folded into newer slips)
             pool.query(`
-                WITH ranked_slips AS (
+                WITH slip_cf AS (
                     SELECT 
                         ms.slip_id,
+                        COALESCE('fam_' || COALESCE(ms.family_id, s.family_id), 'stu_' || ms.student_id) as acct,
                         ms.family_id,
                         ms.student_id,
                         ms.status,
-                        ms.total_amount,
-                        ms.paid_amount,
-                        GREATEST(0, ms.total_amount - ms.paid_amount) AS remaining_due,
                         s.category,
+                        s.status as student_status,
+                        GREATEST(0, ms.total_amount - ms.paid_amount) AS remaining_due,
                         ROW_NUMBER() OVER (
                             PARTITION BY COALESCE('fam_' || COALESCE(ms.family_id, s.family_id), 'stu_' || ms.student_id)
                             ORDER BY ms.year DESC, ms.month DESC, ms.slip_id DESC
-                        ) as rn
+                        ) as rn,
+                        EXISTS (
+                            SELECT 1 FROM slip_line_items sli
+                            LEFT JOIN fee_heads fh ON fh.head_id = sli.head_id
+                            WHERE sli.slip_id = ms.slip_id 
+                              AND (fh.head_type = 'prev_balance' OR sli.head_name ILIKE '%previous balance%' OR sli.head_name ILIKE '%opening balance%')
+                              AND sli.amount > 0
+                        ) as has_prev_balance
                     FROM monthly_fee_slips ms
                     LEFT JOIN students s ON ms.student_id = s.student_id
                 )
@@ -837,21 +892,28 @@ router.get('/', async (req, res) => {
                     CASE
                         -- Solo student slip
                         WHEN ms.family_id IS NULL THEN
-                            CASE WHEN LOWER(COALESCE(s.status, 'Active')) = 'active' THEN remaining_due ELSE 0 END
+                            CASE WHEN LOWER(COALESCE(ms.student_status, 'Active')) = 'active' THEN ms.remaining_due ELSE 0 END
                         
                         -- Family slip: if at least 1 student is active, the entire slip is Active Family Dues
                         WHEN EXISTS (SELECT 1 FROM students s2 WHERE s2.family_id = ms.family_id AND LOWER(COALESCE(s2.status, 'Active')) = 'active') THEN
-                            remaining_due
+                            ms.remaining_due
 
                         -- Family slip with NO active students remaining
                         ELSE 0
                     END
                 ), 0) AS total
-                FROM ranked_slips ms
-                LEFT JOIN students s ON ms.student_id = s.student_id
-                WHERE ms.rn = 1
-                  AND LOWER(TRIM(ms.status)) IN ('unpaid', 'partial')
+                FROM slip_cf ms
+                WHERE LOWER(TRIM(ms.status)) IN ('unpaid', 'partial')
                   AND (ms.category IS NULL OR LOWER(TRIM(ms.category)) != 'trusted')
+                  AND (
+                      ms.rn = 1
+                      OR NOT EXISTS (
+                          SELECT 1 FROM slip_cf sc2
+                          WHERE sc2.acct = ms.acct
+                            AND sc2.rn < ms.rn
+                            AND sc2.has_prev_balance = true
+                      )
+                  )
             `),
 
             // 18. Inactive Student Pending Dues (Latest slip per inactive account + unbilled inactive OPB)
@@ -1064,6 +1126,7 @@ router.get('/attendance-details', async (req, res) => {
 
 router.get('/daily-fee-receipts', async (req, res) => {
     try {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
         const { date } = req.query;
         const targetDate = date || new Date().toISOString().split('T')[0];
 

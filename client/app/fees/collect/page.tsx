@@ -1290,6 +1290,13 @@ export default function CollectFeePage() {
             setActiveSlip(prev => prev ? { ...prev, paid_amount: d.slip.paid_amount, status: d.slip.status } : null);
             // Re-fetch all slips silently OPB reversal may have updated older slips in DB
             silentReload();
+
+            // Broadcast fee payment change so Dashboard Cards, Recent Fee Payments, and Reports update instantly
+            if (typeof window !== 'undefined') {
+                const ts = Date.now().toString();
+                localStorage.setItem('fee_payment_last_updated', ts);
+                window.dispatchEvent(new CustomEvent('fee-payment-updated', { detail: { action: 'reverse', paymentId } }));
+            }
         } catch (e: any) { alert('Error: ' + e.message); }
         finally { setDeletingPaymentId(null); }
     };
@@ -1351,6 +1358,13 @@ export default function CollectFeePage() {
             if (shouldPrint && receivingSnap > 0) openReceiptWindow(slipSnap, receivingSnap, payDateSnap, prevPaidSnap);
             // Re-fetch all slips silently waterfall may have updated older slips in DB
             silentReload();
+
+            // Broadcast fee payment change so Dashboard Cards, Recent Fee Payments, and Reports update instantly
+            if (typeof window !== 'undefined') {
+                const ts = Date.now().toString();
+                localStorage.setItem('fee_payment_last_updated', ts);
+                window.dispatchEvent(new CustomEvent('fee-payment-updated', { detail: { action: 'pay' } }));
+            }
         } catch (e: any) { notify.error(e.message); }
         finally { setPaying(false); }
     };

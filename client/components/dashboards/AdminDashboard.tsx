@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import {
@@ -8,7 +8,7 @@ import {
 } from 'recharts';
 import {
   API, MONTHS, fmt, fmtPKR, C, MaskedAmount, DailyFeeReceipts, CollectionVelocityCurve,
-  StatCard, Panel, DonutRing, DashShell, DashLoading, DashError, EmptyChart, RecentPaymentsTable,
+  StatCard, Panel, DonutRing, DashShell, DashLoading, DashError, EmptyChart, RecentPaymentsTable, QuickActionsDropdown
 } from './shared';
 
 type AdminData = {
@@ -68,22 +68,59 @@ function ActionBtn({ href, icon, label, primary }: { href: string; icon: string;
 }
 
 export default function AdminDashboard({ userName }: { userName: string }) {
-  const { hasPermission } = useAuth(); const [data, setData] = useState<AdminData | null>(null);
+  const { hasPermission } = useAuth();
+  const [data, setData] = useState<AdminData | null>(null);
   const [loading, setLoad] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [err, setErr] = useState('');
   const [attTab, setAttTab] = useState<'students' | 'staff'>('students');
   const [cardsExpanded, setCardsExpanded] = useState(false);
 
-  useEffect(() => {
-    fetch(API + '/dashboard')
+  const loadDashboard = useCallback((isSilent = false) => {
+    if (!isSilent) setLoad(true);
+    else setRefreshing(true);
+
+    fetch(API + '/dashboard', { cache: 'no-store' })
       .then(async r => {
         if (r.ok) return r.json();
         const errJson = await r.json().catch(() => null);
         return Promise.reject(errJson?.error || r.statusText || `HTTP ${r.status}`);
       })
-      .then(d => { setData(d); setLoad(false); })
-      .catch(e => { setErr(String(e)); setLoad(false); });
+      .then(d => {
+        setData(d);
+        setLoad(false);
+        setRefreshing(false);
+      })
+      .catch(e => {
+        setErr(String(e));
+        setLoad(false);
+        setRefreshing(false);
+      });
   }, []);
+
+  useEffect(() => {
+    loadDashboard();
+
+    const handleSync = () => loadDashboard(true);
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'fee_payment_last_updated') loadDashboard(true);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') loadDashboard(true);
+    };
+
+    window.addEventListener('focus', handleSync);
+    window.addEventListener('fee-payment-updated', handleSync);
+    window.addEventListener('storage', handleStorage);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.removeEventListener('focus', handleSync);
+      window.removeEventListener('fee-payment-updated', handleSync);
+      window.removeEventListener('storage', handleStorage);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [loadDashboard]);
 
   if (loading) return <DashLoading />;
   if (err || !data) return <DashError msg={err || 'Dashboard data is missing.'} />;
@@ -98,6 +135,36 @@ export default function AdminDashboard({ userName }: { userName: string }) {
     <DashShell
       title="School Dashboard"
       subtitle={today}
+      actions={
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button
+            type="button"
+            onClick={() => loadDashboard(true)}
+            title="Refresh dashboard stats"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'rgba(255, 255, 255, 0.15)',
+              border: '1px solid rgba(255, 255, 255, 0.25)',
+              borderRadius: 14,
+              padding: '10px 16px',
+              color: '#ffffff',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer',
+              backdropFilter: 'blur(8px)',
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255, 255, 255, 0.25)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255, 255, 255, 0.15)'; }}
+          >
+            <i className={`bi bi-arrow-clockwise ${refreshing ? 'spin-anim' : ''}`} style={{ fontSize: 14 }} />
+            {refreshing ? 'Updating...' : 'Refresh'}
+          </button>
+          <QuickActionsDropdown />
+        </div>
+      }
     >
       {/* KPI Row */}
       {hasPermission('dash.admin_kpi', 'read') && (
