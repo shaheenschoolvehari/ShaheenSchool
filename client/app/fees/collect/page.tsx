@@ -220,6 +220,8 @@ export default function CollectFeePage() {
     const { hasPermission } = useAuth();
     const [selectedClass, setSelectedClass] = useState('');
     const [year, setYear] = useState(new Date().getFullYear().toString());
+    const [selectedMonth, setSelectedMonth] = useState<string>((new Date().getMonth() + 1).toString());
+    const [availableMonths, setAvailableMonths] = useState<{ value: string; label: string; months: number[] }[]>([]);
     const [academicYears, setAcademicYears] = useState<{ id: number; year_name: string; is_active: boolean }[]>([]);
     const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('all');
     const [activeYear, setActiveYear] = useState<{ id: number; year_name: string; is_active: boolean } | null>(null);
@@ -347,7 +349,10 @@ export default function CollectFeePage() {
                     });
                 }
 
-                // Check URL params for search queries
+                const currentMonthNum = (new Date().getMonth() + 1).toString();
+                let initialMonth = currentMonthNum;
+
+                // Check URL params for search queries or month
                 let querySearch = '';
                 if (typeof window !== 'undefined') {
                     const urlParams = new URLSearchParams(window.location.search);
@@ -355,13 +360,21 @@ export default function CollectFeePage() {
                     if (querySearch) {
                         setSearch(querySearch);
                     }
+                    const urlMonth = urlParams.get('month');
+                    if (urlMonth) {
+                        initialMonth = urlMonth;
+                    }
                 }
+                setSelectedMonth(initialMonth);
 
                 // Auto-load fee slips immediately so search works instantly on mount
                 if (!hasAutoLoaded.current) {
                     hasAutoLoaded.current = true;
                     setLoading(true);
                     const params = new URLSearchParams({ year: resolvedYear });
+                    if (initialMonth && initialMonth !== 'all') {
+                        params.append('month', initialMonth);
+                    }
                     const targetYearId = currentActiveYear?.id ? currentActiveYear.id.toString() : '';
                     if (targetYearId) {
                         params.append('academic_year_id', targetYearId);
@@ -384,15 +397,43 @@ export default function CollectFeePage() {
         init();
     }, []);
 
-    const loadSlips = async () => {
+    // Fetch available generated months for the selected year & academic year
+    useEffect(() => {
+        const targetYearId = (selectedAcademicYear && selectedAcademicYear !== 'all') ? selectedAcademicYear : (activeYear ? activeYear.id.toString() : '');
+        const yrParam = targetYearId ? `&academic_year_id=${targetYearId}` : '';
+        fetch(`${API}/fee-slips/available-months?year=${year}${yrParam}`)
+            .then(r => r.json())
+            .then(data => {
+                if (data && Array.isArray(data.months)) {
+                    setAvailableMonths(data.months);
+                }
+            })
+            .catch(() => { });
+    }, [year, selectedAcademicYear, activeYear]);
+
+    const getSelectedMonthLabel = () => {
+        if (!selectedMonth || selectedMonth === 'all') return 'All Months';
+        const found = availableMonths.find(m => m.value === selectedMonth);
+        if (found) {
+            const mNum = found.months && found.months.length > 0 ? found.months[0] : parseInt(found.value, 10);
+            const name = MONTHS[mNum - 1];
+            return found.label + (name && !found.label.toLowerCase().includes(name.toLowerCase()) ? ` (${name})` : '');
+        }
+        const idx = parseInt(selectedMonth, 10);
+        return MONTHS[idx - 1] || `Month ${selectedMonth}`;
+    };
+
+    const loadSlips = async (monthOverride?: string) => {
         if (!year) {
             notify.error('Please enter a Year.');
             return;
         }
         setLoading(true); setSlips([]); setStats(null); setLoaded(false);
         try {
+            const activeMonth = monthOverride !== undefined ? monthOverride : selectedMonth;
             const params = new URLSearchParams({ year });
             if (selectedClass) params.append('class_id', selectedClass);
+            if (activeMonth && activeMonth !== 'all') params.append('month', activeMonth);
             const targetYearId = (selectedAcademicYear && selectedAcademicYear !== 'all') ? selectedAcademicYear : (activeYear ? activeYear.id.toString() : '');
             if (targetYearId) {
                 params.append('academic_year_id', targetYearId);
@@ -414,6 +455,7 @@ export default function CollectFeePage() {
         try {
             const params = new URLSearchParams({ year });
             if (selectedClass) params.append('class_id', selectedClass);
+            if (selectedMonth && selectedMonth !== 'all') params.append('month', selectedMonth);
             const targetYearId = (selectedAcademicYear && selectedAcademicYear !== 'all') ? selectedAcademicYear : (activeYear ? activeYear.id.toString() : '');
             if (targetYearId) {
                 params.append('academic_year_id', targetYearId);
@@ -1818,7 +1860,7 @@ export default function CollectFeePage() {
                         </div>
                     </div>
 
-                    {/* Row 2: Class (optional), Year, Status, Load button */}
+                    {/* Row 2: Class (optional), Month, Year, Status, Load button */}
                     <div className="row g-3 align-items-end">
                         <div className="col-md-3">
                             <label className="form-label fw-bold small text-muted">
@@ -1832,6 +1874,42 @@ export default function CollectFeePage() {
                         </div>
                         <div className="col-md-3">
                             <label className="form-label fw-bold small text-muted">
+                                <i className="bi bi-calendar-month me-1"></i>Month <span className="text-danger">*</span>
+                            </label>
+                            <select 
+                                className="form-select fw-semibold" 
+                                value={selectedMonth} 
+                                onChange={e => {
+                                    const newM = e.target.value;
+                                    setSelectedMonth(newM);
+                                    loadSlips(newM);
+                                }}
+                            >
+                                {availableMonths.length > 0 ? (
+                                    <>
+                                        {availableMonths.map(m => {
+                                            const mNum = m.months && m.months.length > 0 ? m.months[0] : parseInt(m.value, 10);
+                                            const fullMonthName = MONTHS[mNum - 1] || m.label;
+                                            return (
+                                                <option key={m.value} value={m.value}>
+                                                    {fullMonthName} {m.label !== fullMonthName ? `(${m.label})` : ''}
+                                                </option>
+                                            );
+                                        })}
+                                        <option value="all">All Months (Overall)</option>
+                                    </>
+                                ) : (
+                                    <>
+                                        {MONTHS.map((name, idx) => (
+                                            <option key={idx + 1} value={(idx + 1).toString()}>{name}</option>
+                                        ))}
+                                        <option value="all">All Months (Overall)</option>
+                                    </>
+                                )}
+                            </select>
+                        </div>
+                        <div className="col-md-2">
+                            <label className="form-label fw-bold small text-muted">
                                 <i className="bi bi-calendar3 me-1"></i>Year <span className="text-danger">*</span>
                             </label>
                             <input
@@ -1843,7 +1921,7 @@ export default function CollectFeePage() {
                                 style={{ cursor: 'not-allowed' }}
                             />
                         </div>
-                        <div className="col-md-3">
+                        <div className="col-md-2">
                             <label className="form-label fw-bold small text-muted">
                                 <i className="bi bi-circle-half me-1"></i>Status
                             </label>
@@ -1856,11 +1934,11 @@ export default function CollectFeePage() {
                                 <option value="satteled">Settled / Trusted</option>
                             </select>
                         </div>
-                        <div className="col-md-3">
-                            <button className="btn w-100 fw-bold" onClick={loadSlips} disabled={loading}
+                        <div className="col-md-2">
+                            <button className="btn w-100 fw-bold" onClick={() => loadSlips()} disabled={loading}
                                 style={{ backgroundColor: 'var(--primary-teal)', color: '#fff', borderRadius: 8, height: 38 }}>
                                 {loading ? <span className="spinner-border spinner-border-sm me-1" /> : <i className="bi bi-search me-1"></i>}
-                                {loading ? 'Loading...' : 'Load Slips'}
+                                {loading ? 'Loading...' : 'Load'}
                             </button>
                         </div>
                     </div>
@@ -1871,7 +1949,24 @@ export default function CollectFeePage() {
                             <i className="bi bi-info-circle me-1"></i>
                             {filtered.length} voucher{filtered.length !== 1 ? 's' : ''} shown
                             {search ? ` matching "${search}"` : ''}
+                            {` · ${getSelectedMonthLabel()} ${year}`}
                             {selectedClass ? ` · ${classes.find(c => c.class_id.toString() === selectedClass)?.class_name || ''}` : ' · All Classes'}
+                        </div>
+                    )}
+
+                    {/* Search fallback when no vouchers found in active month */}
+                    {loaded && filtered.length === 0 && search && selectedMonth !== 'all' && (
+                        <div className="alert alert-light border mt-3 text-center small text-muted py-2">
+                            No vouchers found for &quot;{search}&quot; in {getSelectedMonthLabel()}.
+                            <button 
+                                className="btn btn-link btn-sm p-0 ms-2 text-decoration-none fw-bold"
+                                onClick={() => {
+                                    setSelectedMonth('all');
+                                    loadSlips('all');
+                                }}
+                            >
+                                Search in All Months <i className="bi bi-arrow-right"></i>
+                            </button>
                         </div>
                     )}
                 </div>
@@ -1881,7 +1976,7 @@ export default function CollectFeePage() {
             {stats && loaded && (
                 <div className="row g-3 mb-4">
                     {[
-                        { label: 'Total Vouchers', value: allGroups.length, icon: 'bi-receipt', color: 'var(--primary-teal)', sub: `${slips.length} slips · ${year}` },
+                        { label: 'Total Vouchers', value: allGroups.length, icon: 'bi-receipt', color: 'var(--primary-teal)', sub: `${slips.length} slips · ${getSelectedMonthLabel()} ${year}` },
                         { label: 'Total Amount', value: fmt(stats.total_amount), icon: 'bi-currency-exchange', color: 'var(--primary-dark)', sub: `${statsBreakdown.total} student(s)` },
                         { label: 'Collected', value: fmt(stats.paid_amount), icon: 'bi-check-circle-fill', color: '#198754', sub: `${collectionPct}% of total` },
                         { label: 'Pending', value: fmt(totalDue), icon: 'bi-hourglass-split', color: '#dc3545', sub: `${statsBreakdown.unpaid} unpaid · ${statsBreakdown.partial} partial${statsBreakdown.settled ? ` · ${statsBreakdown.settled} settled/trusted` : ''}` },
@@ -1908,7 +2003,20 @@ export default function CollectFeePage() {
                         <div className="card border-0 shadow-sm">
                             <div className="card-body py-2 px-4">
                                 <div className="d-flex justify-content-between small text-muted mb-1">
-                                    <span className="fw-semibold">Collection Progress</span>
+                                    <span className="fw-semibold">
+                                        Collection Progress
+                                        {selectedMonth && selectedMonth !== 'all' && (
+                                            <span className="badge bg-light text-dark border ms-2 fw-medium" style={{ fontSize: '0.75rem' }}>
+                                                <i className="bi bi-calendar-check me-1 text-teal"></i>
+                                                {getSelectedMonthLabel()} {year}
+                                            </span>
+                                        )}
+                                        {selectedMonth === 'all' && (
+                                            <span className="badge bg-light text-muted border ms-2 fw-medium" style={{ fontSize: '0.75rem' }}>
+                                                All Months · {year}
+                                            </span>
+                                        )}
+                                    </span>
                                     <span className="fw-bold" style={{ color: 'var(--primary-teal)' }}>
                                         {collectionPct}% <span className="fw-normal text-muted" style={{ fontSize: '0.72rem' }}>({fmt(stats.paid_amount)} / {fmt(stats.total_amount)})</span>
                                     </span>
