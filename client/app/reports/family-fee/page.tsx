@@ -479,31 +479,6 @@ export default function FamilyFeeReportPage() {
                         </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <button
-                            type="button"
-                            onClick={() => loadReport()}
-                            title="Refresh report data"
-                            style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 6,
-                                background: 'rgba(255, 255, 255, 0.18)',
-                                border: '1px solid rgba(255, 255, 255, 0.25)',
-                                borderRadius: 14,
-                                padding: '8px 15px',
-                                color: '#ffffff',
-                                fontSize: 13,
-                                fontWeight: 700,
-                                cursor: 'pointer',
-                                backdropFilter: 'blur(8px)',
-                                transition: 'all 0.2s',
-                            }}
-                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255, 255, 255, 0.28)'; }}
-                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255, 255, 255, 0.18)'; }}
-                        >
-                            <i className={`bi bi-arrow-clockwise ${loading ? 'spin-anim' : ''}`} style={{ fontSize: 14 }} />
-                            {loading ? 'Updating...' : 'Refresh'}
-                        </button>
                         <span className="badge rounded-pill bg-white text-dark px-3 py-2 shadow-sm d-inline-flex align-items-center gap-1.5" style={{ fontSize: '13px', fontWeight: 700 }}>
                             <i className="bi bi-mortarboard-fill" style={{ color: BRAND.teal }}></i>
                             Academic Year: {activeYearName || '—'}

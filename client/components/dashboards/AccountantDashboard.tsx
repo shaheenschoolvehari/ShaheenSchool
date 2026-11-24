@@ -8,7 +8,7 @@ import {
 } from 'recharts';
 import {
   API, MONTHS, fmt, fmtPKR, C,
-  StatCard, Panel, DashShell, DashLoading, DashError, EmptyChart, RecentPaymentsTable, MaskedAmount, DailyFeeReceipts, CollectionVelocityCurve, QuickActionsDropdown
+  StatCard, Panel, DashShell, DashLoading, DashError, EmptyChart, RecentPaymentsTable, MaskedAmount, DailyFeeReceipts, CollectionVelocityCurve
 } from './shared';
 
 type AccountantData = {
@@ -44,13 +44,11 @@ export default function AccountantDashboard({ userName }: { userName: string }) 
   const { hasPermission } = useAuth();
   const [data, setData] = useState<AccountantData | null>(null);
   const [loading, setLoad] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [err, setErr] = useState('');
   const [cardsExpanded, setCardsExpanded] = useState(false);
 
   const loadDashboard = useCallback((isSilent = false) => {
     if (!isSilent) setLoad(true);
-    else setRefreshing(true);
 
     fetch(API + '/dashboard/accountant', { cache: 'no-store' })
       .then(async r => {
@@ -61,12 +59,10 @@ export default function AccountantDashboard({ userName }: { userName: string }) 
       .then(d => {
         setData(d);
         setLoad(false);
-        setRefreshing(false);
       })
       .catch(e => {
         setErr(String(e));
         setLoad(false);
-        setRefreshing(false);
       });
   }, []);
 
@@ -106,36 +102,6 @@ export default function AccountantDashboard({ userName }: { userName: string }) 
     <DashShell
       title="Finance & Fees"
       subtitle={today}
-      actions={
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button
-            type="button"
-            onClick={() => loadDashboard(true)}
-            title="Refresh finance stats"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              background: 'rgba(255, 255, 255, 0.15)',
-              border: '1px solid rgba(255, 255, 255, 0.25)',
-              borderRadius: 14,
-              padding: '10px 16px',
-              color: '#ffffff',
-              fontSize: 13,
-              fontWeight: 700,
-              cursor: 'pointer',
-              backdropFilter: 'blur(8px)',
-              transition: 'all 0.2s',
-            }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255, 255, 255, 0.25)'; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255, 255, 255, 0.15)'; }}
-          >
-            <i className={`bi bi-arrow-clockwise ${refreshing ? 'spin-anim' : ''}`} style={{ fontSize: 14 }} />
-            {refreshing ? 'Updating...' : 'Refresh'}
-          </button>
-          <QuickActionsDropdown />
-        </div>
-      }
     >
       {/* KPI Row */}
       {hasPermission('dash.acc_kpi', 'read') && (

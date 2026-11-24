@@ -417,14 +417,6 @@ export default function MonthlyReportPage() {
                 </div>
 
                 <div className="d-flex flex-wrap gap-2 justify-content-start justify-content-md-end align-items-center" style={{ position: 'relative', zIndex: 2 }}>
-                    <button className="btn btn-sm text-white border-0 d-flex align-items-center gap-1 shadow-sm px-3 py-2 flex-grow-1 flex-md-grow-0 justify-content-center"
-                        onClick={fetchReport} title="Refresh live report data"
-                        style={{ background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(10px)', borderRadius: 10, transition: 'all 0.2s' }}
-                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.3)'; }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.18)'; }}>
-                        <i className={`bi bi-arrow-clockwise fs-6 ${loading ? 'spin-anim' : ''}`}></i>
-                        <span className="fw-semibold">{loading ? 'Updating...' : 'Refresh'}</span>
-                    </button>
                     <span className="badge rounded-pill bg-light text-dark border px-3 py-2 shadow-sm d-inline-flex align-items-center gap-1.5" style={{ fontSize: '13px', fontWeight: 600 }}>
                         <i className="bi bi-mortarboard-fill text-primary"></i>
                         Academic Year: {years.find(y => String(y.id) === academicYearId)?.year_name || years.find(y => y.is_active)?.year_name || '—'}

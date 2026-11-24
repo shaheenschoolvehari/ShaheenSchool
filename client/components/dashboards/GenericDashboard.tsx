@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { API, fmt, fmtPKR, C, StatCard, Panel, DashShell, DashLoading, DashError, MaskedAmount, QuickActionsDropdown } from './shared';
+import { API, fmt, fmtPKR, C, StatCard, Panel, DashShell, DashLoading, DashError, MaskedAmount } from './shared';
 
 type GenericData = {
   stats: { total_students:number; total_staff:number; total_classes:number; pending_fees:number; this_month_collected:number; today_collected:number };
@@ -21,12 +21,10 @@ const NAV_LINKS = [
 export default function GenericDashboard({ userName, role }: { userName:string; role:string }) {
   const [data, setData]   = useState<GenericData | null>(null);
   const [loading, setLoad] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [err, setErr]     = useState('');
 
   const loadDashboard = useCallback((isSilent = false) => {
     if (!isSilent) setLoad(true);
-    else setRefreshing(true);
 
     fetch(API + '/dashboard', { cache: 'no-store' })
       .then(async r => {
@@ -34,8 +32,8 @@ export default function GenericDashboard({ userName, role }: { userName:string; 
         const errJson = await r.json().catch(() => null);
         return Promise.reject(errJson?.error || r.statusText || `HTTP ${r.status}`);
       })
-      .then(d => { setData(d); setLoad(false); setRefreshing(false); })
-      .catch(e => { setErr(String(e)); setLoad(false); setRefreshing(false); });
+      .then(d => { setData(d); setLoad(false); })
+      .catch(e => { setErr(String(e)); setLoad(false); });
   }, []);
 
   useEffect(() => {
@@ -71,34 +69,6 @@ export default function GenericDashboard({ userName, role }: { userName:string; 
     <DashShell
       title="School Dashboard"
       subtitle={today}
-      actions={
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button
-            type="button"
-            onClick={() => loadDashboard(true)}
-            title="Refresh dashboard stats"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              background: 'rgba(255, 255, 255, 0.15)',
-              border: '1px solid rgba(255, 255, 255, 0.25)',
-              borderRadius: 14,
-              padding: '10px 16px',
-              color: '#ffffff',
-              fontSize: 13,
-              fontWeight: 700,
-              cursor: 'pointer',
-              backdropFilter: 'blur(8px)',
-              transition: 'all 0.2s',
-            }}
-          >
-            <i className={`bi bi-arrow-clockwise ${refreshing ? 'spin-anim' : ''}`} style={{ fontSize: 14 }} />
-            {refreshing ? 'Updating...' : 'Refresh'}
-          </button>
-          <QuickActionsDropdown />
-        </div>
-      }
     >
 
       {/* Stats */}
