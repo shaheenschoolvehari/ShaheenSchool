@@ -1330,10 +1330,12 @@ router.get('/admission-fees', async (req, res) => {
 
         const result = await pool.query(`
             SELECT afl.ledger_id, afl.student_id, afl.total_amount, afl.paid_amount, COALESCE(afl.discount_amount, 0) AS discount_amount,
-                (afl.total_amount - afl.paid_amount - COALESCE(afl.discount_amount, 0)) AS remaining_amount, afl.status, afl.admission_date,
+                GREATEST(0, afl.total_amount - afl.paid_amount - COALESCE(afl.discount_amount, 0)) AS remaining_amount, afl.status, afl.admission_date,
                 afl.academic_year_id, ay.year_name AS academic_year_name, COALESCE(ay.is_active, TRUE) AS is_active_year,
                 s.first_name, s.last_name, s.admission_no, s.father_name, s.father_phone, s.student_mobile, s.monthly_fee, s.status AS student_status,
-                c.class_id, c.class_name, sec.section_id, sec.section_name
+                c.class_id, c.class_name, sec.section_id, sec.section_name,
+                (SELECT afp.payment_date FROM admission_fee_payments afp WHERE afp.ledger_id = afl.ledger_id ORDER BY afp.payment_date DESC, afp.payment_id DESC LIMIT 1) AS last_payment_date,
+                (SELECT afp.payment_id FROM admission_fee_payments afp WHERE afp.ledger_id = afl.ledger_id ORDER BY afp.payment_date DESC, afp.payment_id DESC LIMIT 1) AS last_payment_id
             FROM admission_fee_ledger afl
             JOIN students s ON afl.student_id = s.student_id
             LEFT JOIN classes c ON s.class_id = c.class_id
@@ -1539,7 +1541,11 @@ router.post('/admission-fees/:ledger_id/pay', async (req, res) => {
         }
 
         await client.query('COMMIT');
-        res.json({ message: 'Payment recorded successfully', ledger: updated.rows[0] });
+        res.json({
+            message: 'Payment recorded successfully',
+            payment_id: insertRes.rows[0]?.payment_id || null,
+            ledger: updated.rows[0]
+        });
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('Error during admission fee payment:', err);

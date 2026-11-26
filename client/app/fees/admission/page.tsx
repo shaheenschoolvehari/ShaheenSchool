@@ -24,6 +24,8 @@ interface Ledger {
   remaining_amount: number;
   status: "unpaid" | "partial" | "paid";
   admission_date: string;
+  last_payment_date?: string | null;
+  last_payment_id?: number | null;
   academic_year_id?: number;
   academic_year_name?: string;
   is_active_year?: boolean;
@@ -126,13 +128,20 @@ export default function AdmissionFeePage() {
       .then((r) => r.json())
       .then((data: any) => {
         if (data && typeof data === "object" && !Array.isArray(data)) {
+          const getLogo = (raw?: string) => {
+            const baseUrl = API.replace(/\/+$/, "");
+            if (!raw || !raw.trim()) return `${baseUrl}/icon.png`;
+            const s = raw.trim();
+            if (s.startsWith("data:") || s.startsWith("http://") || s.startsWith("https://")) return s;
+            return `${baseUrl}/${s.replace(/^\/+/, "")}`;
+          };
           setSchool({
             school_name: data.school_name || "",
             school_address: data.address || "",
             phone_number: data.contact_number || "",
             school_phone2: "",
             school_phone3: "",
-            school_logo_url: data.logo_url ? `${API}${data.logo_url}` : "",
+            school_logo_url: getLogo(data.logo_url),
           });
         }
       })
@@ -178,10 +187,20 @@ export default function AdmissionFeePage() {
     prevPaid: number,
     paymentId?: number,
     tuitionAmount: number = 0,
-    tuitionReceived: number = 0
+    tuitionReceived: number = 0,
+    prevDiscount: number = 0
   ) => {
-    const total = parseFloat(ledger.total_amount as any);
-    const balance = Math.max(0, total - prevPaid - receivingAmt - discountAmt);
+    const total = parseFloat(ledger.total_amount as any) || 0;
+    const prevPaidVal = parseFloat(prevPaid as any) || 0;
+    const prevDiscVal = parseFloat(prevDiscount as any) || 0;
+    const currDiscVal = parseFloat(discountAmt as any) || 0;
+    const totalDiscount = prevDiscVal + currDiscVal;
+    const recVal = parseFloat(receivingAmt as any) || 0;
+    const tAmt = parseFloat(tuitionAmount as any) || 0;
+    const tRec = parseFloat(tuitionReceived as any) || 0;
+
+    const admNetPayable = Math.max(0, total - prevPaidVal - totalDiscount);
+    const balance = Math.max(0, admNetPayable - recVal);
     const fmtR = (n: number) => `${Number(n || 0).toLocaleString("en-PK")}/-`;
     const fmtD = (d: string | null) => {
       if (!d) return "\u2014";
@@ -214,18 +233,18 @@ export default function AdmissionFeePage() {
       });
 
     let feeBody = `<tr><td>Admission Fee</td><td>${fmtR(total)}</td></tr>`;
-    if (prevPaid > 0)
-      feeBody += `<tr><td>Previous Payment (Credit)</td><td>\u2212 ${fmtR(prevPaid)}</td></tr>`;
-    if (discountAmt > 0)
-      feeBody += `<tr><td>Discount</td><td>\u2212 ${fmtR(discountAmt)}</td></tr>`;
+    if (prevPaidVal > 0)
+      feeBody += `<tr><td>Previous Payment (Credit)</td><td>\u2212 ${fmtR(prevPaidVal)}</td></tr>`;
+    if (totalDiscount > 0)
+      feeBody += `<tr><td>Discount</td><td>\u2212 ${fmtR(totalDiscount)}</td></tr>`;
 
-    if (tuitionAmount > 0) {
-      feeBody += `<tr><td>Current Month Tuition Fee</td><td>${fmtR(tuitionAmount)}</td></tr>`;
+    if (tAmt > 0) {
+      feeBody += `<tr><td>Current Month Tuition Fee</td><td>${fmtR(tAmt)}</td></tr>`;
     }
 
-    const netTotalPayable = total + (tuitionAmount > 0 ? tuitionAmount : 0);
-    const netReceivingAmt = receivingAmt + (tuitionAmount > 0 ? tuitionReceived : 0);
-    const netBalance = balance + (tuitionAmount > 0 ? (tuitionAmount - tuitionReceived) : 0);
+    const netTotalPayable = admNetPayable + (tAmt > 0 ? tAmt : 0);
+    const netReceivingAmt = recVal + (tAmt > 0 ? tRec : 0);
+    const netBalance = balance + (tAmt > 0 ? Math.max(0, tAmt - tRec) : 0);
 
     feeBody += `<tr><td><strong>Total Payable Amount</strong></td><td><strong>${fmtR(netTotalPayable)}</strong></td></tr>`;
     feeBody += `<tr class="thick"><td><strong>Receiving Amount</strong></td><td><strong>${fmtR(netReceivingAmt)}</strong></td></tr>`;
@@ -246,8 +265,8 @@ export default function AdmissionFeePage() {
       .filter(Boolean)
       .join(" ; ");
     const logoHtml = school.school_logo_url
-      ? `<img src="${school.school_logo_url}" style="width:16mm;height:16mm;object-fit:contain;margin-right:3mm;flex-shrink:0;" />`
-      : `<div style="width:16mm;height:16mm;background-color:transparent;margin-right:3mm;flex-shrink:0;"></div>`;
+      ? `<img src="${school.school_logo_url}" alt="School Logo" onerror="this.style.display='none'" style="width:16mm;height:16mm;object-fit:contain;display:block;margin:0 auto 1mm auto;flex-shrink:0;" />`
+      : `<div style="width:16mm;height:16mm;background-color:transparent;margin:0 auto 1mm auto;flex-shrink:0;"></div>`;
 
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -372,10 +391,11 @@ export default function AdmissionFeePage() {
           parseFloat(payForm.amount_paid) || 0,
           parseFloat(payForm.discount_amount) || 0,
           payForm.payment_date,
-          selectedLedger.paid_amount,
-          data.payment_id,
+          parseFloat(selectedLedger.paid_amount as any) || 0,
+          data.payment_id || selectedLedger.ledger_id,
           includeTuitionFee ? parseFloat(tuitionAmount) || 0 : 0,
-          includeTuitionFee ? parseFloat(tuitionReceived) || 0 : 0
+          includeTuitionFee ? parseFloat(tuitionReceived) || 0 : 0,
+          parseFloat(selectedLedger.discount_amount as any) || 0
         );
       }
 
@@ -782,6 +802,11 @@ export default function AdmissionFeePage() {
                       </td>
                       <td className="text-success fw-bold">
                         {fmt(ledger.paid_amount)}
+                        {parseFloat(ledger.discount_amount as any || "0") > 0 && (
+                          <div className="text-info fw-semibold" style={{ fontSize: "0.72rem" }}>
+                            Disc: {fmt(ledger.discount_amount!)}
+                          </div>
+                        )}
                       </td>
                       <td>
                         {ledger.status === "paid" ? (
@@ -841,11 +866,11 @@ export default function AdmissionFeePage() {
                               onClick={() =>
                                 openReceiptWindow(
                                   ledger,
-                                  ledger.paid_amount,
+                                  parseFloat(ledger.paid_amount as any) || 0,
+                                  parseFloat(ledger.discount_amount as any) || 0,
+                                  ledger.last_payment_date || ledger.admission_date || new Date().toISOString(),
                                   0,
-                                  new Date().toISOString(),
-                                  0,
-                                  ledger.ledger_id
+                                  ledger.last_payment_id || ledger.ledger_id
                                 )
                               }
                             >
