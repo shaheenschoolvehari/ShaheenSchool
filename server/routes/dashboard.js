@@ -9,6 +9,17 @@ const fmt = (d) => {
     return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
+/** SQL predicate ensuring a slip belongs to an active student or family with at least one active student. */
+const ACTIVE_SLIP_ACCOUNT_SQL = `(
+    (ms.family_id IS NULL AND LOWER(COALESCE(s.status, 'Active')) = 'active')
+    OR
+    (ms.family_id IS NOT NULL AND EXISTS (
+        SELECT 1 FROM students s2
+        WHERE s2.family_id = ms.family_id
+          AND LOWER(COALESCE(s2.status, 'Active')) = 'active'
+    ))
+)`;
+
 // ============================================================
 //  TEACHER DASHBOARD  GET /dashboard/teacher?user_id=
 // ============================================================
@@ -357,6 +368,7 @@ router.get('/accountant', async (req, res) => {
                   AND ms.year = EXTRACT(YEAR FROM CURRENT_DATE)
                   AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
                   AND (ms.status IS NULL OR LOWER(ms.status) NOT IN ('settled', 'satteled'))
+                  AND ${ACTIVE_SLIP_ACCOUNT_SQL}
             `),
 
             // Current Month Tuition + Previous Balance Billed
@@ -386,6 +398,7 @@ router.get('/accountant', async (req, res) => {
                   AND ms.year = EXTRACT(YEAR FROM CURRENT_DATE)
                   AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
                   AND (ms.status IS NULL OR LOWER(ms.status) NOT IN ('settled', 'satteled'))
+                  AND ${ACTIVE_SLIP_ACCOUNT_SQL}
             `),
 
             // Current Month Remaining Dues (Unpaid balance of current month slips, excluding trusted/settled)
@@ -811,6 +824,7 @@ router.get('/', async (req, res) => {
                   AND ms.year = EXTRACT(YEAR FROM CURRENT_DATE)
                   AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
                   AND (ms.status IS NULL OR LOWER(ms.status) NOT IN ('settled', 'satteled'))
+                  AND ${ACTIVE_SLIP_ACCOUNT_SQL}
             `),
 
             // 14. Current Month Tuition + Previous Balance Billed
@@ -840,6 +854,7 @@ router.get('/', async (req, res) => {
                   AND ms.year = EXTRACT(YEAR FROM CURRENT_DATE)
                   AND (s.category IS NULL OR LOWER(TRIM(s.category)) != 'trusted')
                   AND (ms.status IS NULL OR LOWER(ms.status) NOT IN ('settled', 'satteled'))
+                  AND ${ACTIVE_SLIP_ACCOUNT_SQL}
             `),
 
             // 15. Current Month Remaining Dues (Unpaid balance of current month slips, excluding trusted/settled)
