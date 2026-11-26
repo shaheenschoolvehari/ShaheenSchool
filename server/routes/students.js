@@ -1425,7 +1425,11 @@ router.post('/', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'documen
                 VALUES ($1::int, $2::numeric, 0, 'unpaid', $3::date, 'Auto-created on admission', $4::int)
                 ON CONFLICT (student_id) DO UPDATE
                     SET total_amount = EXCLUDED.total_amount,
-                        status = CASE WHEN EXCLUDED.total_amount = 0 THEN 'paid' ELSE 'unpaid' END,
+                        status = CASE
+                            WHEN (admission_fee_ledger.paid_amount + COALESCE(admission_fee_ledger.discount_amount, 0)) >= EXCLUDED.total_amount THEN 'paid'
+                            WHEN (admission_fee_ledger.paid_amount + COALESCE(admission_fee_ledger.discount_amount, 0)) > 0 THEN 'partial'
+                            ELSE 'unpaid'
+                        END,
                         academic_year_id = COALESCE(admission_fee_ledger.academic_year_id, EXCLUDED.academic_year_id)
             `, [new_student_id, admFeeVal, admission_date || new Date(), activeYearId]);
         }
@@ -2262,8 +2266,8 @@ router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docum
                 ON CONFLICT (student_id) DO UPDATE 
                     SET total_amount = EXCLUDED.total_amount,
                         status = CASE 
-                            WHEN admission_fee_ledger.paid_amount >= EXCLUDED.total_amount THEN 'paid'
-                            WHEN admission_fee_ledger.paid_amount > 0 THEN 'partial'
+                            WHEN (admission_fee_ledger.paid_amount + COALESCE(admission_fee_ledger.discount_amount, 0)) >= EXCLUDED.total_amount THEN 'paid'
+                            WHEN (admission_fee_ledger.paid_amount + COALESCE(admission_fee_ledger.discount_amount, 0)) > 0 THEN 'partial'
                             ELSE 'unpaid'
                         END,
                         academic_year_id = COALESCE(admission_fee_ledger.academic_year_id, EXCLUDED.academic_year_id)
