@@ -303,7 +303,19 @@ export default function StudentDetails() {
             });
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://shaheenschool.onrender.com"}/students?${queryParams.toString()}`);
             if (res.ok) {
-                setStudents(await res.json());
+                const rawStudents: Student[] = await res.json();
+                const sortedStudents = [...rawStudents].sort((a, b) => {
+                    const nameA = [a.first_name, a.last_name].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+                    const nameB = [b.first_name, b.last_name].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+                    const cmp = nameA.localeCompare(nameB, undefined, { sensitivity: 'base', numeric: true });
+                    if (cmp !== 0) return cmp;
+                    const fatherA = (a.father_name || '').replace(/\s+/g, ' ').trim();
+                    const fatherB = (b.father_name || '').replace(/\s+/g, ' ').trim();
+                    const fCmp = fatherA.localeCompare(fatherB, undefined, { sensitivity: 'base', numeric: true });
+                    if (fCmp !== 0) return fCmp;
+                    return (a.student_id || 0) - (b.student_id || 0);
+                });
+                setStudents(sortedStudents);
             }
         } catch (e) {
             console.error(e);
