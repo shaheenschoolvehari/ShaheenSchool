@@ -165,27 +165,25 @@ function buildPrintHtml(payload: SheetPayload): string {
         const pageStudents = sortedStudents.slice(startIdx, startIdx + ROWS_PER_PAGE);
 
         let rowsHtml = '';
-        for (let i = 0; i < ROWS_PER_PAGE; i++) {
+        for (let i = 0; i < pageStudents.length; i++) {
             const st = pageStudents[i];
-            const rollNo = st ? (st.roll_no || String(startIdx + i + 1)) : String(startIdx + i + 1);
-            const studentName = st ? `${st.first_name || ''} ${st.last_name || ''}`.trim() : '';
-            const fatherName = st ? (st.father_name || '') : '';
+            const rollNo = st.roll_no || String(startIdx + i + 1);
+            const studentName = `${st.first_name || ''} ${st.last_name || ''}`.trim();
+            const fatherName = st.father_name || '';
             const markCells = subjects.map(s => {
-                if (!st) return '<td></td>';
                 const smList = st.subject_marks || st.subject_rows || [];
                 const sm = smList.find((m: any) => m.subject_id === s.subject_id);
                 const val = sm && sm.obtained_marks !== null && sm.obtained_marks !== undefined ? esc(fmtN(sm.obtained_marks)) : '';
                 return `<td>${val}</td>`;
             }).join('');
 
-            const obtainedVal = st
-                ? (st.grand_obtained !== undefined && st.grand_obtained !== null && st.grand_obtained > 0
+            const obtainedVal =
+                st.grand_obtained !== undefined && st.grand_obtained !== null && st.grand_obtained > 0
                     ? esc(fmtN(st.grand_obtained))
                     : (st.grand_obtained_marks !== undefined && st.grand_obtained_marks !== null && st.grand_obtained_marks > 0
                         ? esc(fmtN(st.grand_obtained_marks))
-                        : ''))
-                : '';
-            const posVal = st ? esc(st.ordinal_position || (st.position ? String(st.position) : '')) : '';
+                        : '');
+            const posVal = esc(st.ordinal_position || (st.position ? String(st.position) : ''));
 
             rowsHtml += `
               <tr>

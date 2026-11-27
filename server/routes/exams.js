@@ -1122,6 +1122,28 @@ router.get('/class-marks-sheet', async (req, res) => {
             return res.status(404).json({ error: 'Invalid term/class/section selection' });
         }
 
+        const teacherRes = await client.query(
+            `SELECT e.first_name, e.last_name
+             FROM teacher_class_assignment tca
+             JOIN employees e ON e.employee_id = tca.employee_id
+             WHERE tca.class_id = $1
+               AND tca.section_id = $2
+               AND tca.is_class_teacher = true
+             ORDER BY CASE WHEN LOWER(COALESCE(e.status, 'Active')) = 'active' THEN 0 ELSE 1 END,
+                      tca.assignment_id DESC
+             LIMIT 1`,
+            [classId, sectionId]
+        );
+
+        const classTeacher = teacherRes.rows.length > 0
+            ? `${teacherRes.rows[0].first_name || ''} ${teacherRes.rows[0].last_name || ''}`.replace(/\s+/g, ' ').trim()
+            : '';
+
+        const metaData = {
+            ...metaRes.rows[0],
+            class_teacher: classTeacher
+        };
+
         // All subjects for this section (columns of the sheet)
         const subjectsRes = await client.query(
             `SELECT subject_id, subject_name, subject_code
@@ -1144,7 +1166,7 @@ router.get('/class-marks-sheet', async (req, res) => {
 
         if (studentsRes.rows.length === 0) {
             return res.json({
-                meta: metaRes.rows[0],
+                meta: metaData,
                 school: {},
                 subjects: subjectsRes.rows,
                 students: []
@@ -1235,7 +1257,7 @@ router.get('/class-marks-sheet', async (req, res) => {
         });
 
         res.json({
-            meta: metaRes.rows[0],
+            meta: metaData,
             school,
             subjects: subjectsRes.rows,
             students
