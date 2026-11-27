@@ -1186,7 +1186,7 @@ export default function CollectFeePage() {
         if (surplusAdvance > 0) {
             feeRows += `
             <tr class="bold-row" style="color: #0369a1;">
-                <td colspan="2">Advance Surplus (Wallet Credit)</td>
+                <td colspan="2">Advance Fee Receiving</td>
                 <td>+ ${fmtMoney(surplusAdvance)}</td>
             </tr>`;
         }
