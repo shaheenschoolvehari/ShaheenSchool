@@ -835,18 +835,35 @@ export default function CollectFeePage() {
         finally { setLoadingHistory(false); }
     };
 
+    const sortPaymentsAsc = (list: Payment[]) => {
+        return [...list].sort((a, b) => {
+            const ta = new Date(a.payment_date || 0).getTime();
+            const tb = new Date(b.payment_date || 0).getTime();
+            if (ta !== tb) return ta - tb;
+            return (a.payment_id || 0) - (b.payment_id || 0);
+        });
+    };
+
+    const getPriorPaymentsBeforePayment = (targetPayment: Payment, paymentsList: Payment[]): Payment[] => {
+        if (!paymentsList || paymentsList.length === 0) return [];
+        const idx = paymentsList.findIndex(x => x.payment_id === targetPayment.payment_id);
+        if (idx < 0) return [];
+        const targetTime = new Date(targetPayment.payment_date || 0).getTime();
+        const priorPayments = paymentsList.filter((x, i) => {
+            if (x.payment_id === targetPayment.payment_id) return false;
+            const xTime = new Date(x.payment_date || 0).getTime();
+            if (xTime !== targetTime) return xTime < targetTime;
+            return i > idx;
+        });
+        return sortPaymentsAsc(priorPayments);
+    };
+
     const getPrevPaidBeforePayment = (targetSlip: SlipRow, targetPayment: Payment, paymentsList: Payment[]) => {
         if (paymentsList && paymentsList.length > 0) {
             const idx = paymentsList.findIndex(x => x.payment_id === targetPayment.payment_id);
             if (idx >= 0) {
-                const targetTime = new Date(targetPayment.payment_date || 0).getTime();
-                const priorPayments = paymentsList.filter((x, i) => {
-                    if (x.payment_id === targetPayment.payment_id) return false;
-                    const xTime = new Date(x.payment_date || 0).getTime();
-                    if (xTime !== targetTime) return xTime < targetTime;
-                    return i > idx;
-                });
-                return priorPayments.reduce((sum, x) => sum + (parseFloat(x.amount_paid as any) || 0), 0);
+                return getPriorPaymentsBeforePayment(targetPayment, paymentsList)
+                    .reduce((sum, x) => sum + (parseFloat(x.amount_paid as any) || 0), 0);
             }
         }
         return Math.max(0, parseFloat(targetSlip.paid_amount as any || 0) - parseFloat(targetPayment.amount_paid as any || 0));
@@ -859,8 +876,9 @@ export default function CollectFeePage() {
 
         if (customPayment) {
             const p = customPayment;
+            const priorList = getPriorPaymentsBeforePayment(p, slipPayments);
             const prevPaid = getPrevPaidBeforePayment(targetSlip, p, slipPayments);
-            openReceiptWindow(targetSlip, parseFloat(p.amount_paid as any || 0), p.payment_date, prevPaid);
+            openReceiptWindow(targetSlip, parseFloat(p.amount_paid as any || 0), p.payment_date, prevPaid, priorList);
             if (!p.is_printed) {
                 fetch(`${API}/fee-slips/payments/${p.payment_id}/print`, { method: 'PUT' })
                     .then(() => {
@@ -871,9 +889,11 @@ export default function CollectFeePage() {
         }
 
         if (slipPayments && slipPayments.length > 0) {
-            const lastP = slipPayments[0];
-            const prevPaid = getPrevPaidBeforePayment(targetSlip, lastP, slipPayments);
-            openReceiptWindow(targetSlip, parseFloat(lastP.amount_paid as any || 0), lastP.payment_date, prevPaid);
+            const sortedAsc = sortPaymentsAsc(slipPayments);
+            const lastP = sortedAsc[sortedAsc.length - 1];
+            const priorList = sortedAsc.slice(0, -1);
+            const prevPaid = priorList.reduce((sum, x) => sum + (parseFloat(x.amount_paid as any) || 0), 0);
+            openReceiptWindow(targetSlip, parseFloat(lastP.amount_paid as any || 0), lastP.payment_date, prevPaid, priorList);
             if (!lastP.is_printed) {
                 fetch(`${API}/fee-slips/payments/${lastP.payment_id}/print`, { method: 'PUT' })
                     .then(() => {
@@ -883,7 +903,7 @@ export default function CollectFeePage() {
         } else {
             const totalPaid = parseFloat(targetSlip.paid_amount as any || 0);
             const pDate = payDate || getTodayDateStr();
-            openReceiptWindow(targetSlip, totalPaid, pDate, 0);
+            openReceiptWindow(targetSlip, totalPaid, pDate, 0, []);
         }
     };
 
@@ -1000,7 +1020,8 @@ export default function CollectFeePage() {
         slip: SlipRow,
         receivingAmt: number,
         submissionDate: string,
-        prevPaid: number
+        prevPaid: number,
+        priorPayments: Payment[] = []
     ) => {
         const escStr = (text: unknown): string => {
             return String(text ?? '')
@@ -1009,6 +1030,17 @@ export default function CollectFeePage() {
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
+        };
+
+        const toOrdinal = (n: number) => {
+            const mod100 = n % 100;
+            if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+            switch (n % 10) {
+                case 1: return `${n}st`;
+                case 2: return `${n}nd`;
+                case 3: return `${n}rd`;
+                default: return `${n}th`;
+            }
         };
 
         const totalPayable = parseFloat(slip.total_amount as any) || 0;
@@ -1024,8 +1056,8 @@ export default function CollectFeePage() {
         const fmtD = (d: string | Date | null) => {
             if (!d) return '\u2014';
             try {
-                if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}/.test(d)) {
-                    const parts = d.split('T')[0].split('-');
+                if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.trim())) {
+                    const parts = d.trim().split('-');
                     return `${parts[2]}-${parts[1]}-${parts[0]}`;
                 }
                 const dt = new Date(d);
@@ -1094,20 +1126,59 @@ export default function CollectFeePage() {
             <td>${fmtMoney(totalPayable)}</td>
         </tr>`;
 
-        // Previously Paid + Receiving Amount & Remaining Balance
+        // Prior Payable Installment(s) + Current Receiving Amount & Remaining Balance
         const surplusAdvance = Math.max(0, totalReceivedNow - totalPayable);
-        if (totalReceivedBefore > 0) {
+        const orderedPrior = priorPayments && priorPayments.length > 0 ? priorPayments : [];
+        const hasPriorPayments = orderedPrior.length > 0 || totalReceivedBefore > 0;
+
+        if (orderedPrior.length === 1) {
+            const p1 = orderedPrior[0];
+            const p1Amt = parseFloat(p1.amount_paid as any) || 0;
+            const p1Date = p1.payment_date ? ` (${fmtD(p1.payment_date)})` : '';
             feeRows += `
             <tr class="divider-row">
-                <td colspan="2">Previously Paid</td>
+                <td colspan="2">First Payable Amount${escStr(p1Date)}</td>
+                <td>- ${fmtMoney(p1Amt)}</td>
+            </tr>`;
+            feeRows += `
+            <tr class="payment-row">
+                <td colspan="2">2nd Payable Amount Received</td>
+                <td>${fmtMoney(receivingAmt)}</td>
+            </tr>`;
+        } else if (orderedPrior.length >= 2) {
+            orderedPrior.forEach((p, idx) => {
+                const pAmt = parseFloat(p.amount_paid as any) || 0;
+                const pDate = p.payment_date ? ` (${fmtD(p.payment_date)})` : '';
+                feeRows += `
+            <tr class="${idx === 0 ? 'divider-row' : 'payment-row'}">
+                <td colspan="2">${toOrdinal(idx + 1)} Payable Amount${escStr(pDate)}</td>
+                <td>- ${fmtMoney(pAmt)}</td>
+            </tr>`;
+            });
+            feeRows += `
+            <tr class="payment-row">
+                <td colspan="2">${toOrdinal(orderedPrior.length + 1)} Payable Amount Received</td>
+                <td>${fmtMoney(receivingAmt)}</td>
+            </tr>`;
+        } else if (totalReceivedBefore > 0) {
+            feeRows += `
+            <tr class="divider-row">
+                <td colspan="2">First Payable Amount</td>
                 <td>- ${fmtMoney(totalReceivedBefore)}</td>
+            </tr>`;
+            feeRows += `
+            <tr class="payment-row">
+                <td colspan="2">2nd Payable Amount Received</td>
+                <td>${fmtMoney(receivingAmt)}</td>
+            </tr>`;
+        } else {
+            feeRows += `
+            <tr class="${hasPriorPayments ? 'payment-row' : 'divider-row'}">
+                <td colspan="2">Receiving Amount</td>
+                <td>${fmtMoney(receivingAmt)}</td>
             </tr>`;
         }
         feeRows += `
-            <tr class="${totalReceivedBefore > 0 ? '' : 'divider-row'}">
-                <td colspan="2">Receiving Amount</td>
-                <td>${fmtMoney(receivingAmt)}</td>
-            </tr>
             <tr class="bold-row">
                 <td colspan="2">Remaining Balance</td>
                 <td>${fmtMoney(remainingBalance)}</td>
@@ -1197,6 +1268,7 @@ export default function CollectFeePage() {
   .details tr.divider-row td { font-weight: bold; border-top: 2px solid #000; }
   .details tr.bold-row td { font-weight: bold; }
   .details tr.divider-row td:first-child,
+  .details tr.payment-row td:first-child,
   .details tr.bold-row td:first-child { text-align: left; }
 
   .thank-you { text-align: center; font-size: 9.5pt; font-weight: bold; margin-top: 3mm; margin-bottom: 2mm; }
@@ -1354,6 +1426,8 @@ export default function CollectFeePage() {
         
         // Snapshot before state changes (needed for receipt after async updates)
         const prevPaidSnap = parseFloat(activeSlip!.paid_amount as any);
+        const prevPaymentIdsSnap = new Set(slipPayments.map(p => p.payment_id));
+        const priorPaymentsSnap = sortPaymentsAsc(slipPayments);
         const slipSnap = { ...activeSlip! };
         const payDateSnap = payDate;
         setPaying(true);
@@ -1381,7 +1455,9 @@ export default function CollectFeePage() {
             }
             // Refresh history
             const rh = await fetch(`${API}/fee-slips/${activeSlip!.slip_id}`);
-            const dh = await rh.json(); setSlipPayments(dh.payments || []);
+            const dh = await rh.json();
+            const refreshedPayments: Payment[] = dh.payments || [];
+            setSlipPayments(refreshedPayments);
             // Update slip in list
             setSlips(prev => prev.map(s => s.slip_id === activeSlip!.slip_id ? { ...s, total_amount: d.slip.total_amount, paid_amount: d.slip.paid_amount, status: d.slip.status } : s));
             setStats(prev => prev ? {
@@ -1397,7 +1473,17 @@ export default function CollectFeePage() {
             setHeadPayVals({});
             setWaivedItemIds([]);
             // Open receipt in new window after successful payment
-            if (shouldPrint && receivingSnap > 0) openReceiptWindow(slipSnap, receivingSnap, payDateSnap, prevPaidSnap);
+            if (shouldPrint && receivingSnap > 0) {
+                let priorForReceipt = priorPaymentsSnap;
+                if (prevPaymentIdsSnap.size > 0 && refreshedPayments.length > 0) {
+                    const matchedPrior = refreshedPayments.filter(p => prevPaymentIdsSnap.has(p.payment_id));
+                    if (matchedPrior.length > 0) priorForReceipt = sortPaymentsAsc(matchedPrior);
+                } else if (refreshedPayments.length > 1) {
+                    const newestPayment = refreshedPayments.reduce((best, cur) => cur.payment_id > best.payment_id ? cur : best, refreshedPayments[0]);
+                    priorForReceipt = sortPaymentsAsc(refreshedPayments.filter(p => p.payment_id !== newestPayment.payment_id));
+                }
+                openReceiptWindow(slipSnap, receivingSnap, payDateSnap, prevPaidSnap, priorForReceipt);
+            }
             // Re-fetch all slips silently waterfall may have updated older slips in DB
             silentReload();
 
