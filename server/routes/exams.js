@@ -1222,6 +1222,7 @@ router.get('/class-marks-sheet', async (req, res) => {
                 student_id: student.student_id,
                 first_name: student.first_name,
                 last_name: student.last_name,
+                father_name: student.father_name,
                 admission_no: student.admission_no,
                 roll_no: student.roll_no,
                 subject_marks: subjectMarks,
