@@ -1061,7 +1061,7 @@ const syncTrustedSlipsState = async () => {
 // GET /fee-slips?class_id=&year=&month=&academic_year_id=
 router.get('/', async (req, res) => {
     try {
-        const { class_id, month, year, academic_year_id } = req.query;
+        const { class_id, month, year, academic_year_id, active_only } = req.query;
 
         // Auto-cleanup any corrupt line item paid amounts before returning slips
         await syncFamilyLeadSlips();
@@ -1104,6 +1104,18 @@ router.get('/', async (req, res) => {
                     WHERE class_id = $${params.length} AND status = 'Active' AND family_id IS NOT NULL
                   )
                 )
+            )`);
+        }
+
+        if (active_only === 'true' || active_only === '1') {
+            whereClauses.push(`(
+                (COALESCE(mfs.family_id, s.family_id) IS NULL AND LOWER(COALESCE(s.status, 'Active')) = 'active')
+                OR
+                (COALESCE(mfs.family_id, s.family_id) IS NOT NULL AND EXISTS (
+                    SELECT 1 FROM students s_active
+                    WHERE s_active.family_id = COALESCE(mfs.family_id, s.family_id)
+                      AND LOWER(COALESCE(s_active.status, 'Active')) = 'active'
+                ))
             )`);
         }
 

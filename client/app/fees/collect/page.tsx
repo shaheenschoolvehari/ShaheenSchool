@@ -284,6 +284,24 @@ export default function CollectFeePage() {
     const [paying, setPaying] = useState(false);
     const [school, setSchool] = useState<SchoolInfo>({ school_name: '', school_address: '', phone_number: '', school_phone2: '', school_phone3: '', school_logo_url: '' });
 
+    const buildSlipsQueryParams = ({
+        targetYear,
+        targetMonth,
+        targetClass = '',
+        targetAcademicYearId = ''
+    }: {
+        targetYear: string;
+        targetMonth?: string;
+        targetClass?: string;
+        targetAcademicYearId?: string;
+    }) => {
+        const params = new URLSearchParams({ year: targetYear, active_only: 'true' });
+        if (targetClass) params.append('class_id', targetClass);
+        if (targetMonth && targetMonth !== 'all') params.append('month', targetMonth);
+        if (targetAcademicYearId) params.append('academic_year_id', targetAcademicYearId);
+        return params;
+    };
+
     const hasAutoLoaded = useRef(false);
 
     useEffect(() => {
@@ -371,14 +389,12 @@ export default function CollectFeePage() {
                 if (!hasAutoLoaded.current) {
                     hasAutoLoaded.current = true;
                     setLoading(true);
-                    const params = new URLSearchParams({ year: resolvedYear });
-                    if (initialMonth && initialMonth !== 'all') {
-                        params.append('month', initialMonth);
-                    }
                     const targetYearId = currentActiveYear?.id ? currentActiveYear.id.toString() : '';
-                    if (targetYearId) {
-                        params.append('academic_year_id', targetYearId);
-                    }
+                    const params = buildSlipsQueryParams({
+                        targetYear: resolvedYear,
+                        targetMonth: initialMonth,
+                        targetAcademicYearId: targetYearId
+                    });
                     const r = await fetch(`${API}/fee-slips?${params.toString()}`);
                     const data = await r.json();
                     if (r.ok && data && data.slips) {
@@ -431,13 +447,13 @@ export default function CollectFeePage() {
         setLoading(true); setSlips([]); setStats(null); setLoaded(false);
         try {
             const activeMonth = monthOverride !== undefined ? monthOverride : selectedMonth;
-            const params = new URLSearchParams({ year });
-            if (selectedClass) params.append('class_id', selectedClass);
-            if (activeMonth && activeMonth !== 'all') params.append('month', activeMonth);
             const targetYearId = (selectedAcademicYear && selectedAcademicYear !== 'all') ? selectedAcademicYear : (activeYear ? activeYear.id.toString() : '');
-            if (targetYearId) {
-                params.append('academic_year_id', targetYearId);
-            }
+            const params = buildSlipsQueryParams({
+                targetYear: year,
+                targetMonth: activeMonth,
+                targetClass: selectedClass,
+                targetAcademicYearId: targetYearId
+            });
             const r = await fetch(`${API}/fee-slips?${params.toString()}`);
             const data = await r.json();
             if (!r.ok) throw new Error(data.error);
@@ -453,13 +469,13 @@ export default function CollectFeePage() {
     const silentReload = async () => {
         if (!year) return;
         try {
-            const params = new URLSearchParams({ year });
-            if (selectedClass) params.append('class_id', selectedClass);
-            if (selectedMonth && selectedMonth !== 'all') params.append('month', selectedMonth);
             const targetYearId = (selectedAcademicYear && selectedAcademicYear !== 'all') ? selectedAcademicYear : (activeYear ? activeYear.id.toString() : '');
-            if (targetYearId) {
-                params.append('academic_year_id', targetYearId);
-            }
+            const params = buildSlipsQueryParams({
+                targetYear: year,
+                targetMonth: selectedMonth,
+                targetClass: selectedClass,
+                targetAcademicYearId: targetYearId
+            });
             const r = await fetch(`${API}/fee-slips?${params.toString()}`);
             const data = await r.json();
             if (r.ok) {
