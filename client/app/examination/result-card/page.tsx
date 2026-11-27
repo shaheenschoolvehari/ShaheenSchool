@@ -141,6 +141,15 @@ function buildPrintHtml(payload: CardPayload, autoPrint = false): string {
     const phones = [school.phone_number, school.school_phone2, school.school_phone3].filter(Boolean).join(' ; ') || '0300-7730141 ; 0308-7696430 ; 067-3366383';
     const logo = getLogoUrl(school.school_logo_url);
     const session = meta.year_name || meta.term_name || '2025 - 2026';
+    const rawTermName = (meta.term_name || '').trim();
+    const cardTitle = rawTermName
+        ? (/result\s*card/i.test(rawTermName) ? rawTermName.toUpperCase() : `${rawTermName.toUpperCase()} RESULT CARD`)
+        : 'RESULT CARD';
+    const tabTitleSuffix = rawTermName
+        ? (/result\s*card/i.test(rawTermName) ? rawTermName : `${rawTermName} Result Card`)
+        : 'Result Card';
+    const now = new Date();
+    const issueDateStr = `${String(now.getDate()).padStart(2, '0')} / ${String(now.getMonth() + 1).padStart(2, '0')} / ${now.getFullYear()}`;
 
     const cardsHtml = students.map((student) => {
         const subjects = student.subject_rows || [];
@@ -177,7 +186,7 @@ function buildPrintHtml(payload: CardPayload, autoPrint = false): string {
             <!-- Header -->
             <div class="header">
               <div class="logo">
-                ${logo ? `<img src="${esc(logo)}" alt="Logo" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>` : 'DEEDS NOT WORDS<br>SHAHEEN SCHOOL'}
+                ${logo ? `<img src="${esc(logo)}" alt="Logo" style="width:100%;height:100%;object-fit:contain;"/>` : 'DEEDS NOT WORDS<br>SHAHEEN SCHOOL'}
               </div>
               <div class="school-info">
                 <div class="school-name">${esc(schoolName)}</div>
@@ -188,7 +197,7 @@ function buildPrintHtml(payload: CardPayload, autoPrint = false): string {
 
             <!-- Title bar -->
             <div class="title-bar">
-              <div class="title">ANNUAL RESULT CARD</div>
+              <div class="title">${esc(cardTitle)}</div>
               <div class="session">Session: [ <span>${esc(session)}</span> ]</div>
             </div>
 
@@ -299,7 +308,7 @@ function buildPrintHtml(payload: CardPayload, autoPrint = false): string {
               </div>
             </div>
 
-            <div class="issue-date">Date of Issue: [ <span>__ / __ / ____</span> ]</div>
+            <div class="issue-date">Date of Issue: [ <span>${esc(issueDateStr)}</span> ]</div>
           </div>`;
     }).join('');
 
@@ -307,7 +316,7 @@ function buildPrintHtml(payload: CardPayload, autoPrint = false): string {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Shaheen English Model School Vehari - Annual Result Card</title>
+<title>${esc(schoolName)} - ${esc(tabTitleSuffix)}</title>
 <style>
   @page {
     size: A4 portrait;
@@ -379,19 +388,18 @@ function buildPrintHtml(payload: CardPayload, autoPrint = false): string {
     margin-bottom: 10px;
   }
   .logo {
-    width: 68px;
-    height: 68px;
-    border-radius: 50%;
-    border: 2px solid #000;
+    width: 90px;
+    height: 90px;
     display: flex;
     align-items: center;
     justify-content: center;
     text-align: center;
-    font-size: 6px;
+    font-size: 7px;
     font-weight: bold;
     line-height: 1.1;
     flex-shrink: 0;
-    padding: 4px;
+    padding: 0;
+    border: none;
     overflow: hidden;
   }
   .school-info {
@@ -497,7 +505,7 @@ function buildPrintHtml(payload: CardPayload, autoPrint = false): string {
     margin-bottom: 4px;
   }
   .page.compact .signatures {
-    margin-top: 30px;
+    margin-top: 14px;
   }
   .page.compact .issue-date {
     margin-top: 14px;
@@ -506,6 +514,7 @@ function buildPrintHtml(payload: CardPayload, autoPrint = false): string {
     margin-bottom: 6px;
     padding-bottom: 5px;
   }
+  .page.compact .logo { width: 78px; height: 78px; }
   .page.compact .school-name { font-size: 30px; }
   .page.compact .title-bar { margin-bottom: 7px; }
   .page.compact .section-heading { margin-bottom: 3px; }
@@ -562,7 +571,7 @@ function buildPrintHtml(payload: CardPayload, autoPrint = false): string {
   .signatures {
     display: flex;
     justify-content: space-between;
-    margin-top: 40px;
+    margin-top: 18px;
     text-align: center;
   }
   .signatures .sig {
