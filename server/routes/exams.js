@@ -185,7 +185,7 @@ function getGrade(percentage) {
 
 // Returns Map<student_id, {position, ordinal_position, percentage, grade}>
 // Only students with marked_count > 0 get a position.
-// Uses standard competition ranking: tied scores share same rank, next rank skips.
+// Uses dense ranking: tied scores share same rank, next rank increments by 1 without skipping.
 function computeClassRanks(rows) {
     const eligible = rows
         .filter(r => Number(r.marked_count) > 0)
@@ -194,18 +194,17 @@ function computeClassRanks(rows) {
     const rankMap = new Map();
     let rank = 0;
     let prevScore = null;
-    let count = 0;
 
     for (const row of eligible) {
-        count++;
-        const score = Number(row.obtained_total);
+        const rawScore = Number(row.obtained_total);
+        const score = Math.round(rawScore * 100) / 100;
         if (prevScore === null || score < prevScore) {
-            rank = count;
+            rank += 1;
             prevScore = score;
         }
         const totalTotal = Number(row.total_total);
         const percentage = totalTotal > 0
-            ? Math.round((score / totalTotal) * 1000) / 10
+            ? Math.round((rawScore / totalTotal) * 1000) / 10
             : null;
         rankMap.set(row.student_id, {
             position: rank,
