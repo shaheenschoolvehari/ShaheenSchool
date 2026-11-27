@@ -415,12 +415,18 @@ function VoucherSlip({ v, serial, month, year, school, filterClassId }: { v: Vou
                 )}
 
                 <div className="rules-box">
-                    <span className="rule-line">1. Fee must be paid before the due date.</span>
-                    <span className="rule-line">2. A fine/late fee will apply after {fineCutoffDateStr !== '--' ? fineCutoffDateStr : 'the due date'}.</span>
-                    <span className="rule-line">3. Fee must be deposited only at the school-designated bank/counter.</span>
-                    <span className="rule-line">4. Fee once paid is non-refundable under any circumstances.</span>
+                    <div className="rules-title">Rules &amp; Instructions</div>
+                    <span className="rule-line">1. Please bring your fee voucher when submitting the fee.</span>
+                    <span className="rule-line">2. Fee must be paid on or before the 10th of each month.</span>
+                    <span className="rule-line">3. Fee must be paid at the school fee office only.</span>
+                    <span className="rule-line">4. Late payment may result in a fine.</span>
+                    <span className="rule-line">5. Please keep the payment receipt safe.</span>
                 </div>
                 <div className="filler"></div>
+                <div className="dev-branding">
+                    <div className="dev-title">Software Designed &amp; Developed by <strong>FALCON SWIFT PVT. LTD.</strong></div>
+                    <div className="dev-contact">Website: www.falconswift.online &bull; Contact: 03208624173, 03263392082</div>
+                </div>
             </div>
         </div>
     );
@@ -924,9 +930,18 @@ export default function PrintSlipsPage() {
             padding: 0.2mm 0.8mm;
         }
         .voucher.table-ultra-compact .rules-box {
-            font-size: 8.2pt;
+            font-size: 7.5pt;
+            line-height: 1.18;
             margin-top: 0.4mm;
             padding-top: 0.4mm;
+        }
+        .voucher.table-ultra-compact .rules-box .rules-title {
+            font-size: 7.9pt;
+            margin-bottom: 0.2mm;
+        }
+        .voucher.table-ultra-compact .dev-branding {
+            margin-top: 0.5mm;
+            padding-top: 0.6mm;
         }
 
         .students-table th:nth-child(1), .students-table td:nth-child(1) { width: 37%; text-align: center; }
@@ -946,9 +961,15 @@ export default function PrintSlipsPage() {
             flex: 0 0 auto;
             padding-top: 0.8mm;
             margin-top: 0.8mm;
-            font-size: 8.8pt;
-            line-height: 1.35;
+            font-size: 8.1pt;
+            line-height: 1.28;
             border-top: 1pt dashed #000;
+        }
+        .rules-box .rules-title {
+            font-size: 8.5pt;
+            font-weight: bold;
+            margin-bottom: 0.35mm;
+            text-decoration: underline;
         }
         .rules-box .rule-line { display: block; }
 
@@ -974,7 +995,30 @@ export default function PrintSlipsPage() {
             font-size: 7.5pt;
         }
 
-        .filler { flex: 1 1 auto; }
+        .filler { flex: 1 1 auto; min-height: 0.5mm; }
+
+        .dev-branding {
+            flex: 0 0 auto;
+            margin-top: 1mm;
+            padding-top: 1mm;
+            border-top: 0.75pt dashed #555;
+            text-align: center;
+            color: #111;
+            line-height: 1.25;
+        }
+        .dev-branding .dev-title {
+            font-size: 6.7pt;
+            letter-spacing: 0.1px;
+        }
+        .dev-branding .dev-title strong {
+            font-weight: bold;
+            letter-spacing: 0.25px;
+        }
+        .dev-branding .dev-contact {
+            font-size: 6.3pt;
+            margin-top: 0.25mm;
+            letter-spacing: 0.1px;
+        }
     `;
 
     // ── Print layout (replaces entire page content while printing) ──────────
